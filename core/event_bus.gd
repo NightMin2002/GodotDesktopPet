@@ -1,0 +1,14 @@
+# event_bus.gd — 全局事件总线 (Autoload 单例)
+# 所有模块间通信都通过这里中转，避免强耦合
+extends Node
+
+# ── 拖拽相关 ──
+signal drag_started
+signal drag_ended
+
+# ── 状态变化 ──
+signal pet_state_changed(old_state: String, new_state: String)
+
+# ── IPC 相关 (预留) ──
+signal ipc_message_received(data: Dictionary)
+signal task_completed(task_name: String)

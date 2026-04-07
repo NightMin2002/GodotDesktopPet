@@ -1,0 +1,10 @@
+# Godot 生成文件
+.godot/
+*.import
+
+# 导出构建
+builds/
+
+# 系统文件
+.DS_Store
+Thumbs.db
