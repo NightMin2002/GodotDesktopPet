@@ -14,7 +14,6 @@ func enter() -> void:
 	walk_direction = [-1.0, 1.0].pick_random()
 	if pet:
 		pet.linear_damp = 0.5
-		pet.facing_direction = walk_direction
 
 func exit() -> void:
 	pass
@@ -40,9 +39,9 @@ func physics_process(_delta: float) -> void:
 	# 碰到屏幕边缘就转向
 	var screen_width = pet.boundary_size.x
 	if pet.global_position.x < 50:
-		input_vector.x = 1.0
-	else:
-		input_vector.x = -1.0
+		walk_direction = 1.0
+	elif pet.global_position.x > screen_width - 50:
+		walk_direction = -1.0
 
 func input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:

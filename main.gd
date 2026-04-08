@@ -130,15 +130,18 @@ func _update_passthrough_box() -> void:
 	if not is_instance_valid(pet_instance):
 		return
 	
-	var pos := pet_instance.global_position
-	var padding := 50.0
+	var polygon: PackedVector2Array
+	if pet_instance.has_method("get_render_polygon"):
+		polygon = pet_instance.get_render_polygon()
+	elif pet_instance.has_method("get_render_rect"):
+		var rect: Rect2 = pet_instance.get_render_rect()
+		polygon = PackedVector2Array([
+			rect.position,
+			Vector2(rect.end.x, rect.position.y),
+			rect.end,
+			Vector2(rect.position.x, rect.end.y),
+		])
 	
-	var polygon := PackedVector2Array([
-		Vector2(pos.x - padding, pos.y - padding),
-		Vector2(pos.x + padding, pos.y - padding),
-		Vector2(pos.x + padding, pos.y + padding),
-		Vector2(pos.x - padding, pos.y + padding),
-	])
 	DisplayServer.window_set_mouse_passthrough(polygon)
 
 func _on_drag_started() -> void:

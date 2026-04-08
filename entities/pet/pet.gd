@@ -19,9 +19,20 @@ var current_state_name: String = ""
 var speed: float = 200.0            # 移动速度基数
 var eye_track_mouse: bool = true
 
+# ── 特效系统 ──
+var trail_history: Array[Vector2] = [] # 全息拖影坐标缓存数组
+var max_trail_length: int = 15         # 光晕段数
+var shockwaves: Array[Dictionary] = [] # 冲击波队列
+
+func trigger_shockwave() -> void:
+	# 双层高能震荡波，瞬间爆发
+	shockwaves.append({"local_pos": Vector2.ZERO, "radius": PET_RADIUS, "alpha": 1.0})
+	shockwaves.append({"local_pos": Vector2.ZERO, "radius": PET_RADIUS * 0.4, "alpha": 0.5})
+
 # ── 屏幕信息 (由 main.gd 设置) ──
 var screen_rect: Rect2i
 var boundary_size: Vector2  # 视口坐标系的实际边界
+var last_frame_speed: float = 0.0 # 用于捕获撞击前瞬时速度
 
 func _ready() -> void:
 	# 物理材质 (弹性)
@@ -38,6 +49,11 @@ func _ready() -> void:
 	# 开启连续碰撞检测 (防止高速穿墙)
 	continuous_cd = RigidBody2D.CCD_MODE_CAST_RAY
 	
+	# 开启刚体接触监听，用于最真实的物理“瞬时撞击”特效
+	contact_monitor = true
+	max_contacts_reported = 4
+	body_entered.connect(_on_body_entered)
+	
 	# 初始化状态机
 	_init_states()
 	
@@ -50,10 +66,11 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 
 func _init_states() -> void:
 	states = {
-		"idle": StateIdle.new(),
-		"walk": StateWalk.new(),
-		"drag": StateDrag.new(),
-		"fall": StateFall.new(),
+		"idle": preload("res://entities/pet/states/idle.gd").new(),
+		"walk": preload("res://entities/pet/states/walk.gd").new(),
+		"drag": preload("res://entities/pet/states/drag.gd").new(),
+		"fall": preload("res://entities/pet/states/fall.gd").new(),
+		"jump": preload("res://entities/pet/states/jump.gd").new()
 	}
 	for state in states.values():
 		state.pet = self
@@ -80,16 +97,73 @@ func is_mouse_on_pet() -> bool:
 func is_settled() -> bool:
 	return linear_velocity.length() < 20.0 and abs(linear_velocity.y) < 10.0
 
+func get_render_polygon() -> PackedVector2Array:
+	var points := PackedVector2Array()
+	
+	# 囊括宠物本体四角
+	var r := PET_RADIUS + 15.0
+	var pos := global_position
+	points.append(pos + Vector2(-r, -r))
+	points.append(pos + Vector2(r, -r))
+	points.append(pos + Vector2(r, r))
+	points.append(pos + Vector2(-r, r))
+	
+	# 囊括拖影历史的所有点（大幅度削减无用空白区域）
+	for t_pos in trail_history:
+		points.append(t_pos + Vector2(-r, -r))
+		points.append(t_pos + Vector2(r, -r))
+		points.append(t_pos + Vector2(r, r))
+		points.append(t_pos + Vector2(-r, r))
+		
+	# 囊括冲击波点
+	for shock in shockwaves:
+		var sr: float = shock["radius"] + 15.0
+		var s_pos = pos + shock["local_pos"]
+		points.append(s_pos + Vector2(-sr, -sr))
+		points.append(s_pos + Vector2(sr, -sr))
+		points.append(s_pos + Vector2(sr, sr))
+		points.append(s_pos + Vector2(-sr, sr))
+	
+	# 用底层极速几何算法，抽出这些框框的外层包裹线（凸包多边形）
+	return Geometry2D.convex_hull(points)
+
 # ── 主循环 ──
 
 func _process(delta: float) -> void:
 	if current_state:
 		current_state.process(delta)
+	
+	# 收集或消散残影以形成拖尾特效
+	if linear_velocity.length() > 20.0:
+		trail_history.push_front(global_position)
+		if trail_history.size() > max_trail_length:
+			trail_history.pop_back()
+	else:
+		if trail_history.size() > 0:
+			trail_history.pop_back()
+			
+	# 计算冲击波爆炸圈扩散和消散
+	var active_shocks: Array[Dictionary] = []
+	for shock in shockwaves:
+		shock["radius"] += 900.0 * delta # 冲击波迅速往外撕脱，速度极快
+		shock["alpha"] -= 2.0 * delta    # 转瞬即逝
+		if shock["alpha"] > 0:
+			active_shocks.append(shock)
+	shockwaves = active_shocks
+	
 	queue_redraw()
 
 func _physics_process(delta: float) -> void:
 	if current_state:
 		current_state.physics_process(delta)
+	
+	# 记录本帧物理速度，如果下帧发生撞击，就是参考依据
+	last_frame_speed = linear_velocity.length()
+
+func _on_body_entered(_body: Node) -> void:
+	# 只有获得极高动量猛烈砸在底盘或者墙壁时，才激荡出强大的火花
+	if last_frame_speed > 350.0:
+		trigger_shockwave()
 
 func _input(event: InputEvent) -> void:
 	if current_state:
@@ -104,13 +178,31 @@ func _input(event: InputEvent) -> void:
 
 # ── 视觉系统 ──
 
-func _update_visual_scale(delta: float) -> void:
-	# 移除形变拉伸，因为现在球体会物理滚动，拉伸会导致视觉错位和长出“刺”来。
-	# 圆形宠物就保持固定的圆比例。
-	visual_scale = Vector2.ONE
-
 func _draw() -> void:
 	# 由于不再拉伸，横纵比固定，我们可以直接使用 Godot 最安全最原生的 draw_circle
+	
+	# ── 绘制着陆冲击波特效 ──
+	for shock in shockwaves:
+		# 高科技空心雷达弧辐射
+		draw_arc(shock["local_pos"], shock["radius"], 0, TAU, 32, Color(0.1, 1.0, 0.9, shock["alpha"]), 4.0, true)
+
+	# ── 绘制科幻全息光带拖影 (丝滑慧星彩带版) ──
+	var trail_size = trail_history.size()
+	if trail_size >= 2:
+		var points = PackedVector2Array()
+		var colors = PackedColorArray()
+		for i in range(trail_size):
+			var local_pos = to_local(trail_history[i])
+			points.append(local_pos)
+			var ratio = 1.0 - float(i) / trail_size
+			colors.append(Color(0.2, 0.8, 1.0, ratio * 0.7))
+			
+			# 高级质感秘诀：在线性轨迹上垫底画一溜递减的半透明发光盘，能模拟出完美“头大尾细”的光绘粗细质感
+			var fade_radius = PET_RADIUS * ratio * 0.85
+			draw_circle(local_pos, fade_radius, Color(0.1, 0.6, 1.0, ratio * 0.15))
+			
+		# 最后用高聚焦光束线描绘骨干
+		draw_polyline_colors(points, colors, PET_RADIUS * 0.5, true)
 	
 	# ── 科幻单眼结构 (带同轴旋转滚动的视觉效果依然保留) ──
 	# 最外层深蓝包裹框

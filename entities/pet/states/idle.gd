@@ -6,13 +6,10 @@ extends PetState
 var idle_timer: float = 0.0
 var idle_duration: float = 0.0
 
-# 呼吸动画
-var breath_time: float = 0.0
-
 func enter() -> void:
-	idle_duration = randf_range(2.0, 5.0)
+	# 闲置时间大幅压缩，彻底表现出“不停歇”的多动机制
+	idle_duration = randf_range(0.3, 1.5)
 	idle_timer = 0.0
-	breath_time = 0.0
 	# 减缓速度
 	if pet:
 		pet.linear_damp = 1.0
@@ -23,14 +20,13 @@ func exit() -> void:
 		pet.linear_damp = 0.5
 
 func process(delta: float) -> void:
-	breath_time += delta
-	# 呼吸缩放效果由 pet_visuals 处理
-	
 	idle_timer += delta
 	if idle_timer >= idle_duration:
-		# 只在落地时才会走动
-		if pet.is_settled():
+		# 随机多巴胺路由选择
+		if randf() > 0.35:
 			pet.transition_to("walk")
+		else:
+			pet.transition_to("jump")
 
 func physics_process(_delta: float) -> void:
 	# 检查是否还在空中（被弹飞等情况）
