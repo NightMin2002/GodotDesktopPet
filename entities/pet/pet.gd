@@ -18,19 +18,20 @@ var current_state: PetState
 var current_state_name: String = ""
 var speed: float = 200.0            # 移动速度基数
 var eye_track_mouse: bool = true
+var hue_time: float = 0.0           # 供虹彩渐变使用的时间戳
 
 # ── 特效系统 ──
 var trail_history: Array[Vector2] = [] # 全息拖影坐标缓存数组
 var max_trail_length: int = 15         # 光晕段数
 var shockwaves: Array[Dictionary] = [] # 冲击波队列
 
+func get_shockwaves_count() -> int:
+	return shockwaves.size()
+
 func trigger_shockwave() -> void:
-	# 取当前时间的色相，让每次撞的颜色不一样
-	var clash_hue = fmod(Time.get_ticks_msec() / 1000.0, 1.0)
-	var clash_color = Color.from_hsv(clash_hue, 0.85, 1.0)
 	# 双层高能震荡波，瞬间爆发
-	shockwaves.append({"local_pos": Vector2.ZERO, "radius": PET_RADIUS, "alpha": 1.0, "color": clash_color})
-	shockwaves.append({"local_pos": Vector2.ZERO, "radius": PET_RADIUS * 0.4, "alpha": 0.5, "color": clash_color})
+	shockwaves.append({"local_pos": Vector2.ZERO, "radius": PET_RADIUS, "alpha": 1.0})
+	shockwaves.append({"local_pos": Vector2.ZERO, "radius": PET_RADIUS * 0.4, "alpha": 0.5})
 
 # ── 屏幕信息 (由 main.gd 设置) ──
 var screen_rect: Rect2i
@@ -100,35 +101,27 @@ func is_mouse_on_pet() -> bool:
 func is_settled() -> bool:
 	return linear_velocity.length() < 20.0 and abs(linear_velocity.y) < 10.0
 
-func get_render_polygon() -> PackedVector2Array:
-	var points := PackedVector2Array()
+func get_render_rect() -> Rect2:
+	# 初始框定宠物本体
+	var rect := Rect2(global_position - Vector2(PET_RADIUS, PET_RADIUS), Vector2(PET_RADIUS * 2.0, PET_RADIUS * 2.0))
 	
-	# 囊括宠物本体四角
-	var r := PET_RADIUS + 15.0
-	var pos := global_position
-	points.append(pos + Vector2(-r, -r))
-	points.append(pos + Vector2(r, -r))
-	points.append(pos + Vector2(r, r))
-	points.append(pos + Vector2(-r, r))
-	
-	# 囊括拖影历史的所有点（大幅度削减无用空白区域）
-	for t_pos in trail_history:
-		points.append(t_pos + Vector2(-r, -r))
-		points.append(t_pos + Vector2(r, -r))
-		points.append(t_pos + Vector2(r, r))
-		points.append(t_pos + Vector2(-r, r))
+	# 囊括长长的拖影尾巴
+	for pos in trail_history:
+		rect = rect.expand(pos + Vector2(PET_RADIUS, PET_RADIUS))
+		rect = rect.expand(pos - Vector2(PET_RADIUS, PET_RADIUS))
 		
-	# 囊括冲击波点
+	# 囊括所有的爆炸冲击波（注意：冲击波位置目前位于 local_pos）
 	for shock in shockwaves:
 		var sr: float = shock["radius"] + 15.0
-		var s_pos = pos + shock["local_pos"]
-		points.append(s_pos + Vector2(-sr, -sr))
-		points.append(s_pos + Vector2(sr, -sr))
-		points.append(s_pos + Vector2(sr, sr))
-		points.append(s_pos + Vector2(-sr, sr))
+		var s_pos = global_position + shock["local_pos"]
+		rect = rect.expand(s_pos + Vector2(sr, sr))
+		rect = rect.expand(s_pos - Vector2(sr, sr))
+		
+	# 加入外扩安全边界像素，确保抗锯齿边缘光斑不会贴墙被裁剪
+	rect.position -= Vector2(10, 10)
+	rect.size += Vector2(20, 20)
 	
-	# 用底层极速几何算法，抽出这些框框的外层包裹线（凸包多边形）
-	return Geometry2D.convex_hull(points)
+	return rect
 
 # ── 主循环 ──
 
@@ -145,11 +138,13 @@ func _process(delta: float) -> void:
 		if trail_history.size() > 0:
 			trail_history.pop_back()
 			
+	hue_time += delta * 0.3 # 让颜色慢慢随时间漂移
+	
 	# 计算冲击波爆炸圈扩散和消散
 	var active_shocks: Array[Dictionary] = []
 	for shock in shockwaves:
-		shock["radius"] += 450.0 * delta # 冲击波削弱威力，扩散速度减半
-		shock["alpha"] -= 2.5 * delta    # 消散速度加快
+		shock["radius"] += 400.0 * delta # 冲击波减弱扩散范围，更加收敛
+		shock["alpha"] -= 1.8 * delta    # 消散速度
 		if shock["alpha"] > 0:
 			active_shocks.append(shock)
 	shockwaves = active_shocks
@@ -184,38 +179,30 @@ func _input(event: InputEvent) -> void:
 func _draw() -> void:
 	# 由于不再拉伸，横纵比固定，我们可以直接使用 Godot 最安全最原生的 draw_circle
 	
-	# ── 绘制着陆冲击波特效 ──
+	# ── 绘制着陆虹彩冲击波特效 ──
 	for shock in shockwaves:
+		var effect_color = Color.from_hsv(fmod(hue_time, 1.0), 0.6, 1.0, shock["alpha"])
 		# 高科技空心雷达弧辐射
-		var c: Color = shock["color"]
-		c.a = shock["alpha"]
-		draw_arc(shock["local_pos"], shock["radius"], 0, TAU, 32, c, 4.0, true)
+		draw_arc(shock["local_pos"], shock["radius"], 0, TAU, 32, effect_color, 4.0, true)
 
-	# ── 绘制科幻全息光带拖影 (丝滑慧星虹彩版) ──
+	# ── 绘制科幻全息光带拖影 (丝滑慧星彩带版) ──
 	var trail_size = trail_history.size()
 	if trail_size >= 2:
 		var points = PackedVector2Array()
 		var colors = PackedColorArray()
-		var time_sec = Time.get_ticks_msec() / 1000.0
-		
 		for i in range(trail_size):
 			var local_pos = to_local(trail_history[i])
 			points.append(local_pos)
 			var ratio = 1.0 - float(i) / trail_size
 			
-			# HSB 虹彩计算：时间和拖尾位置联合形成流动的渐变色
-			var hue = fmod(time_sec * 0.6 + float(i) / float(max_trail_length) * 0.8, 1.0)
-			var iri_color = Color.from_hsv(hue, 0.85, 1.0)
+			# HSL 颜色空间：hue随时间加随粒子尾巴顺延发生偏转，产生五光十色的神圣尾迹！
+			var trail_color = Color.from_hsv(fmod(hue_time + ratio * 0.3, 1.0), 0.65, 1.0, ratio * 0.7)
+			colors.append(trail_color)
 			
-			var line_col = iri_color
-			line_col.a = ratio * 0.7
-			colors.append(line_col)
-			
-			# 高级质感秘诀：在线性轨迹上垫底画一溜递减的半透明发光盘，能模拟出完美“头大尾细”的光绘粗细质感
 			var fade_radius = PET_RADIUS * ratio * 0.85
-			var cir_col = iri_color
-			cir_col.a = ratio * 0.15
-			draw_circle(local_pos, fade_radius, cir_col)
+			var core_color = trail_color
+			core_color.a = ratio * 0.15
+			draw_circle(local_pos, fade_radius, core_color)
 			
 		# 最后用高聚焦光束线描绘骨干
 		draw_polyline_colors(points, colors, PET_RADIUS * 0.5, true)

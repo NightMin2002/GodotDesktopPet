@@ -109,6 +109,8 @@ func _spawn_pet() -> void:
 
 # ── 鼠标穿透管理 ──
 
+var last_passthrough_rect: Rect2i
+
 func _process(_delta: float) -> void:
 	if is_dragging or is_menu_open:
 		return
@@ -124,23 +126,40 @@ func _update_passthrough_state() -> void:
 		])
 		DisplayServer.window_set_mouse_passthrough(full)
 	else:
+		last_passthrough_rect = Rect2i()
 		_update_passthrough_box()
 
 func _update_passthrough_box() -> void:
 	if not is_instance_valid(pet_instance):
 		return
 	
-	var polygon: PackedVector2Array
-	if pet_instance.has_method("get_render_polygon"):
-		polygon = pet_instance.get_render_polygon()
-	elif pet_instance.has_method("get_render_rect"):
-		var rect: Rect2 = pet_instance.get_render_rect()
-		polygon = PackedVector2Array([
-			rect.position,
-			Vector2(rect.end.x, rect.position.y),
-			rect.end,
-			Vector2(rect.position.x, rect.end.y),
-		])
+	var exact_rect: Rect2
+	if pet_instance.has_method("get_render_rect"):
+		exact_rect = pet_instance.get_render_rect()
+	else:
+		var pos := pet_instance.global_position
+		exact_rect = Rect2(pos - Vector2(50, 50), Vector2(100, 100))
+	
+	# 这里是终极秘诀：把浮点级的渲染框，对齐到底层 8 像素的栅格中
+	# 这样一来，只有当特效或实体的包围盒真正跨越了 8 像素边界时，才会惊动 Windows 系统
+	# 既完美消除了拖影的渲染裁剪，又 100% 杜绝了 DWM 底层每秒 60 次的无意义刷新卡顿！
+	var snapped_x = int(exact_rect.position.x / 8.0) * 8
+	var snapped_y = int(exact_rect.position.y / 8.0) * 8
+	var snapped_w = int(exact_rect.size.x / 8.0) * 8 + 16
+	var snapped_h = int(exact_rect.size.y / 8.0) * 8 + 16
+	var current_rect_i = Rect2i(snapped_x, snapped_y, snapped_w, snapped_h)
+	
+	if current_rect_i == last_passthrough_rect:
+		return
+		
+	last_passthrough_rect = current_rect_i
+	
+	var polygon := PackedVector2Array([
+		current_rect_i.position,
+		Vector2(current_rect_i.end.x, current_rect_i.position.y),
+		current_rect_i.end,
+		Vector2(current_rect_i.position.x, current_rect_i.end.y),
+	])
 	
 	DisplayServer.window_set_mouse_passthrough(polygon)
 
