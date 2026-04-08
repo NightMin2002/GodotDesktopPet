@@ -33,8 +33,6 @@ func update(delta: float) -> void:
 
 ## 获取当前瞳孔相对于眼球中心的偏移量 (已含游走/追踪插值)
 func get_pupil_offset() -> Vector2:
-	if not tracking_enabled:
-		return Vector2.ZERO
 	return _pupil_pos
 
 ## 获取当前虹膜闭合程度 (0.0 = 完全睁开, 1.0 = 闭合峰值)
@@ -44,9 +42,9 @@ func get_blink_amount() -> float:
 	# sin 曲线让闭合/张开运动自然柔和
 	return sin(_blink_progress * PI)
 
-## 返回 true 表示眼球正在产生视觉变化（供按需 redraw 判断）
+## 眼球始终活跃（游走 + 眨眼永远在运行）
 func is_animating() -> bool:
-	return _is_blinking or tracking_enabled
+	return true
 
 # ── 内部逻辑 ──
 
@@ -59,17 +57,12 @@ func _update_idle_detection(delta: float) -> void:
 		_mouse_idle_time += delta
 
 func _update_pupil(delta: float) -> void:
-	if not tracking_enabled:
-		# 追踪关闭时瞳孔归位
-		_pupil_pos = _pupil_pos.lerp(Vector2.ZERO, delta * 5.0)
-		return
-	
 	var max_offset = pet.PET_RADIUS * 0.2
 	var target: Vector2
 	var lerp_speed: float
 	
-	if _mouse_idle_time > MOUSE_IDLE_THRESHOLD:
-		# ③ 鼠标闲置 → 瞳孔开始好奇地自主游走
+	# 追踪关闭 或 鼠标闲置 → 好奇游走模式
+	if not tracking_enabled or _mouse_idle_time > MOUSE_IDLE_THRESHOLD:
 		_wander_timer -= delta
 		if _wander_timer <= 0:
 			var angle = randf() * TAU
@@ -79,7 +72,7 @@ func _update_pupil(delta: float) -> void:
 		target = _wander_target
 		lerp_speed = 2.0  # 慢悠悠地好奇张望
 	else:
-		# ① 鼠标活跃 → 紧锁瞳孔追踪
+		# 鼠标活跃且追踪开启 → 紧锁瞳孔追踪
 		var to_mouse = pet.get_local_mouse_position().normalized()
 		target = to_mouse * max_offset
 		lerp_speed = 12.0

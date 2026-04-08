@@ -88,9 +88,9 @@ func _setup_system_tray() -> void:
 		)
 		add_child(tray_menu)
 		
-		# 在 Godot 4.3+ 中，menu 属性通常要求提供 NodePath 或者是直接引用（视具体小版本定义）
-		tray.menu = tray_menu.get_path()
+		# 必须先将 tray 加入场景树，再设置 menu 路径 (否则 get_path 会因为不在树中报错)
 		add_child(tray)
+		tray.menu = tray_menu.get_path()
 		print("[DesktopPet] 系统托盘托管成功启动！")
 
 # ── 窗口设置 ──
