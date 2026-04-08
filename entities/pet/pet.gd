@@ -133,13 +133,16 @@ func _process(delta: float) -> void:
 		current_state.process(delta)
 	
 	# 收集或消散残影以形成拖尾特效
+	var has_visual_change := false
 	if linear_velocity.length() > 20.0:
 		trail_history.push_front(global_position)
 		if trail_history.size() > max_trail_length:
 			trail_history.pop_back()
+		has_visual_change = true
 	else:
 		if trail_history.size() > 0:
 			trail_history.pop_back()
+			has_visual_change = true
 			
 	hue_time += delta * 0.3 # 让颜色慢慢随时间漂移
 	
@@ -150,9 +153,15 @@ func _process(delta: float) -> void:
 		shock["alpha"] -= 1.8 * delta    # 消散速度
 		if shock["alpha"] > 0:
 			active_shocks.append(shock)
+	if shockwaves.size() > 0:
+		has_visual_change = true
 	shockwaves = active_shocks
 	
-	queue_redraw()
+	# 按需重绘：有特效活跃、有速度变化、或物理运动中时才刷新画面
+	# 静止闲置时跳过 draw call 可显著减少 DWM 合成压力
+	# 注意：开启瞳孔追踪时，鼠标移动也得触发重绘，否则眼球会冻结
+	if has_visual_change or linear_velocity.length() > 1.0 or eye_track_mouse:
+		queue_redraw()
 
 func _physics_process(delta: float) -> void:
 	if current_state:

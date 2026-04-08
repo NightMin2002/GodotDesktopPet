@@ -14,6 +14,10 @@ var win_manager: Node
 var ghost_walls: Array[StaticBody2D] = []
 
 func _ready() -> void:
+	# ── 性能调频 ──
+	Engine.max_fps = 120
+	Engine.physics_ticks_per_second = 120
+	
 	_setup_window()
 	# 等几帧，确保窗口和视口尺寸完全同步
 	await get_tree().process_frame
@@ -26,10 +30,15 @@ func _ready() -> void:
 		win_manager = load("res://interop/WindowsManager.cs").new()
 		add_child(win_manager)
 		
-		# [新增指令]：通知操作系统把这个程序从底部任务栏抹掉
+		# 通知操作系统把这个程序从底部任务栏抹掉
 		if win_manager.has_method("HideFromTaskbar"):
 			win_manager.call("HideFromTaskbar")
 			print("[DesktopPet] 已切入暗影模式：任务栏图标已擦除")
+		
+		# 提升进程优先级，对抗游戏等高占用程序的 CPU/GPU 资源抢夺
+		if win_manager.has_method("BoostProcessPriority"):
+			win_manager.call("BoostProcessPriority")
+			print("[DesktopPet] 进程优先级已提升至 Above Normal")
 		
 		# 开启神级同步雷达 (每 0.1s 侦测一次全体桌面窗口变化)
 		var sync_timer = Timer.new()
@@ -292,11 +301,18 @@ func _spawn_pet() -> void:
 # ── 鼠标穿透管理 ──
 
 var last_passthrough_rect: Rect2i
+var _passthrough_timer: float = 0.0
+# 穿透区域刷新限流：DWM 重组合是头号性能杀手;
+# 渲染跑 120fps，穿透检测只需 ~60hz 即可（延迟 ≤16ms 人眼不可感知）
+const PASSTHROUGH_INTERVAL := 0.016
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if is_dragging or is_menu_open:
 		return
-	_update_passthrough_box()
+	_passthrough_timer += delta
+	if _passthrough_timer >= PASSTHROUGH_INTERVAL:
+		_passthrough_timer = 0.0
+		_update_passthrough_box()
 
 func _update_passthrough_state() -> void:
 	if is_dragging or is_menu_open:

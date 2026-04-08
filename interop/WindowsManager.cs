@@ -54,6 +54,14 @@ public partial class WindowsManager : Node
     private const int WS_EX_TOOLWINDOW = 0x00000080;
     private const int WS_EX_APPWINDOW = 0x00040000;
 
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetCurrentProcess();
+
+    [DllImport("kernel32.dll")]
+    private static extern bool SetPriorityClass(IntPtr hProcess, uint dwPriorityClass);
+
+    private const uint ABOVE_NORMAL_PRIORITY_CLASS = 0x00008000;
+
     private uint _myProcessId;
     private IntPtr _shellWindow;
 
@@ -62,6 +70,14 @@ public partial class WindowsManager : Node
         // 获取当前运行时的进程 ID（但无法彻底防御你在使用编辑器预览时的编辑器窗口）
         _myProcessId = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
         _shellWindow = GetShellWindow();
+    }
+
+    /// <summary>
+    /// 将进程优先级提升至 Above Normal，对抗游戏等高占用程序的资源抢夺
+    /// </summary>
+    public void BoostProcessPriority()
+    {
+        SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
     }
 
     /// <summary>
