@@ -12,3 +12,8 @@ signal pet_state_changed(old_state: String, new_state: String)
 # ── IPC 相关 (预留) ──
 signal ipc_message_received(data: Dictionary)
 signal task_completed(task_name: String)
+
+# ── UI 相关 ──
+signal show_context_menu(target_node: Node2D)
+signal context_menu_toggled(is_open: bool)
+signal setting_toggled(setting_id: String, is_on: bool)

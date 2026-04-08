@@ -7,6 +7,7 @@ var pet_instance: RigidBody2D
 var screen_rect: Rect2i
 var boundary_size: Vector2  # 实际使用的边界尺寸 (视口坐标系)
 var is_dragging := false
+var is_menu_open := false
 
 func _ready() -> void:
 	_setup_window()
@@ -18,6 +19,7 @@ func _ready() -> void:
 	
 	EventBus.drag_started.connect(_on_drag_started)
 	EventBus.drag_ended.connect(_on_drag_ended)
+	EventBus.context_menu_toggled.connect(_on_context_menu_toggled)
 
 # ── 窗口设置 ──
 
@@ -108,11 +110,23 @@ func _spawn_pet() -> void:
 # ── 鼠标穿透管理 ──
 
 func _process(_delta: float) -> void:
-	if is_dragging:
+	if is_dragging or is_menu_open:
 		return
-	_update_passthrough()
+	_update_passthrough_box()
 
-func _update_passthrough() -> void:
+func _update_passthrough_state() -> void:
+	if is_dragging or is_menu_open:
+		var full := PackedVector2Array([
+			Vector2.ZERO,
+			Vector2(boundary_size.x, 0),
+			Vector2(boundary_size.x, boundary_size.y),
+			Vector2(0, boundary_size.y),
+		])
+		DisplayServer.window_set_mouse_passthrough(full)
+	else:
+		_update_passthrough_box()
+
+func _update_passthrough_box() -> void:
 	if not is_instance_valid(pet_instance):
 		return
 	
@@ -129,13 +143,12 @@ func _update_passthrough() -> void:
 
 func _on_drag_started() -> void:
 	is_dragging = true
-	var full := PackedVector2Array([
-		Vector2.ZERO,
-		Vector2(boundary_size.x, 0),
-		Vector2(boundary_size.x, boundary_size.y),
-		Vector2(0, boundary_size.y),
-	])
-	DisplayServer.window_set_mouse_passthrough(full)
+	_update_passthrough_state()
 
 func _on_drag_ended() -> void:
 	is_dragging = false
+	_update_passthrough_state()
+
+func _on_context_menu_toggled(is_open: bool) -> void:
+	is_menu_open = is_open
+	_update_passthrough_state()

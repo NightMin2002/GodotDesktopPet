@@ -22,9 +22,11 @@ project.godot              # 项目配置 (透明窗口 + Compatibility 渲染�
 main.tscn / main.gd        # 启动场景: 窗口设置 + 边界墙 + 宠物生成 + 鼠标穿透
 core/
   event_bus.gd              # Autoload 全局事件总线
+ui/
+  context_menu.tscn/gd      # 右键控制全息追踪面板
 entities/pet/
   pet.tscn                  # RigidBody2D + CircleShape2D (r=30)
-  pet.gd                    # 宠物控制器: FSM + 输入 + _draw() 占位符视觉
+  pet.gd                    # 宠物控制器: FSM + 输入 + _draw() 科幻单眼渲染
   states/
     state.gd                # PetState 基类 (RefCounted): enter/exit/process/physics_process/input
     idle.gd                 # StateIdle: 呼吸动画, 2~5s后→Walk
@@ -58,16 +60,15 @@ docs/                       # 项目文档
 - 预留信号: `ipc_message_received`, `task_completed`
 
 ## 当前状态
-- ✅ 透明窗口 + 鼠标穿透
-- ✅ 物理掉落 + 弹跳 + 边界反弹
+- ✅ 透明窗口 + 鼠标穿透 (包含边缘区域收缩防锁死逻辑)
+- ✅ 物理掉落 + 弹跳 + 滚轴驱动 + 边界反弹
 - ✅ 弹簧力拖拽
 - ✅ 4 状态 FSM (Idle/Walk/Drag/Fall)
-- ✅ 占位符史莱姆视觉 (眼球追踪 + 呼吸 + 压缩拉伸)
-- ❌ 美术资源 (目前用 _draw() 占位符)
+- ✅ 实时定位全息 HUD 设置面板 (极客像素风)
+- ✅ 科幻单眼视觉层 (鼠标瞳孔追踪体系)
 - ❌ IPC 联动 (WebSocket 预留)
 - ❌ 音效系统
 - ❌ 存档系统
-- ❌ 右键菜单 / UI
 
 ## 开发规则
 1. 单文件不超过 200 行，超过就拆分

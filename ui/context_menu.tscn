@@ -1,0 +1,42 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://ui/context_menu.gd" id="1_cm"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hud"]
+bg_color = Color(0.04, 0.08, 0.16, 0.85)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.1, 0.8, 1.0, 1)
+corner_detail = 1
+anti_aliasing = false
+
+[node name="ContextMenuLayer" type="CanvasLayer"]
+layer = 100
+script = ExtResource("1_cm")
+
+[node name="HUDPanel" type="PanelContainer" parent="."]
+visible = false
+offset_right = 160.0
+offset_bottom = 50.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_hud")
+
+[node name="Margin" type="MarginContainer" parent="HUDPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="VBox" type="VBoxContainer" parent="HUDPanel/Margin"]
+layout_mode = 2
+
+[node name="EyeTrackBtn" type="Button" parent="HUDPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_hover_color = Color(0.1, 1, 0.9, 1)
+theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 14
+text = "[X] 眼睛跟随鼠标"
+flat = true
+alignment = 0

@@ -33,17 +33,16 @@ func physics_process(_delta: float) -> void:
 		pet.transition_to("fall")
 		return
 	
-	# 施加水平行走力
-	pet.apply_central_force(Vector2(walk_direction * walk_force, 0))
+	# 施加滚动扭矩和推力
+	pet.apply_torque(walk_direction * 60000.0) # 增大扭矩，让滚动幅度非常明显
+	pet.apply_central_force(Vector2(walk_direction * walk_force * 0.3, 0)) # 略微降低纯平移，让动力主要源自旋转带动
 	
 	# 碰到屏幕边缘就转向
 	var screen_width = pet.boundary_size.x
 	if pet.global_position.x < 50:
-		walk_direction = 1.0
-		pet.facing_direction = 1.0
-	elif pet.global_position.x > screen_width - 50:
-		walk_direction = -1.0
-		pet.facing_direction = -1.0
+		input_vector.x = 1.0
+	else:
+		input_vector.x = -1.0
 
 func input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:

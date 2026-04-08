@@ -13,9 +13,10 @@ func enter() -> void:
 	idle_duration = randf_range(2.0, 5.0)
 	idle_timer = 0.0
 	breath_time = 0.0
-	# 减速停下
+	# 减缓速度
 	if pet:
-		pet.linear_damp = 3.0
+		pet.linear_damp = 1.0
+		pet.angular_damp = 1.5
 
 func exit() -> void:
 	if pet:
