@@ -9,6 +9,10 @@ var boundary_size: Vector2  # 实际使用的边界尺寸 (视口坐标系)
 var is_dragging := false
 var is_menu_open := false
 
+# -- 双端架构 C# 桥接池 --
+var win_manager: Node
+var ghost_walls: Array[StaticBody2D] = []
+
 func _ready() -> void:
 	_setup_window()
 	# 等几帧，确保窗口和视口尺寸完全同步
@@ -16,6 +20,19 @@ func _ready() -> void:
 	await get_tree().process_frame
 	_create_boundaries()
 	_spawn_pet()
+	
+	# 装载 C# 外挂底层
+	if ResourceLoader.exists("res://interop/WindowsManager.cs"):
+		win_manager = load("res://interop/WindowsManager.cs").new()
+		add_child(win_manager)
+		
+		# 开启神级同步雷达 (每 0.1s 侦测一次全体桌面窗口变化)
+		var sync_timer = Timer.new()
+		sync_timer.wait_time = 0.1
+		sync_timer.autostart = true
+		sync_timer.timeout.connect(_sync_ghost_walls)
+		add_child(sync_timer)
+		print("[DesktopPet] C# Interop 幽灵侦测雷达已启动！")
 	
 	EventBus.drag_started.connect(_on_drag_started)
 	EventBus.drag_ended.connect(_on_drag_ended)
@@ -91,6 +108,64 @@ func _add_wall(pos: Vector2, size: Vector2) -> void:
 	
 	wall.add_child(collision)
 	add_child(wall)
+
+# ── 幽灵系统架构 (Win32 API Mapper) ──
+
+func _sync_ghost_walls() -> void:
+	if not is_instance_valid(win_manager): return
+	
+	# 从 C# DLL 中直接抽出操作系统内存级的桌面窗口边界数据
+	var rects: Array = win_manager.call("GetVisibleWindowRects")
+	var count = rects.size()
+	
+	# 动态伸缩对象池，防止高频 new/free 造成性能崩塌
+	while ghost_walls.size() < count:
+		var wall = StaticBody2D.new()
+		
+		# 顶部标题栏踏板
+		var col_top = CollisionShape2D.new()
+		col_top.shape = RectangleShape2D.new()
+		col_top.one_way_collision = true
+		wall.add_child(col_top)
+		
+		# 底部边缘踏板
+		var col_bottom = CollisionShape2D.new()
+		col_bottom.shape = RectangleShape2D.new()
+		col_bottom.one_way_collision = true
+		wall.add_child(col_bottom)
+		
+		var mat = PhysicsMaterial.new()
+		mat.bounce = 0.2
+		mat.friction = 0.8
+		wall.physics_material_override = mat
+		
+		add_child(wall)
+		ghost_walls.append(wall)
+		
+	while ghost_walls.size() > count:
+		var wall = ghost_walls.pop_back()
+		wall.queue_free()
+		
+	# 实体化映射墙面
+	for i in range(count):
+		var desk_rect = rects[i] as Rect2i
+		# 从操作系统全局桌面坐标，映射回游戏引擎相对自身主屏幕的坐标矩阵
+		var local_pos = Vector2(desk_rect.position.x - screen_rect.position.x, desk_rect.position.y - screen_rect.position.y)
+		var local_size = Vector2(desk_rect.size.x, desk_rect.size.y)
+		
+		var wall = ghost_walls[i]
+		wall.position = local_pos + local_size / 2.0
+		var floor_thickness = 10.0
+		
+		# 更新顶部标题栏位置（相对于墙体中心上移）
+		var shape_top = wall.get_child(0) as CollisionShape2D
+		shape_top.position = Vector2(0, -local_size.y / 2.0 + floor_thickness / 2.0)
+		(shape_top.shape as RectangleShape2D).size = Vector2(local_size.x, floor_thickness)
+		
+		# 更新底部边缘位置（相对于墙体中心下移）
+		var shape_bottom = wall.get_child(1) as CollisionShape2D
+		shape_bottom.position = Vector2(0, local_size.y / 2.0 - floor_thickness / 2.0)
+		(shape_bottom.shape as RectangleShape2D).size = Vector2(local_size.x, floor_thickness)
 
 # ── 宠物实例化 ──
 
