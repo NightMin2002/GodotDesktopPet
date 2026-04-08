@@ -2,6 +2,7 @@ using Godot;
 using System;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
+using Microsoft.Win32;
 
 public partial class WindowsManager : Node
 {
@@ -78,6 +79,45 @@ public partial class WindowsManager : Node
     public void BoostProcessPriority()
     {
         SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
+    }
+
+    private const string AutoStartKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string AutoStartName = "DesktopPet";
+
+    /// <summary>
+    /// 检测当前是否已注册开机自启动
+    /// </summary>
+    public bool IsAutoStartEnabled()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(AutoStartKey, false);
+            return key?.GetValue(AutoStartName) != null;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// 设置/移除开机自启动注册表项
+    /// </summary>
+    public void SetAutoStart(bool enabled)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(AutoStartKey, true);
+            if (key == null) return;
+            if (enabled)
+            {
+                var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ?? "";
+                if (!string.IsNullOrEmpty(exePath))
+                    key.SetValue(AutoStartName, $"\"{exePath}\"");
+            }
+            else
+            {
+                key.DeleteValue(AutoStartName, false);
+            }
+        }
+        catch { /* 权限不足时静默 */ }
     }
 
     /// <summary>

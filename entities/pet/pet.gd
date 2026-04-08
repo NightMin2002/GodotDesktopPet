@@ -40,6 +40,7 @@ func trigger_shockwave() -> void:
 var screen_rect: Rect2i
 var boundary_size: Vector2  # 视口坐标系的实际边界
 var last_frame_speed: float = 0.0 # 用于捕获撞击前瞬时速度
+var overlay_rect: Rect2 = Rect2() # 外部覆盖层的屏幕区域 (气泡通知等)
 
 func _ready() -> void:
 	# 物理材质 (弹性)
@@ -68,7 +69,11 @@ func _ready() -> void:
 	eye_behavior = EyeBehavior.new()
 	eye_behavior.pet = self
 	
-	# 监听设置变更
+	# 从持久化存储恢复设置 (不依赖信号时序)
+	eye_behavior.tracking_enabled = SettingsManager.get_bool("eye_track", true)
+	shockwave_enabled = SettingsManager.get_bool("shockwave", true)
+	
+	# 监听运行时设置变更
 	EventBus.setting_toggled.connect(_on_setting_toggled)
 
 func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
@@ -129,6 +134,10 @@ func get_render_rect() -> Rect2:
 	# 加入外扩安全边界像素，确保抗锯齿边缘光斑不会贴墙被裁剪
 	rect.position -= Vector2(10, 10)
 	rect.size += Vector2(20, 20)
+	
+	# 合并外部覆盖层区域 (如气泡通知)
+	if overlay_rect.size != Vector2.ZERO:
+		rect = rect.merge(overlay_rect)
 	
 	return rect
 

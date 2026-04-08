@@ -18,39 +18,43 @@ func _ready() -> void:
 	Engine.max_fps = 120
 	Engine.physics_ticks_per_second = 120
 	
-	_setup_window()
-	# 等几帧，确保窗口和视口尺寸完全同步
-	await get_tree().process_frame
-	await get_tree().process_frame
-	_create_boundaries()
-	_spawn_pet()
-	
-	# 装载 C# 外挂底层
+	# ── C# 底层桥接 (先加载，用于提权) ──
 	if ResourceLoader.exists("res://interop/WindowsManager.cs"):
 		win_manager = load("res://interop/WindowsManager.cs").new()
 		add_child(win_manager)
-		
-		# 通知操作系统把这个程序从底部任务栏抹掉
-		if win_manager.has_method("HideFromTaskbar"):
-			win_manager.call("HideFromTaskbar")
-			print("[DesktopPet] 已切入暗影模式：任务栏图标已擦除")
-		
-		# 提升进程优先级，对抗游戏等高占用程序的 CPU/GPU 资源抢夺
 		if win_manager.has_method("BoostProcessPriority"):
 			win_manager.call("BoostProcessPriority")
-			print("[DesktopPet] 进程优先级已提升至 Above Normal")
-		
-		# 开启神级同步雷达 (每 0.1s 侦测一次全体桌面窗口变化)
+	
+	# 双保险：设置窗口前先隐藏，防止任务栏闪烁
+	get_window().visible = false
+	
+	_setup_window()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	
+	# 窗口完全就绪后推 ToolWindow 标记，再恢复可见
+	if win_manager and win_manager.has_method("HideFromTaskbar"):
+		win_manager.call("HideFromTaskbar")
+	get_window().visible = true
+	
+	_create_boundaries()
+	_spawn_pet()
+	
+	# 启动幽灵墙同步雷达
+	if win_manager:
 		var sync_timer = Timer.new()
 		sync_timer.wait_time = 0.1
 		sync_timer.autostart = true
 		sync_timer.timeout.connect(_sync_ghost_walls)
 		add_child(sync_timer)
-		print("[DesktopPet] C# Interop 幽灵侦测雷达已启动！")
+		print("[DesktopPet] 幽灵侦测雷达已启动")
 	
 	EventBus.drag_started.connect(_on_drag_started)
 	EventBus.drag_ended.connect(_on_drag_ended)
 	EventBus.context_menu_toggled.connect(_on_context_menu_toggled)
+	
+	# 挂载提醒系统
+	_setup_reminder_system()
 	
 	_setup_system_tray()
 
@@ -297,6 +301,25 @@ func _spawn_pet() -> void:
 	add_child(pet_instance)
 	
 	print("[DesktopPet] 宠物生成于: ", pet_instance.position)
+
+# ── 提醒系统 ──
+
+func _setup_reminder_system() -> void:
+	# 提醒管理面板 (CanvasLayer，自带 UI)
+	var panel_script = load("res://ui/reminder_panel.gd")
+	if panel_script:
+		var panel_node = CanvasLayer.new()
+		panel_node.set_script(panel_script)
+		add_child(panel_node)
+	
+	# 气泡通知 (CanvasLayer，跟随宠物头顶)
+	var bubble_script = load("res://ui/reminder_bubble.gd")
+	if bubble_script:
+		var bubble_node = CanvasLayer.new()
+		bubble_node.set_script(bubble_script)
+		add_child(bubble_node)
+		if pet_instance and bubble_node.has_method("link_pet"):
+			bubble_node.link_pet(pet_instance)
 
 # ── 鼠标穿透管理 ──
 

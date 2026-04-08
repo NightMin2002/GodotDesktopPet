@@ -17,6 +17,7 @@ config/features=PackedStringArray("4.6", "C#", "GL Compatibility")
 [autoload]
 
 EventBus="*res://core/event_bus.gd"
+SettingsManager="*res://core/settings_manager.gd"
 
 [display]
 
