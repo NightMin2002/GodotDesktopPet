@@ -32,7 +32,8 @@ entities/pet/
     idle.gd                 # StateIdle: 呼吸动画, 2~5s后→Walk
     walk.gd                 # StateWalk: 水平力行走, 碰边转向, 1.5~4s后→Idle
     drag.gd                 # StateDrag: 弹簧力 F=kx-cv 跟随鼠标, 降低重力
-    fall.gd                 # StateFall: 自由落体, 速度<15持续0.3s→Idle
+    fall.gd                 # StateFall: 自由落体，到底瞬间释放冲击波并回 Idle
+    jump.gd                 # StateJump: 瞬间获得巨大向上偏移动量与转速，落地回 Idle
 docs/                       # 项目文档
 ```
 
@@ -60,12 +61,13 @@ docs/                       # 项目文档
 - 预留信号: `ipc_message_received`, `task_completed`
 
 ## 当前状态
-- ✅ 透明窗口 + 鼠标穿透 (包含边缘区域收缩防锁死逻辑)
-- ✅ 物理掉落 + 弹跳 + 滚轴驱动 + 边界反弹
-- ✅ 弹簧力拖拽
-- ✅ 4 状态 FSM (Idle/Walk/Drag/Fall)
-- ✅ 实时定位全息 HUD 设置面板 (极客像素风)
-- ✅ 科幻单眼视觉层 (鼠标瞳孔追踪体系)
+- ✅ 透明窗口 + 鼠标穿透 (由 Geometry2D.convex_hull 进行凸包计算防止遮挡屏幕)
+- ✅ 物理掉落 + 弹跳 + 机械滚轴 + 疯狂的跳跃驱动
+- ✅ 弹簧力拖拽与精准捕捉
+- ✅ 5 状态 FSM (Idle/Walk/Drag/Fall/Jump)
+- ✅ 实时定位全息 HUD 设置面板 (极客像风)
+- ✅ 慧星虹彩拖光流尾特效 (PackedVector2Array 实装)
+- ✅ 物理瞬间着陆辐射冲击波 (RigidBody.body_entered 实装)
 - ❌ IPC 联动 (WebSocket 预留)
 - ❌ 音效系统
 - ❌ 存档系统
