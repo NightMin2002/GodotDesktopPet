@@ -157,35 +157,32 @@ func _add_wall(pos: Vector2, size: Vector2) -> void:
 
 # ── 幽灵系统架构 (Win32 API Mapper) ──
 
+# 每条踏板最多拆分为 3 个物理分段 (应对多窗口交叠场景)
+const MAX_PLATFORM_SEGMENTS := 3
+# 宽度不足此像素的碎片分段直接丢弃 (宠物站不稳)
+const MIN_SEGMENT_WIDTH := 30.0
+
 func _sync_ghost_walls() -> void:
 	if not is_instance_valid(win_manager): return
 	
-	# 从 C# DLL 中直接抽出操作系统内存级的桌面窗口边界数据
-	# 注意：C# 层的 EnumWindows 天然返回 Z-Order 从高（前景）到低（后景）的排列
+	# 从 C# 层获取 Z-Order 从高→低排列的桌面窗口矩形
 	var rects: Array = win_manager.call("GetVisibleWindowRects")
 	var count = rects.size()
 	
-	# 动态伸缩对象池，防止高频 new/free 造成性能崩塌
+	# 动态伸缩对象池 — 每面墙 = 3 个顶部分段 + 3 个底部分段 = 6 个碰撞器
+	var children_per_wall = MAX_PLATFORM_SEGMENTS * 2
 	while ghost_walls.size() < count:
 		var wall = StaticBody2D.new()
-		
-		# 顶部标题栏踏板
-		var col_top = CollisionShape2D.new()
-		col_top.shape = RectangleShape2D.new()
-		col_top.one_way_collision = true
-		wall.add_child(col_top)
-		
-		# 底部边缘踏板
-		var col_bottom = CollisionShape2D.new()
-		col_bottom.shape = RectangleShape2D.new()
-		col_bottom.one_way_collision = true
-		wall.add_child(col_bottom)
-		
+		for k in range(children_per_wall):
+			var col = CollisionShape2D.new()
+			col.shape = RectangleShape2D.new()
+			col.one_way_collision = true
+			col.disabled = true
+			wall.add_child(col)
 		var mat = PhysicsMaterial.new()
 		mat.bounce = 0.2
 		mat.friction = 0.8
 		wall.physics_material_override = mat
-		
 		add_child(wall)
 		ghost_walls.append(wall)
 		
@@ -193,77 +190,89 @@ func _sync_ghost_walls() -> void:
 		var wall = ghost_walls.pop_back()
 		wall.queue_free()
 	
-	# 先将所有 rect 转换为本地坐标缓存，以便做遮挡计算
+	# rect 转本地坐标缓存
 	var local_rects: Array[Rect2] = []
 	for i in range(count):
 		var desk_rect = rects[i] as Rect2i
 		var lx = float(desk_rect.position.x - screen_rect.position.x)
 		var ly = float(desk_rect.position.y - screen_rect.position.y)
-		var lw = float(desk_rect.size.x)
-		var lh = float(desk_rect.size.y)
-		local_rects.append(Rect2(lx, ly, lw, lh))
+		local_rects.append(Rect2(lx, ly, float(desk_rect.size.x), float(desk_rect.size.y)))
 		
 	# 实体化映射墙面
 	var floor_thickness = 10.0
 	for i in range(count):
 		var lr = local_rects[i]
 		var wall = ghost_walls[i]
+		
+		# 兼容旧池对象热重载：确保子节点数量正确
+		while wall.get_child_count() < children_per_wall:
+			var col = CollisionShape2D.new()
+			col.shape = RectangleShape2D.new()
+			col.one_way_collision = true
+			col.disabled = true
+			wall.add_child(col)
+		
 		wall.position = lr.position + lr.size / 2.0
 		
-		# ─── 逐踏板 Z-Order 遮挡检测 ───
-		# 原理：rects 数组按 Z-Order 从高到低排列 (索引 0 = 最前景)
-		# 对于第 i 个窗口的顶/底踏板，如果有 j < i 的窗口在踏板所在的
-		# Y 坐标上与其水平范围重叠 ≥ 70%，则认为该踏板被遮挡，应禁用
-		
-		var top_y = lr.position.y                    # 顶部踏板 Y 坐标
-		var bottom_y = lr.position.y + lr.size.y     # 底部踏板 Y 坐标
+		# ─── 分段裁剪算法 ───
+		# 从完整踏板宽度出发，逐一扣除被 Z-Order 更高窗口覆盖的水平区间
+		# 剩余的暴露区间各自成为独立碰撞体
 		var win_left = lr.position.x
 		var win_right = lr.position.x + lr.size.x
-		var win_width = lr.size.x
+		var top_y = lr.position.y
+		var bottom_y = lr.position.y + lr.size.y
 		
-		var top_occluded = false
-		var bottom_occluded = false
+		var top_segs = _compute_exposed_segments(win_left, win_right, top_y, local_rects, i)
+		var bottom_segs = _compute_exposed_segments(win_left, win_right, bottom_y, local_rects, i)
 		
-		for j in range(i):
-			var hr = local_rects[j]  # 更高层级的窗口
-			var h_top = hr.position.y
-			var h_bottom = hr.position.y + hr.size.y
-			var h_left = hr.position.x
-			var h_right = hr.position.x + hr.size.x
-			
-			# 计算水平重叠区域
-			var overlap_left = maxf(win_left, h_left)
-			var overlap_right = minf(win_right, h_right)
-			var h_overlap = maxf(0.0, overlap_right - overlap_left)
-			
-			if win_width > 0 and h_overlap / win_width < 0.5:
-				continue  # 水平重叠不足 50%，不构成有效遮挡
-			
-			# 顶部踏板遮挡条件：高层窗口的垂直范围覆盖了踏板 Y 坐标
-			# (踏板在高层窗口的上下边界之间，但不能刚好是高层窗口自己的顶/底边)
-			if not top_occluded:
-				if h_top < top_y - 5.0 and h_bottom > top_y + 5.0:
-					top_occluded = true
-					
-			# 底部踏板遮挡条件：同理
-			if not bottom_occluded:
-				if h_top < bottom_y - 5.0 and h_bottom > bottom_y + 5.0:
-					bottom_occluded = true
-			
-			if top_occluded and bottom_occluded:
-				break
-		
-		# 更新顶部标题栏位置（相对于墙体中心上移）
-		var shape_top = wall.get_child(0) as CollisionShape2D
-		shape_top.position = Vector2(0, -lr.size.y / 2.0 + floor_thickness / 2.0)
-		(shape_top.shape as RectangleShape2D).size = Vector2(lr.size.x, floor_thickness)
-		shape_top.disabled = top_occluded
-		
-		# 更新底部边缘位置（相对于墙体中心下移）
-		var shape_bottom = wall.get_child(1) as CollisionShape2D
-		shape_bottom.position = Vector2(0, lr.size.y / 2.0 - floor_thickness / 2.0)
-		(shape_bottom.shape as RectangleShape2D).size = Vector2(lr.size.x, floor_thickness)
-		shape_bottom.disabled = bottom_occluded
+		# 映射分段到碰撞子节点
+		var wall_cx = lr.position.x + lr.size.x / 2.0
+		var top_rel_y = -lr.size.y / 2.0 + floor_thickness / 2.0
+		var bot_rel_y = lr.size.y / 2.0 - floor_thickness / 2.0
+		_apply_platform_segments(wall, 0, top_segs, wall_cx, top_rel_y, floor_thickness)
+		_apply_platform_segments(wall, MAX_PLATFORM_SEGMENTS, bottom_segs, wall_cx, bot_rel_y, floor_thickness)
+
+## 计算踏板在 Z-Order 遮挡裁剪后剩余的可见水平分段
+func _compute_exposed_segments(full_left: float, full_right: float, platform_y: float, all_rects: Array[Rect2], idx: int) -> Array:
+	var segs: Array = [[full_left, full_right]]
+	for j in range(idx):
+		var hr = all_rects[j]
+		# 高层窗口的上下边界必须真正"跨越"踏板 Y 坐标才构成遮挡
+		if hr.position.y < platform_y - 5.0 and hr.position.y + hr.size.y > platform_y + 5.0:
+			segs = _subtract_range(segs, hr.position.x, hr.position.x + hr.size.x)
+	# 过滤掉宽度不足以让宠物站立的碎片
+	var result: Array = []
+	for s in segs:
+		if s[1] - s[0] >= MIN_SEGMENT_WIDTH:
+			result.append(s)
+	return result.slice(0, MAX_PLATFORM_SEGMENTS)
+
+## 从一组水平区间中扣除 [cut_l, cut_r] 范围
+func _subtract_range(segs: Array, cut_l: float, cut_r: float) -> Array:
+	var out: Array = []
+	for s in segs:
+		if cut_r <= s[0] or cut_l >= s[1]:
+			out.append(s)  # 无交集，保留
+		else:
+			if s[0] < cut_l:
+				out.append([s[0], cut_l])  # 左侧残余
+			if s[1] > cut_r:
+				out.append([cut_r, s[1]])  # 右侧残余
+	return out
+
+## 将可见分段映射到碰撞体子节点，未使用的分段自动禁用
+func _apply_platform_segments(wall: StaticBody2D, child_offset: int, segs: Array, wall_cx: float, rel_y: float, thickness: float) -> void:
+	for k in range(MAX_PLATFORM_SEGMENTS):
+		var col = wall.get_child(child_offset + k) as CollisionShape2D
+		if k < segs.size():
+			var seg = segs[k]
+			var seg_cx = (seg[0] + seg[1]) / 2.0
+			col.position = Vector2(seg_cx - wall_cx, rel_y)
+			(col.shape as RectangleShape2D).size = Vector2(seg[1] - seg[0], thickness)
+			col.disabled = false
+		else:
+			col.disabled = true
+
 
 # ── 宠物实例化 ──
 
