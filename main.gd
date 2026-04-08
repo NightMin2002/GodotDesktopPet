@@ -50,17 +50,29 @@ func _setup_system_tray() -> void:
 	if ClassDB.class_exists("StatusIndicator"):
 		var tray = ClassDB.instantiate("StatusIndicator")
 		
-		# 读取图标
-		if ResourceLoader.exists("res://icon.svg"):
-			tray.icon = load("res://icon.svg")
-		elif ResourceLoader.exists("res://icon.png"):
+		# 利用运行时生成一个神级单眼光晕图标，防止因为没有放图标文件导致隐形！
+		if ResourceLoader.exists("res://icon.png"):
 			tray.icon = load("res://icon.png")
+		elif ResourceLoader.exists("res://icon.svg"):
+			tray.icon = load("res://icon.svg")
+		else:
+			var grad = Gradient.new()
+			grad.colors = PackedColorArray([Color("00ffff"), Color("001133"), Color.TRANSPARENT])
+			grad.offsets = PackedFloat32Array([0.0, 0.5, 1.0])
+			var tex = GradientTexture2D.new()
+			tex.gradient = grad
+			tex.width = 64
+			tex.height = 64
+			tex.fill = GradientTexture2D.FILL_RADIAL
+			tex.fill_from = Vector2(0.5, 0.5)
+			tex.fill_to = Vector2(0.5, 0.0)
+			tray.icon = tex
 			
-		tray.tooltip = "Godot Desktop Pet"
+		tray.tooltip = "高能机械桌面单眼"
 		
-		# 挂载专属托盘右键菜单
+		# 挂载专属托盘温馨右键菜单
 		var tray_menu = PopupMenu.new()
-		tray_menu.add_item("销毁这只宠物 (Quit)", 1)
+		tray_menu.add_item("抚摸并让它睡觉 (休眠退出)", 1)
 		tray_menu.id_pressed.connect(func(id: int):
 			if id == 1:
 				get_tree().quit()
