@@ -161,6 +161,7 @@ func _sync_ghost_walls() -> void:
 	if not is_instance_valid(win_manager): return
 	
 	# 从 C# DLL 中直接抽出操作系统内存级的桌面窗口边界数据
+	# 注意：C# 层的 EnumWindows 天然返回 Z-Order 从高（前景）到低（后景）的排列
 	var rects: Array = win_manager.call("GetVisibleWindowRects")
 	var count = rects.size()
 	
@@ -191,27 +192,78 @@ func _sync_ghost_walls() -> void:
 	while ghost_walls.size() > count:
 		var wall = ghost_walls.pop_back()
 		wall.queue_free()
-		
-	# 实体化映射墙面
+	
+	# 先将所有 rect 转换为本地坐标缓存，以便做遮挡计算
+	var local_rects: Array[Rect2] = []
 	for i in range(count):
 		var desk_rect = rects[i] as Rect2i
-		# 从操作系统全局桌面坐标，映射回游戏引擎相对自身主屏幕的坐标矩阵
-		var local_pos = Vector2(desk_rect.position.x - screen_rect.position.x, desk_rect.position.y - screen_rect.position.y)
-		var local_size = Vector2(desk_rect.size.x, desk_rect.size.y)
+		var lx = float(desk_rect.position.x - screen_rect.position.x)
+		var ly = float(desk_rect.position.y - screen_rect.position.y)
+		var lw = float(desk_rect.size.x)
+		var lh = float(desk_rect.size.y)
+		local_rects.append(Rect2(lx, ly, lw, lh))
 		
+	# 实体化映射墙面
+	var floor_thickness = 10.0
+	for i in range(count):
+		var lr = local_rects[i]
 		var wall = ghost_walls[i]
-		wall.position = local_pos + local_size / 2.0
-		var floor_thickness = 10.0
+		wall.position = lr.position + lr.size / 2.0
+		
+		# ─── 逐踏板 Z-Order 遮挡检测 ───
+		# 原理：rects 数组按 Z-Order 从高到低排列 (索引 0 = 最前景)
+		# 对于第 i 个窗口的顶/底踏板，如果有 j < i 的窗口在踏板所在的
+		# Y 坐标上与其水平范围重叠 ≥ 70%，则认为该踏板被遮挡，应禁用
+		
+		var top_y = lr.position.y                    # 顶部踏板 Y 坐标
+		var bottom_y = lr.position.y + lr.size.y     # 底部踏板 Y 坐标
+		var win_left = lr.position.x
+		var win_right = lr.position.x + lr.size.x
+		var win_width = lr.size.x
+		
+		var top_occluded = false
+		var bottom_occluded = false
+		
+		for j in range(i):
+			var hr = local_rects[j]  # 更高层级的窗口
+			var h_top = hr.position.y
+			var h_bottom = hr.position.y + hr.size.y
+			var h_left = hr.position.x
+			var h_right = hr.position.x + hr.size.x
+			
+			# 计算水平重叠区域
+			var overlap_left = maxf(win_left, h_left)
+			var overlap_right = minf(win_right, h_right)
+			var h_overlap = maxf(0.0, overlap_right - overlap_left)
+			
+			if win_width > 0 and h_overlap / win_width < 0.5:
+				continue  # 水平重叠不足 50%，不构成有效遮挡
+			
+			# 顶部踏板遮挡条件：高层窗口的垂直范围覆盖了踏板 Y 坐标
+			# (踏板在高层窗口的上下边界之间，但不能刚好是高层窗口自己的顶/底边)
+			if not top_occluded:
+				if h_top < top_y - 5.0 and h_bottom > top_y + 5.0:
+					top_occluded = true
+					
+			# 底部踏板遮挡条件：同理
+			if not bottom_occluded:
+				if h_top < bottom_y - 5.0 and h_bottom > bottom_y + 5.0:
+					bottom_occluded = true
+			
+			if top_occluded and bottom_occluded:
+				break
 		
 		# 更新顶部标题栏位置（相对于墙体中心上移）
 		var shape_top = wall.get_child(0) as CollisionShape2D
-		shape_top.position = Vector2(0, -local_size.y / 2.0 + floor_thickness / 2.0)
-		(shape_top.shape as RectangleShape2D).size = Vector2(local_size.x, floor_thickness)
+		shape_top.position = Vector2(0, -lr.size.y / 2.0 + floor_thickness / 2.0)
+		(shape_top.shape as RectangleShape2D).size = Vector2(lr.size.x, floor_thickness)
+		shape_top.disabled = top_occluded
 		
 		# 更新底部边缘位置（相对于墙体中心下移）
 		var shape_bottom = wall.get_child(1) as CollisionShape2D
-		shape_bottom.position = Vector2(0, local_size.y / 2.0 - floor_thickness / 2.0)
-		(shape_bottom.shape as RectangleShape2D).size = Vector2(local_size.x, floor_thickness)
+		shape_bottom.position = Vector2(0, lr.size.y / 2.0 - floor_thickness / 2.0)
+		(shape_bottom.shape as RectangleShape2D).size = Vector2(lr.size.x, floor_thickness)
+		shape_bottom.disabled = bottom_occluded
 
 # ── 宠物实例化 ──
 

@@ -2,14 +2,17 @@ extends CanvasLayer
 
 @onready var hud: PanelContainer = $HUDPanel
 @onready var track_btn: Button = $HUDPanel/Margin/VBox/EyeTrackBtn
+@onready var shockwave_btn: Button = $HUDPanel/Margin/VBox/ShockwaveBtn
 
 var target: Node2D = null
 var eye_track_enabled := true
+var shockwave_enabled := true
 
 func _ready() -> void:
 	hud.hide()
 	EventBus.show_context_menu.connect(_on_show_context_menu)
 	track_btn.pressed.connect(_on_track_btn_pressed)
+	shockwave_btn.pressed.connect(_on_shockwave_btn_pressed)
 
 func _process(delta: float) -> void:
 	# 如果菜单打开且目标存在，持续进行弹性随动
@@ -50,14 +53,25 @@ func _close_hud() -> void:
 
 func _on_track_btn_pressed() -> void:
 	eye_track_enabled = not eye_track_enabled
-	_update_btn_text()
+	_update_track_btn_text()
 	EventBus.setting_toggled.emit("eye_track", eye_track_enabled)
 
-func _update_btn_text() -> void:
+func _on_shockwave_btn_pressed() -> void:
+	shockwave_enabled = not shockwave_enabled
+	_update_shockwave_btn_text()
+	EventBus.setting_toggled.emit("shockwave", shockwave_enabled)
+
+func _update_track_btn_text() -> void:
 	if eye_track_enabled:
 		track_btn.text = "[X] 眼睛跟随鼠标"
 	else:
 		track_btn.text = "[  ] 眼睛跟随鼠标"
+
+func _update_shockwave_btn_text() -> void:
+	if shockwave_enabled:
+		shockwave_btn.text = "[X] 撞击冲击波特效"
+	else:
+		shockwave_btn.text = "[  ] 撞击冲击波特效"
 
 # 点击 UI 黑框之外的宇宙，自动关闭菜单
 func _unhandled_input(event: InputEvent) -> void:

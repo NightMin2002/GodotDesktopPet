@@ -40,3 +40,12 @@ theme_override_font_sizes/font_size = 14
 text = "[X] 眼睛跟随鼠标"
 flat = true
 alignment = 0
+
+[node name="ShockwaveBtn" type="Button" parent="HUDPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_hover_color = Color(0.1, 1, 0.9, 1)
+theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 14
+text = "[X] 撞击冲击波特效"
+flat = true
+alignment = 0

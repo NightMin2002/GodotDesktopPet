@@ -18,6 +18,7 @@ var current_state: PetState
 var current_state_name: String = ""
 var speed: float = 200.0            # 移动速度基数
 var eye_track_mouse: bool = true
+var shockwave_enabled: bool = true   # 撞击冲击波特效开关
 var hue_time: float = 0.0           # 供虹彩渐变使用的时间戳
 
 # ── 特效系统 ──
@@ -67,6 +68,8 @@ func _ready() -> void:
 func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 	if setting_id == "eye_track":
 		eye_track_mouse = is_on
+	elif setting_id == "shockwave":
+		shockwave_enabled = is_on
 
 func _init_states() -> void:
 	states = {
@@ -160,7 +163,7 @@ func _physics_process(delta: float) -> void:
 
 func _on_body_entered(_body: Node) -> void:
 	# 只有获得极高动量猛烈砸在底盘或者墙壁时，才激荡出强大的火花
-	if last_frame_speed > 350.0:
+	if shockwave_enabled and last_frame_speed > 350.0:
 		trigger_shockwave()
 
 func _input(event: InputEvent) -> void:
