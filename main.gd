@@ -26,6 +26,11 @@ func _ready() -> void:
 		win_manager = load("res://interop/WindowsManager.cs").new()
 		add_child(win_manager)
 		
+		# [新增指令]：通知操作系统把这个程序从底部任务栏抹掉
+		if win_manager.has_method("HideFromTaskbar"):
+			win_manager.call("HideFromTaskbar")
+			print("[DesktopPet] 已切入暗影模式：任务栏图标已擦除")
+		
 		# 开启神级同步雷达 (每 0.1s 侦测一次全体桌面窗口变化)
 		var sync_timer = Timer.new()
 		sync_timer.wait_time = 0.1
@@ -37,6 +42,35 @@ func _ready() -> void:
 	EventBus.drag_started.connect(_on_drag_started)
 	EventBus.drag_ended.connect(_on_drag_ended)
 	EventBus.context_menu_toggled.connect(_on_context_menu_toggled)
+	
+	_setup_system_tray()
+
+func _setup_system_tray() -> void:
+	# Godot 4 高级特性兼容检测：如果带有内置系统托盘功能则启用
+	if ClassDB.class_exists("StatusIndicator"):
+		var tray = ClassDB.instantiate("StatusIndicator")
+		
+		# 读取图标
+		if ResourceLoader.exists("res://icon.svg"):
+			tray.icon = load("res://icon.svg")
+		elif ResourceLoader.exists("res://icon.png"):
+			tray.icon = load("res://icon.png")
+			
+		tray.tooltip = "Godot Desktop Pet"
+		
+		# 挂载专属托盘右键菜单
+		var tray_menu = PopupMenu.new()
+		tray_menu.add_item("销毁这只宠物 (Quit)", 1)
+		tray_menu.id_pressed.connect(func(id: int):
+			if id == 1:
+				get_tree().quit()
+		)
+		add_child(tray_menu)
+		
+		# 在 Godot 4.3+ 中，menu 属性通常要求提供 NodePath 或者是直接引用（视具体小版本定义）
+		tray.menu = tray_menu.get_path()
+		add_child(tray)
+		print("[DesktopPet] 系统托盘托管成功启动！")
 
 # ── 窗口设置 ──
 

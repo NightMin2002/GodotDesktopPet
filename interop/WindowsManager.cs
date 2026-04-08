@@ -26,6 +26,12 @@ public partial class WindowsManager : Node
     [DllImport("dwmapi.dll")]
     private static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out int pvAttribute, int cbAttribute);
 
+    [DllImport("user32.dll")]
+    private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    [DllImport("user32.dll")]
+    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
@@ -40,9 +46,13 @@ public partial class WindowsManager : Node
         public int Right;
         public int Bottom;
     }
-
+    
     private const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
-    private const int DWMWA_CLOAKED = 14; // Win8/10/11 后台挂起幽灵窗口检测标志
+    private const int DWMWA_CLOAKED = 14; 
+    
+    private const int GWL_EXSTYLE = -20;
+    private const int WS_EX_TOOLWINDOW = 0x00000080;
+    private const int WS_EX_APPWINDOW = 0x00040000;
 
     private uint _myProcessId;
     private IntPtr _shellWindow;
@@ -52,6 +62,22 @@ public partial class WindowsManager : Node
         // 获取当前运行时的进程 ID（但无法彻底防御你在使用编辑器预览时的编辑器窗口）
         _myProcessId = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
         _shellWindow = GetShellWindow();
+    }
+
+    /// <summary>
+    /// 将主窗口彻底从 Windows 任务栏中抹除（使其变成工具悬浮层属性）
+    /// </summary>
+    public void HideFromTaskbar()
+    {
+        // 从 Godot 取得原生 HWND 句柄
+        IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
+        int style = GetWindowLong(hwnd, GWL_EXSTYLE);
+        
+        // 移除普通 App 窗口特征，并打上工具悬浮窗特征 (ToolWindow 不会出现在任务栏和 Alt+Tab 中)
+        style |= WS_EX_TOOLWINDOW;
+        style &= ~WS_EX_APPWINDOW;
+        
+        SetWindowLong(hwnd, GWL_EXSTYLE, style);
     }
 
     /// <summary>
