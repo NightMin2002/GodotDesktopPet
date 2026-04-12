@@ -3,14 +3,18 @@
 [ext_resource type="Script" path="res://ui/context_menu.gd" id="1_cm"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hud"]
-bg_color = Color(0.04, 0.08, 0.16, 0.85)
+bg_color = Color(0.04, 0.08, 0.16, 0.88)
 border_width_left = 2
 border_width_top = 2
 border_width_right = 2
 border_width_bottom = 2
 border_color = Color(0.1, 0.8, 1.0, 1)
-corner_detail = 1
-anti_aliasing = false
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+corner_detail = 4
+anti_aliasing = true
 
 [node name="ContextMenuLayer" type="CanvasLayer"]
 layer = 100
@@ -18,26 +22,27 @@ script = ExtResource("1_cm")
 
 [node name="HUDPanel" type="PanelContainer" parent="."]
 visible = false
-offset_right = 180.0
+offset_right = 260.0
 offset_bottom = 50.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_hud")
 
 [node name="Margin" type="MarginContainer" parent="HUDPanel"]
 layout_mode = 2
-theme_override_constants/margin_left = 8
-theme_override_constants/margin_top = 8
-theme_override_constants/margin_right = 8
-theme_override_constants/margin_bottom = 8
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 10
 
 [node name="VBox" type="VBoxContainer" parent="HUDPanel/Margin"]
 layout_mode = 2
+theme_override_constants/separation = 4
 
 [node name="EyeTrackBtn" type="Button" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.1, 1, 0.9, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
-theme_override_font_sizes/font_size = 14
-text = "[X] 眼睛跟随鼠标"
+theme_override_font_sizes/font_size = 15
+text = "[X] 眼球追踪鼠标"
 flat = true
 alignment = 0
 
@@ -45,7 +50,7 @@ alignment = 0
 layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.1, 1, 0.9, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 15
 text = "[X] 撞击冲击波特效"
 flat = true
 alignment = 0
@@ -54,7 +59,7 @@ alignment = 0
 layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.1, 1, 0.9, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 15
 text = "[  ] 开机自启动"
 flat = true
 alignment = 0
@@ -63,11 +68,31 @@ alignment = 0
 layout_mode = 2
 theme_override_colors/separator_color = Color(0.1, 0.8, 1, 0.3)
 
+[node name="WindowModeBtn" type="Button" parent="HUDPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_hover_color = Color(0.3, 1, 0.5, 1)
+theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 15
+text = "🌍 自由漫游"
+flat = true
+alignment = 0
+
+[node name="ModeDesc" type="Label" parent="HUDPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.5, 0.6, 0.7, 0.8)
+theme_override_font_sizes/font_size = 11
+text = "在窗口间自由行走，不受限制"
+autowrap_mode = 2
+
+[node name="Sep2" type="HSeparator" parent="HUDPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/separator_color = Color(0.1, 0.8, 1, 0.3)
+
 [node name="ReminderBtn" type="Button" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
 theme_override_colors/font_hover_color = Color(1, 0.85, 0.3, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 15
 text = "⏰ 提醒管理..."
 flat = true
 alignment = 0

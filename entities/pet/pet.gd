@@ -42,6 +42,10 @@ var boundary_size: Vector2  # 视口坐标系的实际边界
 var last_frame_speed: float = 0.0 # 用于捕获撞击前瞬时速度
 var overlay_rect: Rect2 = Rect2() # 外部覆盖层的屏幕区域 (气泡通知等)
 
+# ── 窗口交互模式 (由 main.gd 通过 EventBus 同步) ──
+var window_mode: int = 0  # 0=FREE, 1=CONFINED, 2=REPELLED
+var confined_rect: Rect2 = Rect2()  # Confined 模式下的封闭区域 (本地坐标系)
+
 func _ready() -> void:
 	# 物理材质 (弹性)
 	var mat := PhysicsMaterial.new()

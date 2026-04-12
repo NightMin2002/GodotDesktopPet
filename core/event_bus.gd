@@ -22,3 +22,6 @@ signal setting_toggled(setting_id: String, is_on: bool)
 signal autostart_toggled(is_on: bool)
 signal show_reminder_bubble(message: String)
 signal show_reminder_panel
+
+# ── 窗口交互模式 ──
+signal window_mode_changed(mode: int)  # 0=FREE, 1=CONFINED, 2=REPELLED

@@ -1,5 +1,5 @@
-# jump.gd — 暴走弹射状态
-# 宠物瞬间获得巨大的向上和旋转动能冲量，在屏幕内激荡直到稳定
+# jump.gd — 高能弹跳状态
+# 球体获得强大的向上冲量和旋转扭矩，在屏幕内弹跳碰撞直到动能耗尽
 class_name StateJump
 extends PetState
 

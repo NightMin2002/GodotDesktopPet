@@ -6,6 +6,8 @@ extends CanvasLayer
 @onready var track_btn: Button = $HUDPanel/Margin/VBox/EyeTrackBtn
 @onready var shockwave_btn: Button = $HUDPanel/Margin/VBox/ShockwaveBtn
 @onready var autostart_btn: Button = $HUDPanel/Margin/VBox/AutoStartBtn
+@onready var window_mode_btn: Button = $HUDPanel/Margin/VBox/WindowModeBtn
+@onready var mode_desc: Label = $HUDPanel/Margin/VBox/ModeDesc
 @onready var reminder_btn: Button = $HUDPanel/Margin/VBox/ReminderBtn
 
 var target: Node2D = null
@@ -20,6 +22,7 @@ func _ready() -> void:
 	track_btn.pressed.connect(_on_track_btn_pressed)
 	shockwave_btn.pressed.connect(_on_shockwave_btn_pressed)
 	autostart_btn.pressed.connect(_on_autostart_btn_pressed)
+	window_mode_btn.pressed.connect(_on_window_mode_btn_pressed)
 	reminder_btn.pressed.connect(_on_reminder_btn_pressed)
 
 # ── 持久化加载 ──
@@ -29,8 +32,12 @@ func _load_saved_settings() -> void:
 	var shock = SettingsManager.get_bool("shockwave", true)
 	
 	# 应用到本地按钮显示 (pet 自己从 SettingsManager 读取，不依赖信号)
-	_set_toggle(track_btn, eye, "[X] 眼睛跟随鼠标", "[  ] 眼睛跟随鼠标")
+	_set_toggle(track_btn, eye, "[X] 眼球追踪鼠标", "[  ] 眼球追踪鼠标")
 	_set_toggle(shockwave_btn, shock, "[X] 撞击冲击波特效", "[  ] 撞击冲击波特效")
+	
+	# 窗口交互模式状态
+	var wm = SettingsManager.get_int("window_mode", 0)
+	_update_window_mode_label(wm)
 	
 	# 自启动状态延迟检测 (等 C# 节点就绪)
 	_autostart_check_pending = true
@@ -98,7 +105,7 @@ func _close_hud() -> void:
 # ── 按钮回调 ──
 
 func _on_track_btn_pressed() -> void:
-	var on = _flip_toggle(track_btn, "[X] 眼睛跟随鼠标", "[  ] 眼睛跟随鼠标")
+	var on = _flip_toggle(track_btn, "[X] 眼球追踪鼠标", "[  ] 眼球追踪鼠标")
 	SettingsManager.set_bool("eye_track", on)
 	EventBus.setting_toggled.emit("eye_track", on)
 
@@ -124,6 +131,25 @@ func _on_reminder_btn_pressed() -> void:
 	tween.finished.connect(func(): hud.hide())
 	target = null
 	EventBus.show_reminder_panel.emit()
+
+# ── 窗口模式切换 ──
+
+const WINDOW_MODE_LABELS := ["🌍 自由漫游", "🔒 窗口封闭", "🚫 窗口排斥"]
+const WINDOW_MODE_DESCS := [
+	"在窗口间自由行走，不受限制",
+	"被困在当前窗口内，无法离开",
+	"无法进入任何窗口，但可以出来",
+]
+
+func _on_window_mode_btn_pressed() -> void:
+	var current = SettingsManager.get_int("window_mode", 0)
+	var next_mode = (current + 1) % 3
+	_update_window_mode_label(next_mode)
+	EventBus.window_mode_changed.emit(next_mode)
+
+func _update_window_mode_label(mode: int) -> void:
+	window_mode_btn.text = WINDOW_MODE_LABELS[mode]
+	mode_desc.text = WINDOW_MODE_DESCS[mode]
 
 # ── 工具函数 ──
 

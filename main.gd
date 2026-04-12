@@ -2,6 +2,9 @@
 # 职责: 设置透明窗口、创建屏幕边界墙、实例化宠物、管理鼠标穿透区域
 extends Node2D
 
+# ── 窗口交互模式 ──
+enum WindowMode { FREE, CONFINED, REPELLED }
+
 var pet_scene := preload("res://entities/pet/pet.tscn")
 var pet_instance: RigidBody2D
 var screen_rect: Rect2i
@@ -12,6 +15,13 @@ var is_menu_open := false
 # -- 双端架构 C# 桥接池 --
 var win_manager: Node
 var ghost_walls: Array[StaticBody2D] = []
+
+# ── 窗口交互模式状态 ──
+var window_mode: int = WindowMode.FREE
+var confined_window_rect: Rect2 = Rect2()  # 封闭模式的合并后封闭区域 (本地坐标系)
+var confined_anchor_rect: Rect2 = Rect2()  # 封闭模式的原始目标窗口 (用于跨帧匹配)
+var confined_wall: StaticBody2D = null  # 封闭模式专用四面墙
+var void_fillers: Array[StaticBody2D] = []  # 封闭模式虚空填充墙池
 
 func _ready() -> void:
 	# ── 性能调频 ──
@@ -52,6 +62,10 @@ func _ready() -> void:
 	EventBus.drag_started.connect(_on_drag_started)
 	EventBus.drag_ended.connect(_on_drag_ended)
 	EventBus.context_menu_toggled.connect(_on_context_menu_toggled)
+	EventBus.window_mode_changed.connect(_on_window_mode_changed)
+	
+	# 从持久化恢复窗口交互模式
+	window_mode = SettingsManager.get_int("window_mode", WindowMode.FREE)
 	
 	# 挂载提醒系统
 	_setup_reminder_system()
@@ -174,6 +188,9 @@ func _add_wall(pos: Vector2, size: Vector2) -> void:
 const MAX_PLATFORM_SEGMENTS := 3
 # 宽度不足此像素的碎片分段直接丢弃 (宠物站不稳)
 const MIN_SEGMENT_WIDTH := 30.0
+# 四面墙模式下每个窗口需要的碰撞子节点数:
+# 顶部 3 分段 + 底部 3 分段 + 左墙 1 + 右墙 1 = 8
+const CHILDREN_PER_WALL := MAX_PLATFORM_SEGMENTS * 2 + 2
 
 func _sync_ghost_walls() -> void:
 	if not is_instance_valid(win_manager): return
@@ -182,14 +199,12 @@ func _sync_ghost_walls() -> void:
 	var rects: Array = win_manager.call("GetVisibleWindowRects")
 	var count = rects.size()
 	
-	# 动态伸缩对象池 — 每面墙 = 3 个顶部分段 + 3 个底部分段 = 6 个碰撞器
-	var children_per_wall = MAX_PLATFORM_SEGMENTS * 2
+	# 动态伸缩对象池
 	while ghost_walls.size() < count:
 		var wall = StaticBody2D.new()
-		for k in range(children_per_wall):
+		for k in range(CHILDREN_PER_WALL):
 			var col = CollisionShape2D.new()
 			col.shape = RectangleShape2D.new()
-			col.one_way_collision = true
 			col.disabled = true
 			wall.add_child(col)
 		var mat = PhysicsMaterial.new()
@@ -210,26 +225,34 @@ func _sync_ghost_walls() -> void:
 		var lx = float(desk_rect.position.x - screen_rect.position.x)
 		var ly = float(desk_rect.position.y - screen_rect.position.y)
 		local_rects.append(Rect2(lx, ly, float(desk_rect.size.x), float(desk_rect.size.y)))
-		
-	# 实体化映射墙面
+	
+	# 根据当前模式分派处理
+	match window_mode:
+		WindowMode.FREE:
+			_apply_free_mode(local_rects, count)
+			_hide_confined_wall()
+			_clear_void_fillers()
+		WindowMode.CONFINED:
+			_apply_confined_mode(local_rects, count)
+		WindowMode.REPELLED:
+			_apply_repelled_mode(local_rects, count)
+			_hide_confined_wall()
+			_clear_void_fillers()
+
+## ── FREE 模式: 只生成顶/底单向踏板 (原有逻辑) ──
+
+func _apply_free_mode(local_rects: Array[Rect2], count: int) -> void:
 	var floor_thickness = 10.0
 	for i in range(count):
 		var lr = local_rects[i]
 		var wall = ghost_walls[i]
 		
-		# 兼容旧池对象热重载：确保子节点数量正确
-		while wall.get_child_count() < children_per_wall:
-			var col = CollisionShape2D.new()
-			col.shape = RectangleShape2D.new()
-			col.one_way_collision = true
-			col.disabled = true
-			wall.add_child(col)
+		# 确保子节点数量正确
+		_ensure_children(wall)
 		
 		wall.position = lr.position + lr.size / 2.0
 		
-		# ─── 分段裁剪算法 ───
-		# 从完整踏板宽度出发，逐一扣除被 Z-Order 更高窗口覆盖的水平区间
-		# 剩余的暴露区间各自成为独立碰撞体
+		# 分段裁剪算法
 		var win_left = lr.position.x
 		var win_right = lr.position.x + lr.size.x
 		var top_y = lr.position.y
@@ -238,12 +261,368 @@ func _sync_ghost_walls() -> void:
 		var top_segs = _compute_exposed_segments(win_left, win_right, top_y, local_rects, i)
 		var bottom_segs = _compute_exposed_segments(win_left, win_right, bottom_y, local_rects, i)
 		
-		# 映射分段到碰撞子节点
 		var wall_cx = lr.position.x + lr.size.x / 2.0
 		var top_rel_y = -lr.size.y / 2.0 + floor_thickness / 2.0
 		var bot_rel_y = lr.size.y / 2.0 - floor_thickness / 2.0
-		_apply_platform_segments(wall, 0, top_segs, wall_cx, top_rel_y, floor_thickness)
-		_apply_platform_segments(wall, MAX_PLATFORM_SEGMENTS, bottom_segs, wall_cx, bot_rel_y, floor_thickness)
+		_apply_platform_segments(wall, 0, top_segs, wall_cx, top_rel_y, floor_thickness, true)
+		_apply_platform_segments(wall, MAX_PLATFORM_SEGMENTS, bottom_segs, wall_cx, bot_rel_y, floor_thickness, true)
+		
+		# 禁用左右侧墙
+		_disable_side_walls(wall)
+
+## ── REPELLED 模式: 顶部保留踏板 + 左右底部实体墙阻止进入 ──
+
+func _apply_repelled_mode(local_rects: Array[Rect2], count: int) -> void:
+	var floor_thickness = 10.0
+	for i in range(count):
+		var lr = local_rects[i]
+		var wall = ghost_walls[i]
+		
+		_ensure_children(wall)
+		wall.position = lr.position + lr.size / 2.0
+		
+		# 最大化窗口: 禁用所有碰撞体 (避免全屏墙封锁宠物)
+		if _is_maximized_window(lr):
+			for k in range(wall.get_child_count()):
+				(wall.get_child(k) as CollisionShape2D).disabled = true
+			continue
+		
+		var win_left = lr.position.x
+		var win_right = lr.position.x + lr.size.x
+		var top_y = lr.position.y
+		var bottom_y = lr.position.y + lr.size.y
+		
+		# 顶部保留单向踏板 (可以站在上面，从内部可以跳出)
+		var top_segs = _compute_exposed_segments(win_left, win_right, top_y, local_rects, i)
+		var wall_cx = lr.position.x + lr.size.x / 2.0
+		var top_rel_y = -lr.size.y / 2.0 + floor_thickness / 2.0
+		_apply_platform_segments(wall, 0, top_segs, wall_cx, top_rel_y, floor_thickness, true)
+		
+		# 底部单向墙 (rotation=π, 法线朝下: 外面进不来，里面可以掉出)
+		var bottom_segs = _compute_exposed_segments(win_left, win_right, bottom_y, local_rects, i)
+		var bot_rel_y = lr.size.y / 2.0 - floor_thickness / 2.0
+		_apply_platform_segments(wall, MAX_PLATFORM_SEGMENTS, bottom_segs, wall_cx, bot_rel_y, floor_thickness, true, PI)
+		
+		# 左右单向墙 (法线朝外: 外面进不来，里面可以走出)
+		_enable_one_way_side_walls(wall, lr)
+
+## ── CONFINED 模式: 合并外墙 + 重叠区自由通行 + 虚空填充 ──
+
+func _apply_confined_mode(local_rects: Array[Rect2], count: int) -> void:
+	if not is_instance_valid(pet_instance):
+		_apply_free_mode(local_rects, count)
+		_hide_confined_wall()
+		_clear_void_fillers()
+		return
+	
+	var pet_pos = pet_instance.global_position
+	
+	# ── Step 1: 找到目标窗口 ──
+	var target_idx: int = -1
+	var target_rect = Rect2()
+	
+	if confined_anchor_rect.size != Vector2.ZERO:
+		for i in range(count):
+			var lr = local_rects[i]
+			if lr.position.distance_to(confined_anchor_rect.position) < 30.0 and \
+			   lr.size.distance_to(confined_anchor_rect.size) < 30.0:
+				target_rect = lr
+				target_idx = i
+				break
+	
+	if target_idx == -1:
+		for i in range(count):
+			if local_rects[i].has_point(pet_pos):
+				target_rect = local_rects[i]
+				target_idx = i
+				break
+	
+	if target_idx == -1:
+		confined_window_rect = Rect2()
+		confined_anchor_rect = Rect2()
+		_hide_confined_wall()
+		_clear_void_fillers()
+		if is_instance_valid(pet_instance):
+			pet_instance.confined_rect = Rect2()
+		_apply_free_mode(local_rects, count)
+		return
+	
+	# ── Step 2: 合并所有重叠窗口 (跳过最大化窗口) ──
+	var merged_rect = target_rect
+	var overlapping: Array[int] = [target_idx]
+	var overlap_rects: Array[Rect2] = [target_rect]
+	
+	var changed = true
+	while changed:
+		changed = false
+		for i in range(count):
+			if overlapping.has(i):
+				continue
+			# 跳过最大化窗口: 它们覆盖整个屏幕，会导致所有窗口被合并
+			if _is_maximized_window(local_rects[i]):
+				continue
+			if merged_rect.intersects(local_rects[i]):
+				merged_rect = merged_rect.merge(local_rects[i])
+				overlapping.append(i)
+				overlap_rects.append(local_rects[i])
+				changed = true
+	
+	# ── Step 3: 合并外墙 + 虚空填充 ──
+	confined_anchor_rect = target_rect
+	confined_window_rect = merged_rect
+	_show_confined_wall(merged_rect)
+	_fill_void_areas(overlap_rects, merged_rect)
+	
+	if is_instance_valid(pet_instance):
+		pet_instance.confined_rect = merged_rect
+	
+	# ── Step 4: 生成幽灵墙 ──
+	var floor_thickness = 10.0
+	for i in range(count):
+		var lr = local_rects[i]
+		var wall = ghost_walls[i]
+		_ensure_children(wall)
+		wall.position = lr.position + lr.size / 2.0
+		
+		# 重叠组内的窗口: 禁用所有碰撞体 (封闭墙+虚空填充已处理)
+		# 最大化窗口与封闭区域交叩时: 也禁用 (避免内部干扰)
+		if overlapping.has(i) or _is_maximized_window(lr) or merged_rect.intersects(lr):
+			for k in range(wall.get_child_count()):
+				(wall.get_child(k) as CollisionShape2D).disabled = true
+			continue
+		
+		# 不重叠的窗口: 正常 FREE 模式踏板
+		var win_left = lr.position.x
+		var win_right = lr.position.x + lr.size.x
+		var top_y = lr.position.y
+		var bottom_y = lr.position.y + lr.size.y
+		
+		var top_segs = _compute_exposed_segments(win_left, win_right, top_y, local_rects, i)
+		var bottom_segs = _compute_exposed_segments(win_left, win_right, bottom_y, local_rects, i)
+		
+		var wall_cx = lr.position.x + lr.size.x / 2.0
+		var top_rel_y = -lr.size.y / 2.0 + floor_thickness / 2.0
+		var bot_rel_y = lr.size.y / 2.0 - floor_thickness / 2.0
+		_apply_platform_segments(wall, 0, top_segs, wall_cx, top_rel_y, floor_thickness, true)
+		_apply_platform_segments(wall, MAX_PLATFORM_SEGMENTS, bottom_segs, wall_cx, bot_rel_y, floor_thickness, true)
+		
+		_disable_side_walls(wall)
+
+## 创建/更新封闭模式的四面实体墙
+func _show_confined_wall(rect: Rect2) -> void:
+	if not is_instance_valid(confined_wall):
+		confined_wall = StaticBody2D.new()
+		var mat = PhysicsMaterial.new()
+		mat.bounce = 0.3
+		mat.friction = 0.8
+		confined_wall.physics_material_override = mat
+		# 四面墙各一个碰撞体: 上/下/左/右
+		for k in range(4):
+			var col = CollisionShape2D.new()
+			col.shape = RectangleShape2D.new()
+			confined_wall.add_child(col)
+		add_child(confined_wall)
+	
+	confined_wall.position = rect.position + rect.size / 2.0
+	
+	var w = rect.size.x
+	var h = rect.size.y
+	var thickness = 10.0
+	
+	# 上墙
+	var col_top = confined_wall.get_child(0) as CollisionShape2D
+	col_top.position = Vector2(0, -h / 2.0 + thickness / 2.0)
+	(col_top.shape as RectangleShape2D).size = Vector2(w + thickness * 2, thickness)
+	col_top.disabled = false
+	
+	# 下墙
+	var col_bot = confined_wall.get_child(1) as CollisionShape2D
+	col_bot.position = Vector2(0, h / 2.0 - thickness / 2.0)
+	(col_bot.shape as RectangleShape2D).size = Vector2(w + thickness * 2, thickness)
+	col_bot.disabled = false
+	
+	# 左墙
+	var col_left = confined_wall.get_child(2) as CollisionShape2D
+	col_left.position = Vector2(-w / 2.0 + thickness / 2.0, 0)
+	(col_left.shape as RectangleShape2D).size = Vector2(thickness, h)
+	col_left.disabled = false
+	
+	# 右墙
+	var col_right = confined_wall.get_child(3) as CollisionShape2D
+	col_right.position = Vector2(w / 2.0 - thickness / 2.0, 0)
+	(col_right.shape as RectangleShape2D).size = Vector2(thickness, h)
+	col_right.disabled = false
+
+func _hide_confined_wall() -> void:
+	if is_instance_valid(confined_wall):
+		for k in range(confined_wall.get_child_count()):
+			(confined_wall.get_child(k) as CollisionShape2D).disabled = true
+
+## ── 虚空填充系统 (Sweep-Line 算法) ──
+
+## 计算合并 bounding box 内未被任何窗口覆盖的虚空区域，生成物理屏障
+func _fill_void_areas(overlap_rects: Array[Rect2], merged: Rect2) -> void:
+	# 收集所有窗口的 X 边界坐标
+	var x_coords: Array[float] = [merged.position.x, merged.end.x]
+	for r in overlap_rects:
+		x_coords.append(r.position.x)
+		x_coords.append(r.end.x)
+	x_coords.sort()
+	
+	# 去重 (容差 2px)
+	var unique_x: Array[float] = []
+	for x in x_coords:
+		if unique_x.is_empty() or abs(x - unique_x.back()) > 2.0:
+			unique_x.append(x)
+	
+	# 对每个 X 切片，找出未被窗口覆盖的 Y 区间 = 虚空
+	var void_rects: Array[Rect2] = []
+	for j in range(unique_x.size() - 1):
+		var x_left = unique_x[j]
+		var x_right = unique_x[j + 1]
+		if x_right - x_left < 5.0:
+			continue
+		var x_mid = (x_left + x_right) / 2.0
+		
+		# 找出在这个 X 位置被窗口覆盖的 Y 范围
+		var covered: Array = []
+		for r in overlap_rects:
+			if r.position.x <= x_mid and r.end.x >= x_mid:
+				covered.append([r.position.y, r.end.y])
+		
+		# 合并覆盖区间
+		covered.sort()
+		var merged_y = _merge_y_ranges(covered)
+		
+		# bounding box 的 Y 范围中未被覆盖的部分 = 虚空
+		var prev_y = merged.position.y
+		for c in merged_y:
+			if c[0] > prev_y + 5.0:
+				void_rects.append(Rect2(x_left, prev_y, x_right - x_left, c[0] - prev_y))
+			prev_y = maxf(prev_y, c[1])
+		if merged.end.y > prev_y + 5.0:
+			void_rects.append(Rect2(x_left, prev_y, x_right - x_left, merged.end.y - prev_y))
+	
+	# 同步虚空填充墙池
+	_sync_void_fillers(void_rects)
+
+## 合并重叠的 Y 区间
+func _merge_y_ranges(ranges: Array) -> Array:
+	if ranges.is_empty():
+		return []
+	var result: Array = [ranges[0].duplicate()]
+	for i in range(1, ranges.size()):
+		var prev = result.back()
+		if ranges[i][0] <= prev[1]:
+			result[result.size() - 1] = [prev[0], maxf(prev[1], ranges[i][1])]
+		else:
+			result.append(ranges[i].duplicate())
+	return result
+
+## 同步虚空填充墙对象池
+func _sync_void_fillers(void_rects: Array[Rect2]) -> void:
+	var need = void_rects.size()
+	
+	# 扩展池
+	while void_fillers.size() < need:
+		var wall = StaticBody2D.new()
+		var col = CollisionShape2D.new()
+		col.shape = RectangleShape2D.new()
+		wall.add_child(col)
+		var mat = PhysicsMaterial.new()
+		mat.bounce = 0.3
+		mat.friction = 0.8
+		wall.physics_material_override = mat
+		add_child(wall)
+		void_fillers.append(wall)
+	
+	# 更新或禁用
+	for i in range(void_fillers.size()):
+		var wall = void_fillers[i]
+		var col = wall.get_child(0) as CollisionShape2D
+		if i < need:
+			var vr = void_rects[i]
+			wall.position = vr.position + vr.size / 2.0
+			(col.shape as RectangleShape2D).size = vr.size
+			col.disabled = false
+		else:
+			col.disabled = true
+
+## 清除所有虚空填充墙
+func _clear_void_fillers() -> void:
+	for wall in void_fillers:
+		(wall.get_child(0) as CollisionShape2D).disabled = true
+
+## 检测窗口是否为最大化 (覆盖 ≥90% 屏幕宽度和高度)
+func _is_maximized_window(lr: Rect2) -> bool:
+	return lr.size.x >= boundary_size.x * 0.9 and lr.size.y >= boundary_size.y * 0.85
+
+## ── 幽灵墙辅助函数 ──
+
+## 确保对象池中的墙有足够的碰撞子节点
+func _ensure_children(wall: StaticBody2D) -> void:
+	while wall.get_child_count() < CHILDREN_PER_WALL:
+		var col = CollisionShape2D.new()
+		col.shape = RectangleShape2D.new()
+		col.disabled = true
+		wall.add_child(col)
+
+## 启用左右实体侧墙 (双面，用于 REPELLED-封闭式拒绝)
+func _enable_side_walls(wall: StaticBody2D, lr: Rect2) -> void:
+	var side_idx_left = MAX_PLATFORM_SEGMENTS * 2
+	var side_idx_right = MAX_PLATFORM_SEGMENTS * 2 + 1
+	var wall_thickness = 10.0
+	
+	# 左侧墙
+	var col_l = wall.get_child(side_idx_left) as CollisionShape2D
+	col_l.position = Vector2(-lr.size.x / 2.0 + wall_thickness / 2.0, 0)
+	(col_l.shape as RectangleShape2D).size = Vector2(wall_thickness, lr.size.y)
+	col_l.rotation = 0.0
+	col_l.one_way_collision = false
+	col_l.disabled = false
+	
+	# 右侧墙
+	var col_r = wall.get_child(side_idx_right) as CollisionShape2D
+	col_r.position = Vector2(lr.size.x / 2.0 - wall_thickness / 2.0, 0)
+	(col_r.shape as RectangleShape2D).size = Vector2(wall_thickness, lr.size.y)
+	col_r.rotation = 0.0
+	col_r.one_way_collision = false
+	col_r.disabled = false
+
+## 启用左右单向侧墙 (外面进不来，里面可以出去，用于 REPELLED 模式)
+func _enable_one_way_side_walls(wall: StaticBody2D, lr: Rect2) -> void:
+	var side_idx_left = MAX_PLATFORM_SEGMENTS * 2
+	var side_idx_right = MAX_PLATFORM_SEGMENTS * 2 + 1
+	var wall_thickness = 10.0
+	
+	# 左侧墙: rotation=-π/2 → 法线朝左 → 外面进不来，里面可以左出
+	var col_l = wall.get_child(side_idx_left) as CollisionShape2D
+	col_l.position = Vector2(-lr.size.x / 2.0 + wall_thickness / 2.0, 0)
+	# 旋转后宽高互换: 原(thickness, height) → 设置为(height, thickness)
+	(col_l.shape as RectangleShape2D).size = Vector2(lr.size.y, wall_thickness)
+	col_l.rotation = -PI / 2.0
+	col_l.one_way_collision = true
+	col_l.disabled = false
+	
+	# 右侧墙: rotation=π/2 → 法线朝右 → 外面进不来，里面可以右出
+	var col_r = wall.get_child(side_idx_right) as CollisionShape2D
+	col_r.position = Vector2(lr.size.x / 2.0 - wall_thickness / 2.0, 0)
+	(col_r.shape as RectangleShape2D).size = Vector2(lr.size.y, wall_thickness)
+	col_r.rotation = PI / 2.0
+	col_r.one_way_collision = true
+	col_r.disabled = false
+
+## 禁用左右侧墙 (重置旋转状态)
+func _disable_side_walls(wall: StaticBody2D) -> void:
+	var side_idx_left = MAX_PLATFORM_SEGMENTS * 2
+	var side_idx_right = MAX_PLATFORM_SEGMENTS * 2 + 1
+	if wall.get_child_count() > side_idx_right:
+		var col_l = wall.get_child(side_idx_left) as CollisionShape2D
+		col_l.disabled = true
+		col_l.rotation = 0.0
+		var col_r = wall.get_child(side_idx_right) as CollisionShape2D
+		col_r.disabled = true
+		col_r.rotation = 0.0
 
 ## 计算踏板在 Z-Order 遮挡裁剪后剩余的可见水平分段
 func _compute_exposed_segments(full_left: float, full_right: float, platform_y: float, all_rects: Array[Rect2], idx: int) -> Array:
@@ -274,7 +653,7 @@ func _subtract_range(segs: Array, cut_l: float, cut_r: float) -> Array:
 	return out
 
 ## 将可见分段映射到碰撞体子节点，未使用的分段自动禁用
-func _apply_platform_segments(wall: StaticBody2D, child_offset: int, segs: Array, wall_cx: float, rel_y: float, thickness: float) -> void:
+func _apply_platform_segments(wall: StaticBody2D, child_offset: int, segs: Array, wall_cx: float, rel_y: float, thickness: float, one_way: bool, seg_rotation: float = 0.0) -> void:
 	for k in range(MAX_PLATFORM_SEGMENTS):
 		var col = wall.get_child(child_offset + k) as CollisionShape2D
 		if k < segs.size():
@@ -282,9 +661,38 @@ func _apply_platform_segments(wall: StaticBody2D, child_offset: int, segs: Array
 			var seg_cx = (seg[0] + seg[1]) / 2.0
 			col.position = Vector2(seg_cx - wall_cx, rel_y)
 			(col.shape as RectangleShape2D).size = Vector2(seg[1] - seg[0], thickness)
+			col.one_way_collision = one_way
+			col.rotation = seg_rotation
 			col.disabled = false
 		else:
 			col.disabled = true
+			col.rotation = 0.0
+
+## ── 窗口模式切换回调 ──
+
+func _on_window_mode_changed(mode: int) -> void:
+	var old_mode = window_mode
+	window_mode = mode
+	SettingsManager.set_int("window_mode", mode)
+	
+	# 同步模式给宠物
+	if is_instance_valid(pet_instance):
+		pet_instance.window_mode = mode
+	
+	# 切换到封闭模式时，立即检测目标窗口
+	if mode == WindowMode.CONFINED:
+		confined_window_rect = Rect2()  # 重置，让下次同步重新检测
+		confined_anchor_rect = Rect2()
+	
+	# 切换离开封闭模式时，释放封闭墙
+	if old_mode == WindowMode.CONFINED:
+		confined_window_rect = Rect2()
+		confined_anchor_rect = Rect2()
+		_hide_confined_wall()
+		if is_instance_valid(pet_instance):
+			pet_instance.confined_rect = Rect2()
+	
+	print("[DesktopPet] 窗口交互模式切换: ", ["自由漫游", "窗口封闭", "窗口排斥"][mode])
 
 
 # ── 宠物实例化 ──
@@ -293,6 +701,7 @@ func _spawn_pet() -> void:
 	pet_instance = pet_scene.instantiate()
 	pet_instance.screen_rect = screen_rect
 	pet_instance.boundary_size = boundary_size
+	pet_instance.window_mode = window_mode
 	# 从视口上方 1/3 处中央掉落
 	pet_instance.position = Vector2(
 		boundary_size.x / 2.0,

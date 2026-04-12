@@ -18,6 +18,15 @@ func set_bool(key: String, value: bool) -> void:
 	_config.set_value("toggles", key, value)
 	_config.save(SETTINGS_PATH)
 
+## 整数型设置
+
+func get_int(key: String, default_val: int = 0) -> int:
+	return _config.get_value("toggles", key, default_val) as int
+
+func set_int(key: String, value: int) -> void:
+	_config.set_value("toggles", key, value)
+	_config.save(SETTINGS_PATH)
+
 ## 提醒数据存取
 ## 提醒格式: [{"time": "09:00", "msg": "该休息了", "on": true}, ...]
 
