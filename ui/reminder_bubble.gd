@@ -55,7 +55,11 @@ func _build_bubble() -> void:
 
 func _on_bubble_requested(message: String) -> void:
 	if _is_showing:
-		# 排队等候，最多缓存 3 条防止堆积
+		# 🚨 防过度点拽刷屏：如果当前屏幕正在显示的，或是队列里已经有完全一模一样的话，直接抛弃不复读！
+		if bubble_label.text == message or _queue.has(message):
+			return
+			
+		# 其他不同消息则排队等候，最多缓存 3 条
 		if _queue.size() < 3:
 			_queue.append(message)
 		return
