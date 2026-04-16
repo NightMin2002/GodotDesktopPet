@@ -18,12 +18,6 @@ func enter() -> void:
 		if pet.behavior_mode == 1:
 			pet.linear_damp = 3.0
 			pet.angular_damp = 5.0
-			# 全屏安静 + 已到达边缘 → 确保锁定鼠标穿透
-			if pet.quiet_by_fullscreen and _is_near_edge():
-				if not pet.fullscreen_locked:
-					pet.fullscreen_locked = true
-					if not pet.is_clone:  # 仅原体触发全局穿透锁定
-						EventBus.fullscreen_locked_changed.emit(true)
 
 func exit() -> void:
 	if pet:
@@ -54,9 +48,6 @@ func physics_process(_delta: float) -> void:
 		pet.transition_to("fall")
 
 func input(event: InputEvent) -> void:
-	# 全屏锁定时不响应鼠标
-	if pet.fullscreen_locked:
-		return
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			if pet.is_mouse_on_pet():

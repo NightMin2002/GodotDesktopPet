@@ -49,7 +49,7 @@ func _ready() -> void:
 	dismiss_btn.pressed.connect(_on_dismiss_btn_pressed)
 	quit_btn.pressed.connect(_on_quit_btn_pressed)
 	
-	# 监听外部行为模式变化 (全屏自动触发时同步按钮文字)
+	# 监听外部行为模式变化同步按钮状态
 	EventBus.behavior_mode_changed.connect(_on_behavior_mode_synced)
 
 # ── 持久化加载 ──
@@ -308,7 +308,7 @@ func _update_behavior_mode_label(mode: int) -> void:
 	behavior_mode_btn.text = BEHAVIOR_MODE_LABELS[mode]
 
 func _on_behavior_mode_synced(mode: int) -> void:
-	# 全屏自动触发时同步按钮文字
+	# 同步按钮文字
 	_update_behavior_mode_label(mode)
 
 # ── 自定义浮动 Tooltip ──

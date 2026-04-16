@@ -28,7 +28,6 @@ signal window_mode_changed(mode: int)  # 0=FREE, 1=CONFINED, 2=REPELLED
 
 # ── 行为指令 ──
 signal behavior_mode_changed(mode: int)  # 0=FREE(自由行动), 1=QUIET(安静待命)
-signal fullscreen_locked_changed(locked: bool)  # 全屏锁定状态变化 (穿透控制)
 
 # ── 克隆系统 ──
 signal clone_pet(source: Node2D)  # 请求从原体克隆一个分身

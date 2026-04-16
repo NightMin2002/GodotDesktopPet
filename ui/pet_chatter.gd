@@ -64,16 +64,14 @@ func link_pet(pet: Node2D) -> void:
 func _process(delta: float) -> void:
 	if _mode == 0:
 		return
-	# 全屏锁定时不打扰
-	if is_instance_valid(_pet) and _pet.fullscreen_locked:
+	if not is_instance_valid(_pet):
 		return
 	
 	# 每 5 秒检查一次系统时间 (不需要每帧)
 	_check_timer += delta
-	if _check_timer < 5.0:
-		return
-	_check_timer = 0.0
-	_check_time()
+	if _check_timer >= 5.0:
+		_check_timer = 0.0
+		_check_time()
 
 func _check_time() -> void:
 	var now = Time.get_time_dict_from_system()

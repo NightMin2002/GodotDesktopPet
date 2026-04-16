@@ -58,8 +58,6 @@ var window_mode: int = 0  # 0=FREE, 1=CONFINED, 2=REPELLED
 
 # ── 行为指令 ──
 var behavior_mode: int = 0  # 0=FREE(自由行动), 1=QUIET(安静待命)
-var quiet_by_fullscreen: bool = false  # 是否由全屏自动触发 (决定是否走边缘+吐槽)
-var fullscreen_locked: bool = false  # 到达边缘后锁定 (禁止鼠标交互)
 var _was_dragged_in_quiet: bool = false  # 安静模式下被拖拽的标记 (用于吐槽)
 
 func _ready() -> void:

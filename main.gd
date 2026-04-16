@@ -28,16 +28,7 @@ var window_mode: int = WindowMode.FREE
 
 # ── 行为指令状态 ──
 var behavior_mode: int = 0  # 0=FREE, 1=QUIET
-var _quiet_by_fullscreen: bool = false  # 是否由全屏自动触发的安静模式
-var _was_fullscreen: bool = false  # 已确认的全屏状态
-var _fs_confirm_count: int = 0  # 全屏连续检测计数 (进入防抖)
-var _fs_exit_count: int = 0  # 非全屏连续检测计数 (退出防抖)
-const FS_ENTER_THRESHOLD := 3  # 进入全屏需连续 3 次检测 (1.5s×3=4.5s 确认，避免截图误触发)
-const FS_EXIT_THRESHOLD := 2   # 退出全屏需连续 2 次检测 (3s 确认)
-var _fs_exit_cooldown: float = 0.0  # 退出冷却计时器 (防止频繁进出)
-const FS_EXIT_COOLDOWN_DURATION := 30.0  # 退出全屏后 30 秒内不再重新进入
-var _fs_last_bubble_time: float = 0.0  # 上次全屏气泡时间
-const FS_BUBBLE_MIN_INTERVAL := 60.0  # 全屏气泡最小间隔 60 秒
+
 
 func _ready() -> void:
 	# ── 性能调频 ──
@@ -89,7 +80,6 @@ func _ready() -> void:
 	EventBus.context_menu_toggled.connect(_on_context_menu_toggled)
 	EventBus.window_mode_changed.connect(_on_window_mode_changed)
 	EventBus.behavior_mode_changed.connect(_on_behavior_mode_changed)
-	EventBus.fullscreen_locked_changed.connect(_on_fullscreen_locked_changed)
 	EventBus.clone_pet.connect(_on_clone_pet_requested)
 	EventBus.dismiss_clones.connect(_on_dismiss_clones_requested)
 	
@@ -101,15 +91,7 @@ func _ready() -> void:
 	if behavior_mode == 1:
 		EventBus.behavior_mode_changed.emit(1)
 	
-	# 启动全屏检测雷达 (1.5s 一次，进入防抖 3 次 = 4.5s 确认)
-	if win_manager and win_manager.has_method("IsUserInFullscreen"):
-		var fs_timer = Timer.new()
-		fs_timer.wait_time = 1.5
-		fs_timer.autostart = true
-		fs_timer.timeout.connect(_check_fullscreen)
-		add_child(fs_timer)
-		print("[DesktopPet] 全屏检测雷达已启动 (1.5s 间隔, 进入防抖 3 次)")
-	
+
 	# 启动任务栏样式守护 Timer (每5秒自检，防止引擎焦点变化时重置样式)
 	if win_manager and win_manager.has_method("EnsureHiddenFromTaskbar"):
 		var taskbar_timer = Timer.new()
@@ -832,9 +814,6 @@ var _passthrough_timer: float = 0.0
 const PASSTHROUGH_INTERVAL := 0.016
 
 func _process(delta: float) -> void:
-	# 全屏锁定时不刷新穿透 (保持全窗口穿透)
-	if is_instance_valid(pet_instance) and pet_instance.fullscreen_locked:
-		return
 	if is_dragging or is_menu_open:
 		return
 	_passthrough_timer += delta
@@ -945,96 +924,7 @@ func _guard_taskbar_style() -> void:
 		if fixed:
 			print("[DesktopPet] 任务栏样式守护：已自动修复 ToolWindow 标记")
 
-func _on_fullscreen_locked_changed(locked: bool) -> void:
-	if locked:
-		# 整个窗口鼠标穿透 (宠物仍然可见，但所有点击穿透到下层 app)
-		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, true)
-		print("[DesktopPet] 全屏锁定：鼠标穿透已启用")
-	else:
-		# 关闭窗口级穿透，恢复正常的区域穿透模式
-		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, false)
-		_update_passthrough_state()
-		print("[DesktopPet] 全屏解锁：鼠标交互已恢复")
 
-# ── 全屏自动检测 ──
-
-func _check_fullscreen() -> void:
-	if not win_manager:
-		return
-	# 拖拽中跳过检测 (拖动宠物会让宠物窗口抢前台，等松手后再检测)
-	if is_dragging:
-		return
-	
-	# 冷却期递减
-	if _fs_exit_cooldown > 0.0:
-		_fs_exit_cooldown -= 1.5  # 每次检测减去 timer 间隔
-	
-	var is_fs: bool = win_manager.call("IsUserInFullscreen")
-	
-	# 进入计数
-	if is_fs:
-		_fs_confirm_count += 1
-		_fs_exit_count = 0  # 重置退出计数
-	else:
-		_fs_exit_count += 1
-		_fs_confirm_count = 0  # 重置进入计数
-	
-	# 进入全屏：需连续 N 次确认 + 冷却期已过
-	if _fs_confirm_count >= FS_ENTER_THRESHOLD and not _was_fullscreen:
-		# 冷却期内忽略 (防止频繁进出全屏反复触发)
-		if _fs_exit_cooldown > 0.0:
-			_fs_confirm_count = 0
-			return
-		print("[DesktopPet] 全屏已确认 (连续 ", _fs_confirm_count, " 次)")
-		_was_fullscreen = true
-		_on_fullscreen_entered()
-	# 退出全屏：需连续 N 次确认
-	elif _fs_exit_count >= FS_EXIT_THRESHOLD and _was_fullscreen:
-		print("[DesktopPet] 全屏退出已确认")
-		_was_fullscreen = false
-		_on_fullscreen_exited()
-
-func _on_fullscreen_entered() -> void:
-	# 同步全屏标记到所有 pet
-	for p in pet_instances:
-		if is_instance_valid(p):
-			p.quiet_by_fullscreen = true
-	
-	var now = Time.get_ticks_msec() / 1000.0
-	if behavior_mode == 0:
-		if now - _fs_last_bubble_time >= FS_BUBBLE_MIN_INTERVAL:
-			EventBus.show_reminder_bubble.emit("主人要专注了吗？我去角落待着~")
-			_fs_last_bubble_time = now
-		behavior_mode = 1
-		EventBus.behavior_mode_changed.emit(1)
-	
-	# 所有宠物走边缘
-	for p in pet_instances:
-		if is_instance_valid(p):
-			p.transition_to("retreat")
-	
-	_quiet_by_fullscreen = true
-
-func _on_fullscreen_exited() -> void:
-	if not _quiet_by_fullscreen:
-		return
-	_quiet_by_fullscreen = false
-	_fs_exit_cooldown = FS_EXIT_COOLDOWN_DURATION
-	# 同步全屏标记到所有 pet + 解锁鼠标交互
-	for p in pet_instances:
-		if is_instance_valid(p):
-			p.quiet_by_fullscreen = false
-			p.fullscreen_locked = false
-	EventBus.fullscreen_locked_changed.emit(false)
-	var now = Time.get_ticks_msec() / 1000.0
-	if now - _fs_last_bubble_time >= FS_BUBBLE_MIN_INTERVAL:
-		EventBus.show_reminder_bubble.emit("主人忙完了？😊")
-		_fs_last_bubble_time = now
-	behavior_mode = 0
-	EventBus.behavior_mode_changed.emit(0)
-	for p in pet_instances:
-		if is_instance_valid(p):
-			p.transition_to("idle")
 
 # ── 告别退出 ──
 
@@ -1056,13 +946,10 @@ func quit_with_farewell() -> void:
 	var line = farewell_lines[randi() % farewell_lines.size()]
 	EventBus.show_reminder_bubble.emit(line)
 	
-	# 解除所有宠物的锁定状态
+	# 统一设置为安静模式
 	for p in pet_instances:
 		if is_instance_valid(p):
-			p.fullscreen_locked = false
-			p.quiet_by_fullscreen = false
 			p.behavior_mode = 1
-	EventBus.fullscreen_locked_changed.emit(false)
 	
 	# 先让克隆体快速缩放淡出 + 禁用碰撞 (防止隐形实体阻挡原体退场)
 	for p in pet_instances:

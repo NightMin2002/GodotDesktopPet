@@ -1,5 +1,5 @@
 # retreat.gd — 撤退状态 (走向屏幕边缘)
-# 全屏检测触发时，宠物自动滚向最近的屏幕边缘，到达后切 Idle
+# 触发安静待命时，宠物自动滚向最近的屏幕边缘，到达后切 Idle
 class_name StateRetreat
 extends PetState
 
@@ -38,11 +38,6 @@ func process(_delta: float) -> void:
 		pet.linear_velocity = Vector2(0, pet.linear_velocity.y)
 		pet.angular_velocity = 0.0
 		pet.linear_damp = 3.0
-		# 全屏模式：锁定鼠标交互，窗口完全穿透
-		if pet.quiet_by_fullscreen:
-			pet.fullscreen_locked = true
-			if not pet.is_clone:  # 仅原体触发全局穿透锁定
-				EventBus.fullscreen_locked_changed.emit(true)
 		pet.transition_to("idle")
 
 func physics_process(_delta: float) -> void:

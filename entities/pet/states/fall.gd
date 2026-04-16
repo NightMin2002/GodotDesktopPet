@@ -24,15 +24,11 @@ func process(delta: float) -> void:
 	if pet.linear_velocity.length() < SETTLE_THRESHOLD:
 		settle_timer += delta
 		if settle_timer >= SETTLE_TIME:
-			if pet.quiet_by_fullscreen:
-				# 全屏安静模式：始终走回边缘
+			if pet.behavior_mode == 1:
+				# 手动安静待命：也走回边缘
 				if pet._was_dragged_in_quiet:
 					pet._was_dragged_in_quiet = false
-					EventBus.show_reminder_bubble.emit("哎呀，主人要好好专注呀！")
-				pet.transition_to("retreat")
-			elif pet.behavior_mode == 1:
-				# 手动安静待命：也走回边缘
-				pet._was_dragged_in_quiet = false
+					EventBus.show_reminder_bubble.emit("我要回去待命啦...")
 				pet.transition_to("retreat")
 			else:
 				pet._was_dragged_in_quiet = false
