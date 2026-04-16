@@ -18,13 +18,26 @@ func _ready() -> void:
 func link_pet(pet: Node2D) -> void:
 	pet_ref = pet as RigidBody2D
 
+func _get_active_pet() -> RigidBody2D:
+	if is_instance_valid(pet_ref):
+		return pet_ref
+	# 尝试从 main 获取原体引用
+	var main_node = get_tree().root.get_node_or_null("Main")
+	if main_node and "pet_instance" in main_node and is_instance_valid(main_node.pet_instance):
+		pet_ref = main_node.pet_instance
+		return pet_ref
+	return null
+
 func is_busy() -> bool:
 	return _is_showing
 
 func _process(_delta: float) -> void:
-	if not bubble_panel.visible or not is_instance_valid(pet_ref):
+	if not bubble_panel.visible:
 		return
-	var pet_pos = pet_ref.get_global_transform_with_canvas().get_origin()
+	var active_pet = _get_active_pet()
+	if not is_instance_valid(active_pet):
+		return
+	var pet_pos = active_pet.get_global_transform_with_canvas().get_origin()
 	var target_pos = pet_pos + Vector2(-bubble_panel.size.x / 2.0, -90)
 	var vp = get_viewport().get_visible_rect().size
 	target_pos.x = clampf(target_pos.x, 8, vp.x - bubble_panel.size.x - 8)
@@ -32,7 +45,7 @@ func _process(_delta: float) -> void:
 	bubble_panel.position = bubble_panel.position.lerp(target_pos, _delta * 10.0)
 	
 	# 将气泡区域注册到宠物的穿透多边形计算中 (grow(60) 覆盖淡出上飘动画)
-	pet_ref.overlay_rect = Rect2(bubble_panel.position, bubble_panel.size).grow(60)
+	active_pet.overlay_rect = Rect2(bubble_panel.position, bubble_panel.size).grow(60)
 
 func _build_bubble() -> void:
 	bubble_panel = PanelContainer.new()
@@ -70,8 +83,9 @@ func _show_bubble(message: String) -> void:
 	
 	bubble_label.text = message
 	
-	if is_instance_valid(pet_ref):
-		var pet_pos = pet_ref.get_global_transform_with_canvas().get_origin()
+	var active_pet = _get_active_pet()
+	if is_instance_valid(active_pet):
+		var pet_pos = active_pet.get_global_transform_with_canvas().get_origin()
 		bubble_panel.position = pet_pos + Vector2(-80, -90)
 	
 	bubble_panel.modulate.a = 0.0
@@ -93,8 +107,9 @@ func _show_bubble(message: String) -> void:
 	await fade.finished
 	bubble_panel.hide()
 	# 清除覆盖区域
-	if is_instance_valid(pet_ref):
-		pet_ref.overlay_rect = Rect2()
+	var active_pet2 = _get_active_pet()
+	if is_instance_valid(active_pet2):
+		active_pet2.overlay_rect = Rect2()
 	_is_showing = false
 	
 	# 播放队列中下一条消息 (间隔 1 秒，避免连续弹出太急)

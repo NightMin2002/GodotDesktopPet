@@ -131,6 +131,28 @@ alignment = 0
 layout_mode = 2
 theme_override_colors/separator_color = Color(0.1, 0.8, 1, 0.3)
 
+[node name="CloneBtn" type="Button" parent="HUDPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_hover_color = Color(0.7, 0.4, 1.0, 1)
+theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 20
+text = "🧬 召唤分身 (0/5)"
+flat = true
+alignment = 0
+
+[node name="DismissBtn" type="Button" parent="HUDPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_hover_color = Color(1.0, 0.6, 0.3, 1)
+theme_override_colors/font_color = Color(0.65, 0.5, 0.5, 0.85)
+theme_override_font_sizes/font_size = 20
+text = "💨 遣散所有分身"
+flat = true
+alignment = 0
+
+[node name="Sep4" type="HSeparator" parent="HUDPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/separator_color = Color(0.1, 0.8, 1, 0.3)
+
 [node name="QuitBtn" type="Button" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
 theme_override_colors/font_hover_color = Color(1.0, 0.45, 0.35, 1)

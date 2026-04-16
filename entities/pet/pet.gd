@@ -21,6 +21,10 @@ var shockwave_enabled: bool = true   # 撞击冲击波特效开关
 var trail_enabled: bool = true       # 粒子尾流特效开关
 var hue_time: float = 0.0           # 供虹彩渐变使用的时间戳
 
+# ── 克隆系统 ──
+var is_clone: bool = false           # 是否为克隆分身
+var clone_hue_shift: float = 0.0    # 克隆体色调偏移 (0~1 HSV hue offset)
+
 # ── 全息时钟 HUD ──
 var hud_clock_label: Label
 var hud_clock_enabled: bool = false
@@ -86,7 +90,10 @@ func _ready() -> void:
 	eye_behavior.pet = self
 	
 	# 从持久化存储恢复设置 (不依赖信号时序)
-	hud_clock_enabled = SettingsManager.get_bool("hud_clock", false)
+	if not is_clone:
+		hud_clock_enabled = SettingsManager.get_bool("hud_clock", false)
+	else:
+		hud_clock_enabled = false  # 克隆体不显示时钟
 	_init_hud_clock()
 	eye_behavior.tracking_enabled = SettingsManager.get_bool("eye_track", true)
 	shockwave_enabled = SettingsManager.get_bool("shockwave", true)
@@ -104,6 +111,8 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 	elif setting_id == "trail_fx":
 		trail_enabled = is_on
 	elif setting_id == "hud_clock":
+		if is_clone:
+			return  # 克隆体永远不显示时钟
 		hud_clock_enabled = is_on
 		hud_clock_label.visible = hud_clock_enabled
 
@@ -266,9 +275,9 @@ func _input(event: InputEvent) -> void:
 		current_state.input(event)
 	
 	if event is InputEventMouseButton:
-		# 右键呼出全局追踪菜单 (HUD)
+		# 右键呼出全局追踪菜单 (HUD) — 仅原体响应
 		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-			if is_mouse_on_pet():
+			if not is_clone and is_mouse_on_pet():
 				get_viewport().set_input_as_handled()
 				EventBus.show_context_menu.emit(self)
 
@@ -279,7 +288,7 @@ func _draw() -> void:
 	
 	# ── 绘制着陆虹彩冲击波特效 ──
 	for shock in shockwaves:
-		var effect_color = Color.from_hsv(fmod(hue_time, 1.0), 0.6, 1.0, shock["alpha"])
+		var effect_color = Color.from_hsv(fmod(hue_time + clone_hue_shift, 1.0), 0.6, 1.0, shock["alpha"])
 		# 高科技空心雷达弧辐射
 		draw_arc(shock["local_pos"], shock["radius"], 0, TAU, 32, effect_color, 4.0, true)
 
@@ -294,7 +303,7 @@ func _draw() -> void:
 			var ratio = 1.0 - float(i) / trail_size
 			
 			# HSL 颜色空间：hue随时间加随粒子尾巴顺延发生偏转，产生五光十色的神圣尾迹！
-			var trail_color = Color.from_hsv(fmod(hue_time + ratio * 0.3, 1.0), 0.65, 1.0, ratio * 0.7)
+			var trail_color = Color.from_hsv(fmod(hue_time + clone_hue_shift + ratio * 0.3, 1.0), 0.65, 1.0, ratio * 0.7)
 			colors.append(trail_color)
 			
 			var fade_radius = PET_RADIUS * ratio * 0.85
@@ -307,16 +316,18 @@ func _draw() -> void:
 	
 	# ── 科幻单眼结构 (深度结合图2的高级优化版) ──
 	# 外壳不受眨眼影响
-	# 1. 边缘深色轮廓与偏深的湛蓝主外壳
-	draw_circle(Vector2.ZERO, PET_RADIUS + 1.2, Color(0.08, 0.12, 0.32, 1.0))
-	draw_circle(Vector2.ZERO, PET_RADIUS, Color(0.15, 0.30, 0.80, 1.0))
+	# 1. 边缘深色轮廓与偏深的湛蓝主外壳 (克隆体应用色调偏移)
+	var shell_outline := _shift_color(Color(0.08, 0.12, 0.32, 1.0))
+	var shell_main := _shift_color(Color(0.15, 0.30, 0.80, 1.0))
+	draw_circle(Vector2.ZERO, PET_RADIUS + 1.2, shell_outline)
+	draw_circle(Vector2.ZERO, PET_RADIUS, shell_main)
 	
 	# 2. 白色边框 (优化：极细、通透，更显高级科幻感)
 	var border_radius = PET_RADIUS * 0.85
 	draw_arc(Vector2.ZERO, border_radius, 0, TAU, 64, Color(1.0, 1.0, 1.0, 0.8), 1.2, true)
 	
 	# 3. 四个尖尖的角 (优化：正统的底座圆垫与独立四向锥形叶片重叠，完美还原形状)
-	var dark_blue = Color(0.12, 0.18, 0.42, 1.0)
+	var dark_blue := _shift_color(Color(0.12, 0.18, 0.42, 1.0))
 	var base_r = PET_RADIUS * 0.68
 	var tip_dist = border_radius - 1.0  # 尖角刚刚触碰白边内侧
 	
@@ -336,15 +347,23 @@ func _draw() -> void:
 	var iris_scale = 1.0 - blink * 0.95  # 闭眼峰值时虹膌缩至 5%
 	if iris_scale > 0.05:
 		# 第一层：占据主视觉的最外侧浅灰白层
-		draw_circle(Vector2.ZERO, PET_RADIUS * 0.54 * iris_scale, Color(0.85, 0.88, 0.92, 1.0))
+		draw_circle(Vector2.ZERO, PET_RADIUS * 0.54 * iris_scale, _shift_color(Color(0.85, 0.88, 0.92, 1.0)))
 		# 第二层：灰蓝色瞳环渐变层
-		draw_circle(Vector2.ZERO, PET_RADIUS * 0.42 * iris_scale, Color(0.55, 0.65, 0.80, 1.0))
+		draw_circle(Vector2.ZERO, PET_RADIUS * 0.42 * iris_scale, _shift_color(Color(0.55, 0.65, 0.80, 1.0)))
 		# 第三层：深蓝色次瞳孔
-		draw_circle(Vector2.ZERO, PET_RADIUS * 0.28 * iris_scale, Color(0.15, 0.28, 0.68, 1.0))
+		draw_circle(Vector2.ZERO, PET_RADIUS * 0.28 * iris_scale, _shift_color(Color(0.15, 0.28, 0.68, 1.0)))
 		# 第四层：极暗的黑底核心
-		draw_circle(Vector2.ZERO, PET_RADIUS * 0.16 * iris_scale, Color(0.05, 0.08, 0.20, 1.0))
+		draw_circle(Vector2.ZERO, PET_RADIUS * 0.16 * iris_scale, _shift_color(Color(0.05, 0.08, 0.20, 1.0)))
 		
 		# 追踪光点 (随鼠标移动的小圆，形成有层次感的真实高光光斑)
 		var pupil_pos = eye_behavior.get_pupil_offset() * iris_scale
 		draw_circle(pupil_pos, PET_RADIUS * 0.11 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale))
 		draw_circle(pupil_pos, PET_RADIUS * 0.06 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale))
+
+## 克隆色偏工具函数: 将 RGB 颜色转到 HSV 空间偏移 hue 后转回
+func _shift_color(c: Color) -> Color:
+	if clone_hue_shift == 0.0:
+		return c
+	var h = c.h + clone_hue_shift
+	if h > 1.0: h -= 1.0
+	return Color.from_hsv(h, c.s, c.v, c.a)

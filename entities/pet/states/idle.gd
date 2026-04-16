@@ -22,7 +22,8 @@ func enter() -> void:
 			if pet.quiet_by_fullscreen and _is_near_edge():
 				if not pet.fullscreen_locked:
 					pet.fullscreen_locked = true
-					EventBus.fullscreen_locked_changed.emit(true)
+					if not pet.is_clone:  # 仅原体触发全局穿透锁定
+						EventBus.fullscreen_locked_changed.emit(true)
 
 func exit() -> void:
 	if pet:

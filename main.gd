@@ -6,11 +6,18 @@ extends Node2D
 enum WindowMode { FREE, CONFINED, REPELLED }
 
 var pet_scene := preload("res://entities/pet/pet.tscn")
-var pet_instance: RigidBody2D
+var clone_scene := preload("res://entities/pet/clone_pet.tscn")
+var pet_instance: RigidBody2D  # 原体引用 (快捷访问)
+var pet_instances: Array[RigidBody2D] = []  # 所有宠物 (原体 + 克隆体)
 var screen_rect: Rect2i
 var boundary_size: Vector2  # 实际使用的边界尺寸 (视口坐标系)
 var is_dragging := false
 var is_menu_open := false
+
+# ── 克隆系统 ──
+const MAX_CLONES: int = 5
+# 5 种预设色调偏移 (HSV hue 0~1)：紫、青、琥珀、翠绿、玫瑰
+var CLONE_HUE_SHIFTS: Array[float] = [0.75, 0.45, 0.12, 0.35, 0.85]
 
 # -- 双端架构 C# 桥接池 --
 var win_manager: Node
@@ -63,6 +70,11 @@ func _ready() -> void:
 	_create_boundaries()
 	_spawn_pet()
 	
+	# 从持久化恢复克隆体
+	var saved_clones = SettingsManager.get_int("clone_count", 0)
+	for i in range(mini(saved_clones, MAX_CLONES)):
+		_clone_pet(null, false)  # 静默恢复，不冒泡
+	
 	# 启动幽灵墙同步雷达
 	if win_manager:
 		var sync_timer = Timer.new()
@@ -78,6 +90,8 @@ func _ready() -> void:
 	EventBus.window_mode_changed.connect(_on_window_mode_changed)
 	EventBus.behavior_mode_changed.connect(_on_behavior_mode_changed)
 	EventBus.fullscreen_locked_changed.connect(_on_fullscreen_locked_changed)
+	EventBus.clone_pet.connect(_on_clone_pet_requested)
+	EventBus.dismiss_clones.connect(_on_dismiss_clones_requested)
 	
 	# 从持久化恢复窗口交互模式
 	window_mode = SettingsManager.get_int("window_mode", WindowMode.FREE)
@@ -686,11 +700,11 @@ func _on_window_mode_changed(mode: int) -> void:
 	window_mode = mode
 	SettingsManager.set_int("window_mode", mode)
 	
-	# 同步模式给宠物
-	if is_instance_valid(pet_instance):
-		pet_instance.window_mode = mode
+	# 同步模式给所有宠物
+	for p in pet_instances:
+		if is_instance_valid(p):
+			p.window_mode = mode
 	
-	# 下一轮 Timer 同步 (0.1s 内) 会自动应用新模式的碰撞体
 	print("[DesktopPet] 窗口交互模式切换: ", ["自由漫游", "窗口封闭", "窗口排斥"][mode])
 
 
@@ -707,8 +721,76 @@ func _spawn_pet() -> void:
 		boundary_size.y / 3.0
 	)
 	add_child(pet_instance)
+	pet_instances.append(pet_instance)
 	
 	print("[DesktopPet] 宠物生成于: ", pet_instance.position)
+
+# ── 克隆系统 ──
+
+func _on_clone_pet_requested(_source: Node2D) -> void:
+	_clone_pet(_source, true)
+
+func _clone_pet(source: Node2D, with_bubble: bool) -> void:
+	var clone_count = pet_instances.size() - 1  # 不含原体
+	if clone_count >= MAX_CLONES:
+		if with_bubble:
+			EventBus.show_reminder_bubble.emit("分身已达上限 (" + str(MAX_CLONES) + "/" + str(MAX_CLONES) + ")！")
+		return
+	
+	var clone = clone_scene.instantiate()
+	clone.screen_rect = screen_rect
+	clone.boundary_size = boundary_size
+	clone.window_mode = window_mode
+	clone.clone_hue_shift = CLONE_HUE_SHIFTS[clone_count % CLONE_HUE_SHIFTS.size()]
+	
+	# 在原体/源头附近上方生成，错开一点水平位置
+	var spawn_x: float
+	if is_instance_valid(source):
+		spawn_x = source.global_position.x + randf_range(-80, 80)
+	else:
+		spawn_x = randf_range(boundary_size.x * 0.2, boundary_size.x * 0.8)
+	spawn_x = clampf(spawn_x, 60.0, boundary_size.x - 60.0)
+	clone.position = Vector2(spawn_x, boundary_size.y * 0.1)
+	
+	# 同步行为指令
+	clone.behavior_mode = behavior_mode
+	
+	add_child(clone)
+	pet_instances.append(clone)
+	
+	# 持久化保存
+	SettingsManager.set_int("clone_count", pet_instances.size() - 1)
+	
+	if with_bubble:
+		var greetings = ["分身术！召唤成功✨", "又多了一个伙伴！🎉", "一起热闹热闹～🌟", "家族壮大啦！⚡", "我给你叫了个帮手！🫡"]
+		EventBus.show_reminder_bubble.emit(greetings[clone_count % greetings.size()])
+	
+	print("[DesktopPet] 克隆体 #", clone_count + 1, " 已生成 (hue_shift=", clone.clone_hue_shift, ")")
+
+func _on_dismiss_clones_requested() -> void:
+	var clones_to_remove: Array[RigidBody2D] = []
+	for p in pet_instances:
+		if p.is_clone:
+			clones_to_remove.append(p)
+	
+	if clones_to_remove.is_empty():
+		EventBus.show_reminder_bubble.emit("没有分身可以遣散哦~")
+		return
+	
+	for clone in clones_to_remove:
+		pet_instances.erase(clone)
+		# 淡出消失动画 + 禁用碰撞 (防止隐形实体阻挡其他宠物)
+		clone.freeze = true
+		clone.collision_layer = 0
+		clone.collision_mask = 0
+		var tw = create_tween().set_parallel(true)
+		tw.tween_property(clone, "modulate:a", 0.0, 0.5)
+		tw.tween_property(clone, "scale", Vector2(0.1, 0.1), 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+		var c = clone  # 闭包捕获
+		tw.finished.connect(func(): c.queue_free())
+	
+	SettingsManager.set_int("clone_count", 0)
+	EventBus.show_reminder_bubble.emit("分身们，辛苦了！下次再见~ 👋")
 
 # ── 提醒系统 ──
 
@@ -743,7 +825,7 @@ func _setup_pet_chatter() -> void:
 
 # ── 鼠标穿透管理 ──
 
-var last_passthrough_rect: Rect2i
+var _last_region_key: String = ""
 var _passthrough_timer: float = 0.0
 # 穿透区域刷新限流：DWM 重组合是头号性能杀手;
 # 渲染跑 120fps，穿透检测只需 ~60hz 即可（延迟 ≤16ms 人眼不可感知）
@@ -762,50 +844,76 @@ func _process(delta: float) -> void:
 
 func _update_passthrough_state() -> void:
 	if is_dragging or is_menu_open:
-		var full := PackedVector2Array([
-			Vector2.ZERO,
-			Vector2(boundary_size.x, 0),
-			Vector2(boundary_size.x, boundary_size.y),
-			Vector2(0, boundary_size.y),
-		])
-		DisplayServer.window_set_mouse_passthrough(full)
+		# 拖拽/菜单打开时: 清除区域限制，整个窗口可见可交互
+		if win_manager and win_manager.has_method("ClearWindowRegion"):
+			win_manager.call("ClearWindowRegion")
+		else:
+			# 回退到 Godot API
+			var full := PackedVector2Array([
+				Vector2.ZERO,
+				Vector2(boundary_size.x, 0),
+				Vector2(boundary_size.x, boundary_size.y),
+				Vector2(0, boundary_size.y),
+			])
+			DisplayServer.window_set_mouse_passthrough(full)
 	else:
-		last_passthrough_rect = Rect2i()
+		_last_region_key = ""
 		_update_passthrough_box()
 
 func _update_passthrough_box() -> void:
-	if not is_instance_valid(pet_instance):
+	# 为每个宠物实例生成独立的栅格对齐矩形
+	var rects: Array[Rect2i] = []
+	for p in pet_instances:
+		if not is_instance_valid(p):
+			continue
+		var r: Rect2
+		if p.has_method("get_render_rect"):
+			r = p.get_render_rect()
+		else:
+			var pos := p.global_position
+			r = Rect2(pos - Vector2(50, 50), Vector2(100, 100))
+		if r.size.x < 1.0 or r.size.y < 1.0:
+			continue
+		# 8 像素栅格对齐 (减少刷新频率)
+		var sx := int(r.position.x / 8.0) * 8
+		var sy := int(r.position.y / 8.0) * 8
+		var sw := int(r.size.x / 8.0) * 8 + 16
+		var sh := int(r.size.y / 8.0) * 8 + 16
+		rects.append(Rect2i(sx, sy, sw, sh))
+	
+	if rects.is_empty():
 		return
 	
-	var exact_rect: Rect2
-	if pet_instance.has_method("get_render_rect"):
-		exact_rect = pet_instance.get_render_rect()
+	# 变化检测 (避免无意义的 DWM 重组合)
+	var key := ""
+	for rect in rects:
+		key += str(rect) + ";"
+	if key == _last_region_key:
+		return
+	_last_region_key = key
+	
+	# 优先使用 C# 层 CombineRgn 实现真正的多矩形独立区域
+	if win_manager and win_manager.has_method("SetWindowRegion"):
+		var typed_rects := Rect2iArrayToGodotArray(rects)
+		win_manager.call("SetWindowRegion", typed_rects)
 	else:
-		var pos := pet_instance.global_position
-		exact_rect = Rect2(pos - Vector2(50, 50), Vector2(100, 100))
-	
-	# 这里是终极秘诀：把浮点级的渲染框，对齐到底层 8 像素的栅格中
-	# 这样一来，只有当特效或实体的包围盒真正跨越了 8 像素边界时，才会惊动 Windows 系统
-	# 既完美消除了拖影的渲染裁剪，又 100% 杜绝了 DWM 底层每秒 60 次的无意义刷新卡顿！
-	var snapped_x = int(exact_rect.position.x / 8.0) * 8
-	var snapped_y = int(exact_rect.position.y / 8.0) * 8
-	var snapped_w = int(exact_rect.size.x / 8.0) * 8 + 16
-	var snapped_h = int(exact_rect.size.y / 8.0) * 8 + 16
-	var current_rect_i = Rect2i(snapped_x, snapped_y, snapped_w, snapped_h)
-	
-	if current_rect_i == last_passthrough_rect:
-		return
-		
-	last_passthrough_rect = current_rect_i
-	
-	var polygon := PackedVector2Array([
-		current_rect_i.position,
-		Vector2(current_rect_i.end.x, current_rect_i.position.y),
-		current_rect_i.end,
-		Vector2(current_rect_i.position.x, current_rect_i.end.y),
-	])
-	
-	DisplayServer.window_set_mouse_passthrough(polygon)
+		# 回退: 合并为单个 AABB (间隙会被阻挡，但至少可用)
+		var merged := rects[0]
+		for i in range(1, rects.size()):
+			merged = merged.merge(rects[i])
+		var polygon := PackedVector2Array([
+			Vector2(merged.position),
+			Vector2(merged.end.x, merged.position.y),
+			Vector2(merged.end),
+			Vector2(merged.position.x, merged.end.y),
+		])
+		DisplayServer.window_set_mouse_passthrough(polygon)
+
+## 将 GDScript Array[Rect2i] 转换为 C# 可接收的 Godot.Collections.Array<Rect2I>
+func Rect2iArrayToGodotArray(rects: Array[Rect2i]) -> Array:
+	var arr: Array[Rect2i] = []
+	arr.assign(rects)
+	return arr
 
 func _on_drag_started() -> void:
 	is_dragging = true
@@ -824,9 +932,11 @@ func _on_context_menu_toggled(is_open: bool) -> void:
 func _on_behavior_mode_changed(mode: int) -> void:
 	behavior_mode = mode
 	SettingsManager.set_int("behavior_mode", mode)
-	# 手动切安静待命时，也自动走向最近的屏幕边缘
-	if mode == 1 and is_instance_valid(pet_instance):
-		pet_instance.transition_to("retreat")
+	# 手动切安静待命时，所有宠物也自动走向最近的屏幕边缘
+	if mode == 1:
+		for p in pet_instances:
+			if is_instance_valid(p):
+				p.transition_to("retreat")
 
 ## 任务栏样式守护: 如果引擎意外重置了 WS_EX_TOOLWINDOW，重新推入
 func _guard_taskbar_style() -> void:
@@ -885,50 +995,46 @@ func _check_fullscreen() -> void:
 		_on_fullscreen_exited()
 
 func _on_fullscreen_entered() -> void:
-	# 同步全屏标记到 pet
-	if pet_instance:
-		pet_instance.quiet_by_fullscreen = true
+	# 同步全屏标记到所有 pet
+	for p in pet_instances:
+		if is_instance_valid(p):
+			p.quiet_by_fullscreen = true
 	
 	var now = Time.get_ticks_msec() / 1000.0
 	if behavior_mode == 0:
-		# 当前自由模式 → 切安静 + 走边缘
-		# 气泡节流: 距上次全屏气泡超过 60 秒才冒泡 (防止频繁打扰)
 		if now - _fs_last_bubble_time >= FS_BUBBLE_MIN_INTERVAL:
 			EventBus.show_reminder_bubble.emit("主人要专注了吗？我去角落待着~")
 			_fs_last_bubble_time = now
 		behavior_mode = 1
 		EventBus.behavior_mode_changed.emit(1)
 	
-	# 无论什么模式，全屏都要走边缘
-	if pet_instance:
-		pet_instance.transition_to("retreat")
+	# 所有宠物走边缘
+	for p in pet_instances:
+		if is_instance_valid(p):
+			p.transition_to("retreat")
 	
-	# 必须在 emit 之后设置，因为 emit 会触发 _on_behavior_mode_changed
 	_quiet_by_fullscreen = true
 
 func _on_fullscreen_exited() -> void:
 	if not _quiet_by_fullscreen:
 		return
 	_quiet_by_fullscreen = false
-	# 启动退出冷却期 (防止频繁进出)
 	_fs_exit_cooldown = FS_EXIT_COOLDOWN_DURATION
-	# 同步全屏标记到 pet + 解锁鼠标交互
-	if pet_instance:
-		pet_instance.quiet_by_fullscreen = false
-		pet_instance.fullscreen_locked = false
-	# 恢复鼠标交互
+	# 同步全屏标记到所有 pet + 解锁鼠标交互
+	for p in pet_instances:
+		if is_instance_valid(p):
+			p.quiet_by_fullscreen = false
+			p.fullscreen_locked = false
 	EventBus.fullscreen_locked_changed.emit(false)
-	# 气泡消息 (节流同理)
 	var now = Time.get_ticks_msec() / 1000.0
 	if now - _fs_last_bubble_time >= FS_BUBBLE_MIN_INTERVAL:
 		EventBus.show_reminder_bubble.emit("主人忙完了？😊")
 		_fs_last_bubble_time = now
-	# 恢复自由行动
 	behavior_mode = 0
 	EventBus.behavior_mode_changed.emit(0)
-	# 强制切到 idle 重置阻尼，让宠物立刻恢复活力
-	if pet_instance:
-		pet_instance.transition_to("idle")
+	for p in pet_instances:
+		if is_instance_valid(p):
+			p.transition_to("idle")
 
 # ── 告别退出 ──
 
@@ -950,21 +1056,31 @@ func quit_with_farewell() -> void:
 	var line = farewell_lines[randi() % farewell_lines.size()]
 	EventBus.show_reminder_bubble.emit(line)
 	
+	# 解除所有宠物的锁定状态
+	for p in pet_instances:
+		if is_instance_valid(p):
+			p.fullscreen_locked = false
+			p.quiet_by_fullscreen = false
+			p.behavior_mode = 1
+	EventBus.fullscreen_locked_changed.emit(false)
+	
+	# 先让克隆体快速缩放淡出 + 禁用碰撞 (防止隐形实体阻挡原体退场)
+	for p in pet_instances:
+		if is_instance_valid(p) and p.is_clone:
+			p.freeze = true
+			p.collision_layer = 0
+			p.collision_mask = 0
+			var ctw = create_tween().set_parallel(true)
+			ctw.tween_property(p, "modulate:a", 0.0, 0.4)
+			ctw.tween_property(p, "scale", Vector2(0.1, 0.1), 0.4)
+			var cp = p
+			ctw.finished.connect(func(): cp.queue_free())
+	
 	if pet_instance:
-		# 解除所有锁定状态
-		pet_instance.fullscreen_locked = false
-		pet_instance.quiet_by_fullscreen = false
-		EventBus.fullscreen_locked_changed.emit(false)
-		
-		# 切换到安静模式, 防止撤退到达边缘后随机跳跃/行走
-		pet_instance.behavior_mode = 1
-		
 		# 如果宠物在空中/正在下落，先等待落地 (最多 6 秒防止卡死)
 		if not pet_instance.is_settled() or pet_instance.current_state_name in ["fall", "jump", "drag"]:
-			# 如果在拖拽中，先释放
 			if pet_instance.current_state_name == "drag":
 				pet_instance.transition_to("fall")
-			# 等待落地稳定
 			var wait_time := 0.0
 			while wait_time < 6.0:
 				await get_tree().create_timer(0.2).timeout
@@ -981,14 +1097,11 @@ func quit_with_farewell() -> void:
 		# 计算退场路径: 当前位置 → 滑出屏幕外
 		var slide_dir = -1.0 if pet_instance.global_position.x < boundary_size.x / 2.0 else 1.0
 		var dist_to_edge = pet_instance.global_position.x if slide_dir < 0 else boundary_size.x - pet_instance.global_position.x
-		var total_dist = dist_to_edge + 150.0  # 多滑 150px 确保完全出屏
+		var total_dist = dist_to_edge + 150.0
 		var exit_pos = pet_instance.global_position + Vector2(slide_dir * total_dist, 0)
-		# 滚动角度 = 距离 / 半径 (模拟真实滚动)
 		var roll_angle = pet_instance.rotation + slide_dir * total_dist / 30.0
-		# 时间与距离成正比, 最少 0.8s 最多 2.0s
 		var slide_time = clampf(total_dist / 400.0, 0.8, 2.0)
 		
-		# 退场动画: 滑出 + 滚动 + 渐隐 (全部并行)
 		var tween = create_tween().set_parallel(true)
 		tween.tween_property(pet_instance, "global_position", exit_pos, slide_time) \
 			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)

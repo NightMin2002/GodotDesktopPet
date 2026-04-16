@@ -41,7 +41,8 @@ func process(_delta: float) -> void:
 		# 全屏模式：锁定鼠标交互，窗口完全穿透
 		if pet.quiet_by_fullscreen:
 			pet.fullscreen_locked = true
-			EventBus.fullscreen_locked_changed.emit(true)
+			if not pet.is_clone:  # 仅原体触发全局穿透锁定
+				EventBus.fullscreen_locked_changed.emit(true)
 		pet.transition_to("idle")
 
 func physics_process(_delta: float) -> void:

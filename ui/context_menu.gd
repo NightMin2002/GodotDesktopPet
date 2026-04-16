@@ -12,6 +12,8 @@ extends CanvasLayer
 @onready var behavior_mode_btn: Button = $HUDPanel/Margin/VBox/BehaviorModeBtn
 @onready var chatter_btn: Button = $HUDPanel/Margin/VBox/ChatterBtn
 @onready var reminder_btn: Button = $HUDPanel/Margin/VBox/ReminderBtn
+@onready var clone_btn: Button = $HUDPanel/Margin/VBox/CloneBtn
+@onready var dismiss_btn: Button = $HUDPanel/Margin/VBox/DismissBtn
 @onready var quit_btn: Button = $HUDPanel/Margin/VBox/QuitBtn
 
 var _tooltip_panel: PanelContainer
@@ -43,6 +45,8 @@ func _ready() -> void:
 	chatter_btn.mouse_entered.connect(func(): _show_chatter_desc(true))
 	chatter_btn.mouse_exited.connect(func(): _show_chatter_desc(false))
 	reminder_btn.pressed.connect(_on_reminder_btn_pressed)
+	clone_btn.pressed.connect(_on_clone_btn_pressed)
+	dismiss_btn.pressed.connect(_on_dismiss_btn_pressed)
 	quit_btn.pressed.connect(_on_quit_btn_pressed)
 	
 	# 监听外部行为模式变化 (全屏自动触发时同步按钮文字)
@@ -121,6 +125,7 @@ func _on_show_context_menu(target_node: Node2D) -> void:
 		_close_hud()
 		return
 	EventBus.context_menu_toggled.emit(true)
+	_update_clone_label()  # 每次开菜单时刷新克隆计数
 	var pet_pos = target.get_global_transform_with_canvas().get_origin()
 	var panel_pos = _clamp_to_viewport(pet_pos + Vector2(45, -65))
 	hud.position = panel_pos
@@ -209,7 +214,6 @@ func _show_chatter_desc(show: bool) -> void:
 	_show_tooltip_for(chatter_btn, CHATTER_MODE_DESCS[mode], show)
 
 func _on_reminder_btn_pressed() -> void:
-	# 只做视觉关闭，不发 toggled(false)，把穿透控制权移交给提醒面板
 	_tooltip_panel.hide()
 	if is_instance_valid(target):
 		hud.pivot_offset = target.get_global_transform_with_canvas().get_origin() - hud.position
@@ -219,6 +223,26 @@ func _on_reminder_btn_pressed() -> void:
 	tween.finished.connect(func(): hud.hide())
 	target = null
 	EventBus.show_reminder_panel.emit()
+
+# ── 克隆系统 ──
+
+func _on_clone_btn_pressed() -> void:
+	if is_instance_valid(target):
+		EventBus.clone_pet.emit(target)
+	# 延迟一帧更新计数
+	await get_tree().process_frame
+	_update_clone_label()
+
+func _on_dismiss_btn_pressed() -> void:
+	EventBus.dismiss_clones.emit()
+	_close_hud()
+
+func _update_clone_label() -> void:
+	var main_node = get_tree().root.get_node_or_null("Main")
+	if main_node and main_node.has_method("get") and "pet_instances" in main_node:
+		var count: int = (main_node.pet_instances as Array).size() - 1
+		var max_c: int = main_node.MAX_CLONES
+		clone_btn.text = "🧬 召唤分身 (" + str(count) + "/" + str(max_c) + ")"
 
 # ── 退出按钮 ──
 

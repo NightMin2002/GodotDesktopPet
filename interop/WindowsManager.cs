@@ -358,4 +358,66 @@ public partial class WindowsManager : Node
         }
         catch { return false; }
     }
+
+    // ── 多矩形窗口区域 (GDI Region API) ──
+    // 绕过 Godot window_set_mouse_passthrough 的单多边形限制
+    // 使用 CombineRgn(RGN_OR) 将多个矩形合并为真正的联合区域
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect);
+
+    [DllImport("gdi32.dll")]
+    private static extern int CombineRgn(IntPtr hrgnDest, IntPtr hrgnSrc1, IntPtr hrgnSrc2, int iMode);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(IntPtr hObject);
+
+    [DllImport("user32.dll")]
+    private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool bRedraw);
+
+    private const int RGN_OR = 2; // 联合模式: 合并两个区域
+
+    /// <summary>
+    /// 将多个独立矩形区域合并后应用为窗口可见/可交互区域。
+    /// 每个矩形独立存在，矩形之间的间隙完全穿透。
+    /// 坐标为窗口客户区坐标 (与 Godot 视口坐标一致)。
+    /// </summary>
+    public void SetWindowRegion(Godot.Collections.Array<Rect2I> rects)
+    {
+        IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
+
+        if (rects == null || rects.Count == 0)
+        {
+            // 空数组 = 清除区域限制 (整个窗口可见)
+            SetWindowRgn(hwnd, IntPtr.Zero, true);
+            return;
+        }
+
+        // 创建第一个矩形作为基础区域
+        var r0 = rects[0];
+        IntPtr combined = CreateRectRgn(r0.Position.X, r0.Position.Y,
+            r0.Position.X + r0.Size.X, r0.Position.Y + r0.Size.Y);
+
+        // 逐个合并后续矩形
+        for (int i = 1; i < rects.Count; i++)
+        {
+            var r = rects[i];
+            IntPtr temp = CreateRectRgn(r.Position.X, r.Position.Y,
+                r.Position.X + r.Size.X, r.Position.Y + r.Size.Y);
+            CombineRgn(combined, combined, temp, RGN_OR);
+            DeleteObject(temp); // 临时区域用完即删
+        }
+
+        // 应用到窗口 (系统接管区域句柄的所有权，无需手动删除)
+        SetWindowRgn(hwnd, combined, true);
+    }
+
+    /// <summary>
+    /// 清除窗口区域限制，恢复整个窗口可见
+    /// </summary>
+    public void ClearWindowRegion()
+    {
+        IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
+        SetWindowRgn(hwnd, IntPtr.Zero, true);
+    }
 }
