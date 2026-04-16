@@ -25,6 +25,7 @@ var hue_time: float = 0.0           # 供虹彩渐变使用的时间戳
 var hud_clock_label: Label
 var hud_clock_enabled: bool = false
 var hud_bounce_time: float = 0.0
+var _is_clock_hidden: bool = false
 
 # ── 眼球行为控制器 ──
 var eye_behavior: EyeBehavior
@@ -205,6 +206,16 @@ func _process(delta: float) -> void:
 		var text_size = hud_clock_label.get_minimum_size()
 		var center_p = global_position + Vector2(-text_size.x / 2.0, -PET_RADIUS - 28.0 + float_y)
 		hud_clock_label.global_position = center_p
+		
+		# 当气泡出现（overlay_rect不为零）时自动避让隐藏时钟，防重叠字体重叠
+		var should_hide = (overlay_rect.size != Vector2.ZERO)
+		if should_hide != _is_clock_hidden:
+			_is_clock_hidden = should_hide
+			var tw = create_tween()
+			if should_hide:
+				tw.tween_property(hud_clock_label, "modulate:a", 0.0, 0.2)
+			else:
+				tw.tween_property(hud_clock_label, "modulate:a", 1.0, 0.3)
 	
 	# 更新眼球行为（追踪/游走/眨眼）
 	eye_behavior.update(delta)
