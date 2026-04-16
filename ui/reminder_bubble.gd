@@ -14,19 +14,27 @@ func _ready() -> void:
 	layer = 110
 	_build_bubble()
 	EventBus.show_reminder_bubble.connect(_on_bubble_requested)
+	EventBus.show_targeted_bubble.connect(_on_targeted_bubble_requested)
 
 func link_pet(pet: Node2D) -> void:
 	pet_ref = pet as RigidBody2D
 
+var _last_target: Node2D = null
+
 func _get_active_pet() -> RigidBody2D:
+	if is_instance_valid(_last_target):
+		return _last_target as RigidBody2D
 	if is_instance_valid(pet_ref):
 		return pet_ref
-	# 尝试从 main 获取原体引用
 	var main_node = get_tree().root.get_node_or_null("Main")
 	if main_node and "pet_instance" in main_node and is_instance_valid(main_node.pet_instance):
 		pet_ref = main_node.pet_instance
 		return pet_ref
 	return null
+
+func _on_targeted_bubble_requested(msg: String, target: Node2D) -> void:
+	_last_target = target
+	_on_bubble_requested(msg)
 
 func is_busy() -> bool:
 	return _is_showing

@@ -61,4 +61,4 @@ func _handle_poke() -> void:
 	# Godot 4 weekday: 0 = Sun, 1 = Mon ...
 	var wd = weekdays[d.weekday % 7]
 	var msg := "今天是 %d年%02d月%02d日 (周%s)。" % [d.year, d.month, d.day, wd]
-	EventBus.show_reminder_bubble.emit(msg)
+	EventBus.show_targeted_bubble.emit(msg, pet)

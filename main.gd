@@ -637,6 +637,7 @@ func _clone_pet(source: Node2D, with_bubble: bool) -> void:
 		EventBus.show_reminder_bubble.emit(greetings[clone_count % greetings.size()])
 	
 	print("[DesktopPet] 克隆体 #", clone_count + 1, " 已生成 (hue_shift=", clone.clone_hue_shift, ")")
+	reorganize_quiet_queue()
 
 func _on_dismiss_clones_requested() -> void:
 	var clones_to_remove: Array[RigidBody2D] = []
@@ -662,6 +663,7 @@ func _on_dismiss_clones_requested() -> void:
 	
 	SettingsManager.set_int("clone_count", 0)
 	EventBus.show_reminder_bubble.emit("分身们，辛苦了！下次再见~ 👋")
+	reorganize_quiet_queue()
 
 # ── 提醒系统 ──
 
@@ -800,11 +802,47 @@ func _on_context_menu_toggled(is_open: bool) -> void:
 func _on_behavior_mode_changed(mode: int) -> void:
 	behavior_mode = mode
 	SettingsManager.set_int("behavior_mode", mode)
-	# 手动切安静待命时，所有宠物也自动走向最近的屏幕边缘
+	# 手动切安静待命时，分配并移动到最近的屏幕边缘队列
 	if mode == 1:
-		for p in pet_instances:
-			if is_instance_valid(p):
-				p.transition_to("retreat")
+		reorganize_quiet_queue()
+
+## 动态重新评估所有克隆体在屏幕上的水平位置，并重新分配车位。
+## 防止出现“插队”带来的互相推搡死锁，或“首位被移走”后排不自动向前补位的问题。
+func reorganize_quiet_queue() -> void:
+	if behavior_mode != 1: return
+	
+	var left_q: Array[RigidBody2D] = []
+	var right_q: Array[RigidBody2D] = []
+	
+	for p in pet_instances:
+		if is_instance_valid(p):
+			if p.global_position.x < boundary_size.x / 2.0:
+				left_q.append(p)
+			else:
+				right_q.append(p)
+				
+	# 从外向内排序，离边缘越近排车位越靠前
+	left_q.sort_custom(func(a, b): return a.global_position.x < b.global_position.x)
+	right_q.sort_custom(func(a, b): return a.global_position.x > b.global_position.x)
+	
+	var spacing := 65.0
+	_apply_queue_targets(left_q, 40.0, spacing, 1.0)
+	_apply_queue_targets(right_q, boundary_size.x - 40.0, spacing, -1.0)
+
+func _apply_queue_targets(q: Array[RigidBody2D], base_x: float, spacing: float, dir: float) -> void:
+	for i in range(q.size()):
+		var p = q[i]
+		var old_tgt = p.get_meta("retreat_target_x", -9999.0)
+		var new_tgt = base_x + i * spacing * dir
+		p.set_meta("retreat_target_x", new_tgt)
+		
+		# 如果目标车位发生了显著挪动，且宠物正在发呆，叫醒它滚向新目标
+		if absf(old_tgt - new_tgt) > 5.0 and p.has_node("StateMachine"):
+			var state_machine = p.get_node("StateMachine")
+			if state_machine.current_state and state_machine.current_state.name == "idle":
+				# 确保不是原地微调
+				if absf(p.global_position.x - new_tgt) > 20.0:
+					p.transition_to("retreat")
 
 ## 任务栏样式守护: 如果引擎意外重置了 WS_EX_TOOLWINDOW，重新推入
 func _guard_taskbar_style() -> void:

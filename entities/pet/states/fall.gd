@@ -25,10 +25,15 @@ func process(delta: float) -> void:
 		settle_timer += delta
 		if settle_timer >= SETTLE_TIME:
 			if pet.behavior_mode == 1:
+				# 落地停稳后，获取真实的地表 X 坐标并触发全局分身排队计算
+				var main_node = pet.get_tree().root.get_node_or_null("Main")
+				if main_node and main_node.has_method("reorganize_quiet_queue"):
+					main_node.reorganize_quiet_queue()
+				
 				# 手动安静待命：也走回边缘
 				if pet._was_dragged_in_quiet:
 					pet._was_dragged_in_quiet = false
-					EventBus.show_reminder_bubble.emit("我要回去待命啦...")
+					EventBus.show_targeted_bubble.emit("我要回去待命啦...", pet)
 				pet.transition_to("retreat")
 			else:
 				pet._was_dragged_in_quiet = false
