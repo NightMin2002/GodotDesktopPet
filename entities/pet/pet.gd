@@ -21,6 +21,11 @@ var shockwave_enabled: bool = true   # 撞击冲击波特效开关
 var trail_enabled: bool = true       # 粒子尾流特效开关
 var hue_time: float = 0.0           # 供虹彩渐变使用的时间戳
 
+# ── 全息时钟 HUD ──
+var hud_clock_label: Label
+var hud_clock_enabled: bool = false
+var hud_bounce_time: float = 0.0
+
 # ── 眼球行为控制器 ──
 var eye_behavior: EyeBehavior
 
@@ -80,6 +85,8 @@ func _ready() -> void:
 	eye_behavior.pet = self
 	
 	# 从持久化存储恢复设置 (不依赖信号时序)
+	hud_clock_enabled = SettingsManager.get_bool("hud_clock", false)
+	_init_hud_clock()
 	eye_behavior.tracking_enabled = SettingsManager.get_bool("eye_track", true)
 	shockwave_enabled = SettingsManager.get_bool("shockwave", true)
 	trail_enabled = SettingsManager.get_bool("trail_fx", true)
@@ -95,6 +102,9 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		shockwave_enabled = is_on
 	elif setting_id == "trail_fx":
 		trail_enabled = is_on
+	elif setting_id == "hud_clock":
+		hud_clock_enabled = is_on
+		hud_clock_label.visible = hud_clock_enabled
 
 func _on_behavior_mode_changed(mode: int) -> void:
 	behavior_mode = mode
@@ -123,6 +133,17 @@ func transition_to(state_name: String) -> void:
 	if current_state:
 		current_state.enter()
 	EventBus.pet_state_changed.emit(old_name, state_name)
+
+func _init_hud_clock() -> void:
+	hud_clock_label = Label.new()
+	hud_clock_label.top_level = true # 脱离刚体物理旋转限定，保持悬浮
+	# 极简高对比机能风：纯黑字核 + 闪亮的白金光晕边框
+	hud_clock_label.add_theme_font_size_override("font_size", 16)
+	hud_clock_label.add_theme_color_override("font_color", Color(0.02, 0.02, 0.02, 0.9)) # 核心深邃黑
+	hud_clock_label.add_theme_color_override("font_outline_color", Color(0.9, 0.95, 1.0, 0.9)) # 强力抗白光抗锯齿泛白边
+	hud_clock_label.add_theme_constant_override("outline_size", 6)
+	hud_clock_label.visible = hud_clock_enabled
+	add_child(hud_clock_label)
 
 # ── 辅助方法 ──
 
@@ -153,6 +174,14 @@ func get_render_rect() -> Rect2:
 	rect.position -= Vector2(10, 10)
 	rect.size += Vector2(20, 20)
 	
+	# 合并全息时钟 UI 区域
+	if hud_clock_enabled and is_instance_valid(hud_clock_label) and hud_clock_label.visible:
+		var clock_rect = Rect2(hud_clock_label.global_position, hud_clock_label.get_minimum_size())
+		# 为时钟增加一点外边框余量
+		clock_rect.position -= Vector2(5, 5)
+		clock_rect.size += Vector2(10, 10)
+		rect = rect.merge(clock_rect)
+	
 	# 合并外部覆盖层区域 (如气泡通知)
 	if overlay_rect.size != Vector2.ZERO:
 		rect = rect.merge(overlay_rect)
@@ -164,6 +193,18 @@ func get_render_rect() -> Rect2:
 func _process(delta: float) -> void:
 	if current_state:
 		current_state.process(delta)
+	
+	# 更新全息时钟
+	if hud_clock_enabled and is_instance_valid(hud_clock_label):
+		hud_bounce_time += delta * 2.0
+		var time_dict = Time.get_time_dict_from_system()
+		hud_clock_label.text = "%02d:%02d:%02d" % [time_dict.hour, time_dict.minute, time_dict.second]
+		
+		# 加入类似 AR 投影悬浮抖动的垂直缓动数学波
+		var float_y = sin(hud_bounce_time) * 4.0
+		var text_size = hud_clock_label.get_minimum_size()
+		var center_p = global_position + Vector2(-text_size.x / 2.0, -PET_RADIUS - 28.0 + float_y)
+		hud_clock_label.global_position = center_p
 	
 	# 更新眼球行为（追踪/游走/眨眼）
 	eye_behavior.update(delta)

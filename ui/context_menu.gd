@@ -6,6 +6,7 @@ extends CanvasLayer
 @onready var track_btn: Button = $HUDPanel/Margin/VBox/EyeTrackBtn
 @onready var shockwave_btn: Button = $HUDPanel/Margin/VBox/ShockwaveBtn
 @onready var trail_btn: Button = $HUDPanel/Margin/VBox/TrailBtn
+@onready var hud_clock_btn: Button = $HUDPanel/Margin/VBox/HUDClockBtn
 @onready var autostart_btn: Button = $HUDPanel/Margin/VBox/AutoStartBtn
 @onready var window_mode_btn: Button = $HUDPanel/Margin/VBox/WindowModeBtn
 @onready var behavior_mode_btn: Button = $HUDPanel/Margin/VBox/BehaviorModeBtn
@@ -30,6 +31,7 @@ func _ready() -> void:
 	track_btn.pressed.connect(_on_track_btn_pressed)
 	shockwave_btn.pressed.connect(_on_shockwave_btn_pressed)
 	trail_btn.pressed.connect(_on_trail_btn_pressed)
+	hud_clock_btn.pressed.connect(_on_hud_clock_btn_pressed)
 	autostart_btn.pressed.connect(_on_autostart_btn_pressed)
 	window_mode_btn.pressed.connect(_on_window_mode_btn_pressed)
 	window_mode_btn.mouse_entered.connect(func(): _show_mode_desc(true))
@@ -52,11 +54,13 @@ func _load_saved_settings() -> void:
 	var eye = SettingsManager.get_bool("eye_track", true)
 	var shock = SettingsManager.get_bool("shockwave", true)
 	var trail = SettingsManager.get_bool("trail_fx", true)
+	var clock = SettingsManager.get_bool("hud_clock", false)
 	
 	# 应用到本地按钮显示 (pet 自己从 SettingsManager 读取，不依赖信号)
 	_set_toggle(track_btn, eye, "◉ 眼球追踪鼠标", "○ 眼球追踪鼠标")
 	_set_toggle(shockwave_btn, shock, "◉ 撞击冲击波特效", "○ 撞击冲击波特效")
 	_set_toggle(trail_btn, trail, "◉ 粒子尾流特效", "○ 粒子尾流特效")
+	_set_toggle(hud_clock_btn, clock, "◉ 赛博全息时钟", "○ 赛博全息时钟")
 	
 	# 窗口交互模式状态
 	var wm = SettingsManager.get_int("window_mode", 0)
@@ -163,6 +167,11 @@ func _on_trail_btn_pressed() -> void:
 	var on = _flip_toggle(trail_btn, "◉ 粒子尾流特效", "○ 粒子尾流特效")
 	SettingsManager.set_bool("trail_fx", on)
 	EventBus.setting_toggled.emit("trail_fx", on)
+
+func _on_hud_clock_btn_pressed() -> void:
+	var on = _flip_toggle(hud_clock_btn, "◉ 赛博全息时钟", "○ 赛博全息时钟")
+	SettingsManager.set_bool("hud_clock", on)
+	EventBus.setting_toggled.emit("hud_clock", on)
 
 func _on_autostart_btn_pressed() -> void:
 	var win_mgr = _get_win_manager()
