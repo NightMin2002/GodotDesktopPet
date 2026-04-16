@@ -361,205 +361,94 @@ func _apply_repelled_mode(local_rects: Array[Rect2], count: int) -> void:
 		# 左右单向墙 (法线朝外: 外面进不来，里面可以走出)
 		_enable_one_way_side_walls(wall, lr)
 
-## ── CONFINED 模式: 重叠窗口合并为一个封闭区域 ──
-## 核心: 先将重叠窗口分组，每组合并成一个 AABB，在 AABB 外边界建墙
-
 func _apply_confined_mode(local_rects: Array[Rect2], count: int) -> void:
-	# ── Step 1: 构建重叠分组 (Union-Find) ──
-	var parent: Array[int] = []
-	for idx in range(count):
-		parent.append(idx)
-	
-	# 合并所有相交的非最大化窗口
-	for a in range(count):
-		if _is_maximized_window(local_rects[a]):
+	# 收集所有非最大化窗口作为离散多边形
+	var polys: Array[PackedVector2Array] = []
+	for i in range(count):
+		if _is_maximized_window(local_rects[i]):
 			continue
-		for b in range(a + 1, count):
-			if _is_maximized_window(local_rects[b]):
-				continue
-			if local_rects[a].intersects(local_rects[b]):
-				# Union
-				var ra = a
-				while parent[ra] != ra: ra = parent[ra]
-				var rb = b
-				while parent[rb] != rb: rb = parent[rb]
-				parent[rb] = ra
-	
-	# 收集每个组的成员 + 合并 AABB
-	var groups: Dictionary = {}  # root_idx → { "members": [int], "aabb": Rect2 }
-	for idx in range(count):
-		if _is_maximized_window(local_rects[idx]):
-			continue
-		var root = idx
-		while parent[root] != root: root = parent[root]
-		if not groups.has(root):
-			groups[root] = { "members": [], "aabb": local_rects[idx] }
-		groups[root]["members"].append(idx)
-		groups[root]["aabb"] = (groups[root]["aabb"] as Rect2).merge(local_rects[idx])
-	
-	# 标记哪些窗口已被分组处理
-	var handled: Array[bool] = []
-	for idx in range(count):
-		handled.append(false)
-	
-	# ── Step 2: 每个组 → 用第一个成员的 ghost_wall 建外围墙 ──
-	var floor_thickness = 10.0
-	var wall_thickness = 10.0
-	for root in groups:
-		var grp = groups[root]
-		var members: Array = grp["members"]
-		var aabb: Rect2 = grp["aabb"]
+		var r = local_rects[i]
+		polys.append(PackedVector2Array([
+			r.position,
+			Vector2(r.end.x, r.position.y),
+			r.end,
+			Vector2(r.position.x, r.end.y)
+		]))
 		
-		# 第一个成员承载组的外围碰撞体
-		var primary_idx: int = members[0]
-		var primary_wall: StaticBody2D = ghost_walls[primary_idx]
-		_ensure_children(primary_wall)
-		primary_wall.position = aabb.position + aabb.size / 2.0
-		handled[primary_idx] = true
+	# ── 多边形合并 (Clipper) ──
+	# 计算所有窗口连通块的确切外轮廓（包括内部孔洞洞）
+	var merged_polys: Array[PackedVector2Array] = polys.duplicate()
+	var merged_happened = true
+	while merged_happened and merged_polys.size() > 1:
+		merged_happened = false
+		var next_polys: Array[PackedVector2Array] = []
+		while merged_polys.size() > 0:
+			var p1 = merged_polys.pop_back()
+			var found_merge = false
+			for i in range(merged_polys.size()):
+				# 如果两个多边形有重叠交集
+				if not Geometry2D.intersect_polygons(p1, merged_polys[i]).is_empty():
+					var res = Geometry2D.merge_polygons(p1, merged_polys[i])
+					merged_polys.remove_at(i)
+					merged_polys.append_array(res)
+					found_merge = true
+					merged_happened = true
+					break
+			if not found_merge:
+				next_polys.append(p1)
+		merged_polys = next_polys
 		
-		var w = aabb.size.x
-		var h = aabb.size.y
+	# ── 建墙 ──
+	var wall_idx = 0
+	for poly in merged_polys:
+		if wall_idx >= ghost_walls.size(): break
+		var wall = ghost_walls[wall_idx]
+		wall.position = Vector2.ZERO # 顶点已经是全局坐标
+		var child_idx = 0
+		var n = poly.size()
 		
-		# 顶部: 单向天花板 (rotation=PI → 从上方可落入，从内部无法跳出)
-		var col_top = primary_wall.get_child(0) as CollisionShape2D
-		col_top.position = Vector2(0, -h / 2.0 + floor_thickness / 2.0)
-		(col_top.shape as RectangleShape2D).size = Vector2(w + wall_thickness * 2, floor_thickness)
-		col_top.rotation = PI
-		col_top.one_way_collision = true
-		col_top.disabled = false
-		# 禁用其余顶部分段
-		for k in range(1, MAX_PLATFORM_SEGMENTS):
-			(primary_wall.get_child(k) as CollisionShape2D).disabled = true
-		
-		# 底部: 标准单向踏板 (可以站在上面)
-		var col_bot = primary_wall.get_child(MAX_PLATFORM_SEGMENTS) as CollisionShape2D
-		col_bot.position = Vector2(0, h / 2.0 - floor_thickness / 2.0)
-		(col_bot.shape as RectangleShape2D).size = Vector2(w + wall_thickness * 2, floor_thickness)
-		col_bot.rotation = 0.0
-		col_bot.one_way_collision = true
-		col_bot.disabled = false
-		# 禁用其余底部分段
-		for k in range(1, MAX_PLATFORM_SEGMENTS):
-			(primary_wall.get_child(MAX_PLATFORM_SEGMENTS + k) as CollisionShape2D).disabled = true
-		
-		# 左墙: 实体墙
-		var si_l = MAX_PLATFORM_SEGMENTS * 2
-		var col_l = primary_wall.get_child(si_l) as CollisionShape2D
-		col_l.position = Vector2(-w / 2.0 + wall_thickness / 2.0, 0)
-		(col_l.shape as RectangleShape2D).size = Vector2(wall_thickness, h)
-		col_l.rotation = 0.0
-		col_l.one_way_collision = false
-		col_l.disabled = false
-		
-		# 右墙: 实体墙
-		var si_r = MAX_PLATFORM_SEGMENTS * 2 + 1
-		var col_r = primary_wall.get_child(si_r) as CollisionShape2D
-		col_r.position = Vector2(w / 2.0 - wall_thickness / 2.0, 0)
-		(col_r.shape as RectangleShape2D).size = Vector2(wall_thickness, h)
-		col_r.rotation = 0.0
-		col_r.one_way_collision = false
-		col_r.disabled = false
-		
-		# ── Step 2b: 虚空填充 (AABB 内未被窗口覆盖的区域) ──
-		# 收集组内所有窗口的矩形
-		var grp_rects: Array[Rect2] = []
-		for m_idx in members:
-			grp_rects.append(local_rects[m_idx])
-		var void_rects: Array[Rect2] = _compute_void_rects(grp_rects, aabb)
-		
-		# 用组内其他 ghost_wall 的碰撞体来填充虚空
-		var filler_slot := 0  # 当前使用的填充碰撞体计数
-		for m in range(1, members.size()):
-			var filler_idx = members[m]
-			var fw = ghost_walls[filler_idx]
-			_ensure_children(fw)
-			handled[filler_idx] = true
+		# 沿着每条边建立精确尺寸的单向空气墙
+		for i in range(n):
+			var a = poly[i]
+			var b = poly[(i + 1) % n]
+			var length = a.distance_to(b)
+			if length < 5.0: continue
 			
-			# 将作为容器的父节点重置到世界原点，使得子节点局部坐标等于全局坐标
-			fw.position = Vector2.ZERO
+			# 动态扩容子节点
+			while child_idx >= wall.get_child_count():
+				var c = CollisionShape2D.new()
+				c.shape = RectangleShape2D.new()
+				c.disabled = true
+				wall.add_child(c)
+				
+			var col = wall.get_child(child_idx) as CollisionShape2D
+			col.position = (a + b) / 2.0
+			var rect_shape = col.shape as RectangleShape2D
+			if rect_shape == null:
+				rect_shape = RectangleShape2D.new()
+				col.shape = rect_shape
+				
+			# 延伸 10 像素以覆盖角落缝隙
+			rect_shape.size = Vector2(length + 10.0, 10.0)
+			# Godot 单向碰撞原理：拦截向着 Local +Y 方向的移动，允许向着 Local -Y 的移动。
+			# 外轮廓顺时针，(b-a).angle() 的 Local +Y 指向窗内。如果不加 PI，则拦截向内移动（变成排斥模式）。
+			# 加上 PI 反转法线，使得 Local +Y 指向窗外。拦截向外移动，允许向内移动，即真正的封闭模式！
+			col.rotation = (b - a).angle() + PI
+			col.one_way_collision = true
+			col.disabled = false
+			child_idx += 1
 			
-			# 充分利用每个备用的 ghost_wall 中的所有碰撞子节点 (CHILDREN_PER_WALL 个)
-			for k in range(fw.get_child_count()):
-				var col = fw.get_child(k) as CollisionShape2D
-				if filler_slot < void_rects.size():
-					var vr = void_rects[filler_slot]
-					col.position = vr.position + vr.size / 2.0
-					(col.shape as RectangleShape2D).size = vr.size
-					col.rotation = 0.0
-					col.one_way_collision = false
-					col.disabled = false
-					filler_slot += 1
-				else:
-					col.disabled = true
-		
-		# 如果虚空矩形数量超过可用填充插槽，后续的虚空无法填充 (可接受)
-		# 如果还有未使用的组内成员，全部禁用
-		for m in range(1, members.size()):
-			var filler_idx = members[m]
-			if not handled[filler_idx]:
-				var fw = ghost_walls[filler_idx]
-				_ensure_children(fw)
-				for k in range(fw.get_child_count()):
-					(fw.get_child(k) as CollisionShape2D).disabled = true
-				handled[filler_idx] = true
-	
-	# ── Step 3: 未被分组处理的窗口 (最大化窗口等) → 禁用所有碰撞体 ──
-	for idx in range(count):
-		if handled[idx]:
-			continue
-		var w2 = ghost_walls[idx]
-		_ensure_children(w2)
-		w2.position = local_rects[idx].position + local_rects[idx].size / 2.0
-		for k in range(w2.get_child_count()):
-			(w2.get_child(k) as CollisionShape2D).disabled = true
+		# 禁用此 wall 中未使用到的多余碰撞体积
+		for i in range(child_idx, wall.get_child_count()):
+			(wall.get_child(i) as CollisionShape2D).disabled = true
+			
+		wall_idx += 1
 
-## 计算 AABB 内未被任何窗口覆盖的虚空矩形 (X-sweep 算法)
-func _compute_void_rects(rects: Array[Rect2], aabb: Rect2) -> Array[Rect2]:
-	# 收集所有 X 边界
-	var x_edges: Array[float] = [aabb.position.x, aabb.end.x]
-	for r in rects:
-		x_edges.append(r.position.x)
-		x_edges.append(r.end.x)
-	x_edges.sort()
-	# 去重 (容差 2px)
-	var xs: Array[float] = []
-	for x in x_edges:
-		if xs.is_empty() or abs(x - xs.back()) > 2.0:
-			xs.append(x)
-	
-	var voids: Array[Rect2] = []
-	for j in range(xs.size() - 1):
-		var x_left = xs[j]
-		var x_right = xs[j + 1]
-		if x_right - x_left < 5.0:
-			continue
-		var x_mid = (x_left + x_right) / 2.0
-		
-		# 找出在这个 X 位置被窗口覆盖的 Y 范围
-		var covered: Array = []
-		for r in rects:
-			if r.position.x <= x_mid and r.end.x >= x_mid:
-				covered.append([r.position.y, r.end.y])
-		covered.sort()
-		
-		# 合并 Y 覆盖区间
-		var merged: Array = []
-		for c in covered:
-			if merged.is_empty() or c[0] > merged.back()[1]:
-				merged.append([c[0], c[1]])
-			else:
-				merged[merged.size() - 1] = [merged.back()[0], maxf(merged.back()[1], c[1])]
-		
-		# AABB Y 范围中未被覆盖的部分 = 虚空
-		var prev_y = aabb.position.y
-		for c in merged:
-			if c[0] > prev_y + 5.0:
-				voids.append(Rect2(x_left, prev_y, x_right - x_left, c[0] - prev_y))
-			prev_y = maxf(prev_y, c[1])
-		if aabb.end.y > prev_y + 5.0:
-			voids.append(Rect2(x_left, prev_y, x_right - x_left, aabb.end.y - prev_y))
-	
-	return voids
+	# 未被用到的备用窗口对象池，直接禁用封存
+	for i in range(wall_idx, ghost_walls.size()):
+		var w = ghost_walls[i]
+		for k in range(w.get_child_count()):
+			(w.get_child(k) as CollisionShape2D).disabled = true
 
 ## 检测窗口是否为最大化 (覆盖 ≥90% 屏幕宽度和高度)
 func _is_maximized_window(lr: Rect2) -> bool:
