@@ -25,3 +25,7 @@ signal show_reminder_panel
 
 # ── 窗口交互模式 ──
 signal window_mode_changed(mode: int)  # 0=FREE, 1=CONFINED, 2=REPELLED
+
+# ── 行为指令 ──
+signal behavior_mode_changed(mode: int)  # 0=FREE(自由行动), 1=QUIET(安静待命)
+signal fullscreen_locked_changed(locked: bool)  # 全屏锁定状态变化 (穿透控制)

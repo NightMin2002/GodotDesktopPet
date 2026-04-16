@@ -18,6 +18,7 @@ var current_state: PetState
 var current_state_name: String = ""
 var speed: float = 200.0            # 移动速度基数
 var shockwave_enabled: bool = true   # 撞击冲击波特效开关
+var trail_enabled: bool = true       # 粒子尾流特效开关
 var hue_time: float = 0.0           # 供虹彩渐变使用的时间戳
 
 # ── 眼球行为控制器 ──
@@ -44,7 +45,12 @@ var overlay_rect: Rect2 = Rect2() # 外部覆盖层的屏幕区域 (气泡通知
 
 # ── 窗口交互模式 (由 main.gd 通过 EventBus 同步) ──
 var window_mode: int = 0  # 0=FREE, 1=CONFINED, 2=REPELLED
-var confined_rect: Rect2 = Rect2()  # Confined 模式下的封闭区域 (本地坐标系)
+
+# ── 行为指令 ──
+var behavior_mode: int = 0  # 0=FREE(自由行动), 1=QUIET(安静待命)
+var quiet_by_fullscreen: bool = false  # 是否由全屏自动触发 (决定是否走边缘+吐槽)
+var fullscreen_locked: bool = false  # 到达边缘后锁定 (禁止鼠标交互)
+var _was_dragged_in_quiet: bool = false  # 安静模式下被拖拽的标记 (用于吐槽)
 
 func _ready() -> void:
 	# 物理材质 (弹性)
@@ -76,15 +82,22 @@ func _ready() -> void:
 	# 从持久化存储恢复设置 (不依赖信号时序)
 	eye_behavior.tracking_enabled = SettingsManager.get_bool("eye_track", true)
 	shockwave_enabled = SettingsManager.get_bool("shockwave", true)
+	trail_enabled = SettingsManager.get_bool("trail_fx", true)
 	
 	# 监听运行时设置变更
 	EventBus.setting_toggled.connect(_on_setting_toggled)
+	EventBus.behavior_mode_changed.connect(_on_behavior_mode_changed)
 
 func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 	if setting_id == "eye_track":
 		eye_behavior.tracking_enabled = is_on
 	elif setting_id == "shockwave":
 		shockwave_enabled = is_on
+	elif setting_id == "trail_fx":
+		trail_enabled = is_on
+
+func _on_behavior_mode_changed(mode: int) -> void:
+	behavior_mode = mode
 
 func _init_states() -> void:
 	states = {
@@ -92,7 +105,8 @@ func _init_states() -> void:
 		"walk": preload("res://entities/pet/states/walk.gd").new(),
 		"drag": preload("res://entities/pet/states/drag.gd").new(),
 		"fall": preload("res://entities/pet/states/fall.gd").new(),
-		"jump": preload("res://entities/pet/states/jump.gd").new()
+		"jump": preload("res://entities/pet/states/jump.gd").new(),
+		"retreat": preload("res://entities/pet/states/retreat.gd").new(),
 	}
 	for state in states.values():
 		state.pet = self
@@ -156,7 +170,7 @@ func _process(delta: float) -> void:
 	
 	# 收集或消散残影以形成拖尾特效
 	var has_visual_change := false
-	if linear_velocity.length() > 20.0:
+	if trail_enabled and linear_velocity.length() > 20.0:
 		trail_history.push_front(global_position)
 		if trail_history.size() > max_trail_length:
 			trail_history.pop_back()
@@ -239,19 +253,46 @@ func _draw() -> void:
 		# 最后用高聚焦光束线描绘骨干
 		draw_polyline_colors(points, colors, PET_RADIUS * 0.5, true)
 	
-	# ── 科幻单眼结构 (机械虹膌快门式眨眼 + 智能瞳孔追踪/游走) ──
+	# ── 科幻单眼结构 (深度结合图2的高级优化版) ──
 	# 外壳不受眨眼影响
-	draw_circle(Vector2.ZERO, PET_RADIUS + 2.0, Color(0.08, 0.15, 0.35, 1.0))
-	draw_circle(Vector2.ZERO, PET_RADIUS, Color(0.15, 0.3, 0.65, 1.0))
+	# 1. 边缘深色轮廓与偏深的湛蓝主外壳
+	draw_circle(Vector2.ZERO, PET_RADIUS + 1.2, Color(0.08, 0.12, 0.32, 1.0))
+	draw_circle(Vector2.ZERO, PET_RADIUS, Color(0.15, 0.30, 0.80, 1.0))
+	
+	# 2. 白色边框 (优化：极细、通透，更显高级科幻感)
+	var border_radius = PET_RADIUS * 0.85
+	draw_arc(Vector2.ZERO, border_radius, 0, TAU, 64, Color(1.0, 1.0, 1.0, 0.8), 1.2, true)
+	
+	# 3. 四个尖尖的角 (优化：正统的底座圆垫与独立四向锥形叶片重叠，完美还原形状)
+	var dark_blue = Color(0.12, 0.18, 0.42, 1.0)
+	var base_r = PET_RADIUS * 0.68
+	var tip_dist = border_radius - 1.0  # 尖角刚刚触碰白边内侧
+	
+	# 绘制深蓝底盘核心
+	draw_circle(Vector2.ZERO, base_r, dark_blue)
+	# 绘制4个向外伸展的尖角（平滑与底盘融合的三角形）
+	for i in range(4):
+		var angle = i * PI / 2.0 + PI / 4.0  # 每个对角线：45, 135, 225, 315 度
+		var tip_pos = Vector2(cos(angle), sin(angle)) * tip_dist
+		var half_hw = PI / 10.0  # 控制尖刺的底部张角，避免过于瘦弱
+		var left_base = Vector2(cos(angle - half_hw), sin(angle - half_hw)) * (base_r * 0.95)
+		var right_base = Vector2(cos(angle + half_hw), sin(angle + half_hw)) * (base_r * 0.95)
+		draw_polygon(PackedVector2Array([left_base, tip_pos, right_base]), PackedColorArray([dark_blue, dark_blue, dark_blue]))
 	
 	# 机械虹膌：眨眼时内部光圈收缩向中心
 	var blink = eye_behavior.get_blink_amount()
 	var iris_scale = 1.0 - blink * 0.95  # 闭眼峰值时虹膌缩至 5%
 	if iris_scale > 0.05:
-		# 中间圈 (浅蓝/白)
-		draw_circle(Vector2.ZERO, PET_RADIUS * 0.65 * iris_scale, Color(0.7, 0.85, 1.0, 1.0))
-		# 内侧深瞳核心
-		draw_circle(Vector2.ZERO, PET_RADIUS * 0.4 * iris_scale, Color(0.05, 0.1, 0.25, 1.0))
-		# 瞳孔光点 (位置由眼球行为控制器决定)
+		# 第一层：占据主视觉的最外侧浅灰白层
+		draw_circle(Vector2.ZERO, PET_RADIUS * 0.54 * iris_scale, Color(0.85, 0.88, 0.92, 1.0))
+		# 第二层：灰蓝色瞳环渐变层
+		draw_circle(Vector2.ZERO, PET_RADIUS * 0.42 * iris_scale, Color(0.55, 0.65, 0.80, 1.0))
+		# 第三层：深蓝色次瞳孔
+		draw_circle(Vector2.ZERO, PET_RADIUS * 0.28 * iris_scale, Color(0.15, 0.28, 0.68, 1.0))
+		# 第四层：极暗的黑底核心
+		draw_circle(Vector2.ZERO, PET_RADIUS * 0.16 * iris_scale, Color(0.05, 0.08, 0.20, 1.0))
+		
+		# 追踪光点 (随鼠标移动的小圆，形成有层次感的真实高光光斑)
 		var pupil_pos = eye_behavior.get_pupil_offset() * iris_scale
-		draw_circle(pupil_pos, PET_RADIUS * 0.15 * iris_scale, Color(0.9, 0.95, 1.0, iris_scale))
+		draw_circle(pupil_pos, PET_RADIUS * 0.11 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale))
+		draw_circle(pupil_pos, PET_RADIUS * 0.06 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale))

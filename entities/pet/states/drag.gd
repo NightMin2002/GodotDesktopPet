@@ -20,6 +20,9 @@ func enter() -> void:
 func exit() -> void:
 	if pet:
 		pet.gravity_scale = original_gravity_scale
+		# 安静模式下标记被拖拽，用于落地时吐槽
+		if pet.behavior_mode == 1:
+			pet._was_dragged_in_quiet = true
 		EventBus.drag_ended.emit()
 
 func physics_process(_delta: float) -> void:
@@ -27,14 +30,6 @@ func physics_process(_delta: float) -> void:
 		return
 	
 	var mouse_pos = pet.get_global_mouse_position()
-	
-	# 封闭模式下，限制弹簧目标点不超出封闭区域
-	if pet.window_mode == 1 and pet.confined_rect.size != Vector2.ZERO:  # CONFINED
-		var r = pet.confined_rect
-		var margin = pet.PET_RADIUS + 5.0  # 留出球体半径的余量
-		mouse_pos.x = clampf(mouse_pos.x, r.position.x + margin, r.end.x - margin)
-		mouse_pos.y = clampf(mouse_pos.y, r.position.y + margin, r.end.y - margin)
-	
 	var displacement = mouse_pos - pet.global_position
 	
 	# 弹簧力: F = k * x - c * v

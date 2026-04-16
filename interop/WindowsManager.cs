@@ -2,6 +2,7 @@ using Godot;
 using System;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
+using System.Text;
 using Microsoft.Win32;
 
 public partial class WindowsManager : Node
@@ -33,11 +34,20 @@ public partial class WindowsManager : Node
     [DllImport("user32.dll")]
     private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
 
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-    private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+    private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
 
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT
@@ -54,6 +64,32 @@ public partial class WindowsManager : Node
     private const int GWL_EXSTYLE = -20;
     private const int WS_EX_TOOLWINDOW = 0x00000080;
     private const int WS_EX_APPWINDOW = 0x00040000;
+    private const int WS_EX_NOACTIVATE = 0x08000000;
+    private const int WS_EX_TRANSPARENT = 0x00000020;
+    private const int WS_EX_LAYERED = 0x00080000;
+
+    // 已知会产生幽灵墙的隐形系统窗口类名
+    private static readonly HashSet<string> _ghostWindowClasses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "Progman",                      // 桌面管理器
+        "WorkerW",                      // 桌面壁纸层
+        "Shell_SecondaryTrayWnd",       // 多显示器任务栏
+        "Shell_TrayWnd",                // 主任务栏
+        "Windows.UI.Core.CoreWindow",   // UWP 覆盖层 (通知中心等)
+        "XamlExplorerHostIslandWindow", // UWP 内部宿主
+        "InputApp",                     // 触摸键盘
+        "EdgeUiInputTopWndClass",       // Edge 手势层
+        "Shell_InputSwitchTopLevelWindow", // 输入法切换层
+    };
+
+    private const int SW_HIDE = 0;
+    private const int SW_SHOW = 5;
+
+    private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+    private const uint SWP_NOMOVE = 0x0002;
+    private const uint SWP_NOSIZE = 0x0001;
+    private const uint SWP_NOACTIVATE = 0x0010;
+    private const uint SWP_FRAMECHANGED = 0x0020;
 
     [DllImport("kernel32.dll")]
     private static extern IntPtr GetCurrentProcess();
@@ -122,18 +158,44 @@ public partial class WindowsManager : Node
 
     /// <summary>
     /// 将主窗口彻底从 Windows 任务栏中抹除（使其变成工具悬浮层属性）
+    /// 三步法: Hide → 修改样式 → Show，强制 Windows Shell 刷新任务栏状态
     /// </summary>
     public void HideFromTaskbar()
     {
-        // 从 Godot 取得原生 HWND 句柄
+        IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
+        
+        // Step 1: 先隐藏窗口，让 Shell 从任务栏移除此条目
+        ShowWindow(hwnd, SW_HIDE);
+        
+        // Step 2: 修改扩展样式
+        int style = GetWindowLong(hwnd, GWL_EXSTYLE);
+        style |= WS_EX_TOOLWINDOW;
+        style &= ~WS_EX_APPWINDOW;
+        SetWindowLong(hwnd, GWL_EXSTYLE, style);
+        
+        // Step 3: 重新显示窗口 (Shell 会根据新样式决定是否添加到任务栏)
+        ShowWindow(hwnd, SW_SHOW);
+        
+        // Step 4: 通知系统窗口帧已变更 (强制刷新)
+        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    }
+
+    /// <summary>
+    /// 自检：如果窗口扩展样式被引擎意外重置，重新推入 ToolWindow 标记
+    /// 返回 true = 样式被修复 (需要调用方关注)
+    /// </summary>
+    public bool EnsureHiddenFromTaskbar()
+    {
         IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
         int style = GetWindowLong(hwnd, GWL_EXSTYLE);
         
-        // 移除普通 App 窗口特征，并打上工具悬浮窗特征 (ToolWindow 不会出现在任务栏和 Alt+Tab 中)
-        style |= WS_EX_TOOLWINDOW;
-        style &= ~WS_EX_APPWINDOW;
-        
-        SetWindowLong(hwnd, GWL_EXSTYLE, style);
+        bool needsFix = (style & WS_EX_TOOLWINDOW) == 0 || (style & WS_EX_APPWINDOW) != 0;
+        if (needsFix)
+        {
+            HideFromTaskbar();
+        }
+        return needsFix;
     }
 
     /// <summary>
@@ -163,6 +225,17 @@ public partial class WindowsManager : Node
             System.Text.StringBuilder title = new System.Text.StringBuilder(256);
             GetWindowText(hWnd, title, 256);
             if (title.Length == 0) continue;
+
+            // 过滤已知的系统隐形窗口类名 (桌面管理器、任务栏、UWP覆盖层等)
+            var clsBuf = new StringBuilder(256);
+            GetClassName(hWnd, clsBuf, 256);
+            if (_ghostWindowClasses.Contains(clsBuf.ToString())) continue;
+
+            // 过滤 ToolWindow (工具悬浮窗口，包括宠物自身的 WS_EX_TOOLWINDOW 窗口)
+            int exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+            if ((exStyle & WS_EX_TOOLWINDOW) != 0) continue;
+            // 过滤完全透明的叠加层窗口
+            if ((exStyle & WS_EX_TRANSPARENT) != 0 && (exStyle & WS_EX_LAYERED) != 0) continue;
 
             // 过滤隐形的 Win10/11 Cloaked 系统虚空层（极为致命！必须过滤）
             DwmGetWindowAttribute(hWnd, DWMWA_CLOAKED, out int cloaked, sizeof(int));
@@ -203,5 +276,86 @@ public partial class WindowsManager : Node
         }
 
         return result;
+    }
+
+    // ── 全屏检测 ──
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct MONITORINFO
+    {
+        public int cbSize;
+        public RECT rcMonitor;  // 显示器完整区域 (含任务栏)
+        public RECT rcWork;     // 工作区域 (不含任务栏)
+        public uint dwFlags;
+    }
+
+    private const uint MONITOR_DEFAULTTONEAREST = 2;
+
+    /// <summary>
+    /// 检测前台窗口是否真正全屏覆盖 (游戏、F11、视频全屏等)
+    /// 原理: 前台窗口矩形 >= 其所在显示器的完整区域
+    /// 支持多显示器 + DPI 缩放
+    /// </summary>
+    // 已知会误触发全屏检测的窗口类名列表 (截图工具、放大镜等系统覆盖层)
+    private static readonly HashSet<string> _fullscreenExcludedClasses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "ScreenClippingHost",       // Win+Shift+S 截图叠加层
+        "Microsoft-Windows-SnipperToolbar", // Snipping Tool 工具栏
+        "Shell_TrayWnd",            // 任务栏 (偶尔因 DPI 误判)
+        "Magnifier",                // 放大镜
+        "XamlExplorerHostIslandWindow", // UWP 内部宿主
+        "MicrosoftEdgeDropWindow",  // Edge 拖放窗口
+        "Windows.UI.Core.CoreWindow", // UWP Overlay (通知中心等)
+    };
+
+    public bool IsUserInFullscreen()
+    {
+        try
+        {
+            IntPtr fg = GetForegroundWindow();
+            if (fg == IntPtr.Zero || fg == _shellWindow) return false;
+
+            // 过滤自身窗口
+            GetWindowThreadProcessId(fg, out uint pid);
+            if (pid == _myProcessId) return false;
+
+            // 过滤截图工具等已知误触发窗口的类名
+            var classNameBuf = new StringBuilder(256);
+            GetClassName(fg, classNameBuf, 256);
+            string className = classNameBuf.ToString();
+            if (_fullscreenExcludedClasses.Contains(className)) return false;
+
+            // 获取前台窗口矩形
+            GetWindowRect(fg, out RECT fgRect);
+
+            // 获取前台窗口所在显示器的完整区域
+            IntPtr hMonitor = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
+            var monInfo = new MONITORINFO();
+            monInfo.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+            if (!GetMonitorInfo(hMonitor, ref monInfo)) return false;
+
+            RECT mon = monInfo.rcMonitor;
+
+            // 全屏判定: 窗口覆盖整个显示器 (含任务栏区域)
+            bool isFs = fgRect.Left <= mon.Left
+                && fgRect.Top <= mon.Top
+                && fgRect.Right >= mon.Right
+                && fgRect.Bottom >= mon.Bottom;
+
+            return isFs;
+        }
+        catch { return false; }
     }
 }

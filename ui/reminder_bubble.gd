@@ -1,20 +1,25 @@
 # reminder_bubble.gd — 提醒气泡通知
 # 在宠物头顶冒出语音气泡式提示，自动消散
 # 通过 pet.overlay_rect 将自身区域注册到穿透多边形
+# 支持消息队列：多条消息依次播放，不会互相吞掉
 extends CanvasLayer
 
 var bubble_panel: PanelContainer
 var bubble_label: Label
 var pet_ref: RigidBody2D
 var _is_showing := false
+var _queue: Array[String] = []  # 待播放的消息队列
 
 func _ready() -> void:
 	layer = 110
 	_build_bubble()
-	EventBus.show_reminder_bubble.connect(_show_bubble)
+	EventBus.show_reminder_bubble.connect(_on_bubble_requested)
 
 func link_pet(pet: Node2D) -> void:
 	pet_ref = pet as RigidBody2D
+
+func is_busy() -> bool:
+	return _is_showing
 
 func _process(_delta: float) -> void:
 	if not bubble_panel.visible or not is_instance_valid(pet_ref):
@@ -38,19 +43,25 @@ func _build_bubble() -> void:
 	style.bg_color = Color(0.05, 0.1, 0.2, 0.92)
 	style.border_color = Color(1, 0.85, 0.3, 0.85)
 	style.set_border_width_all(2)
-	style.set_corner_radius_all(14)
-	style.set_content_margin_all(14)
+	style.set_corner_radius_all(18)
+	style.set_content_margin_all(18)
 	bubble_panel.add_theme_stylebox_override("panel", style)
 	add_child(bubble_panel)
 	
 	bubble_label = Label.new()
-	bubble_label.add_theme_font_size_override("font_size", 15)
+	bubble_label.add_theme_font_size_override("font_size", 20)
 	bubble_label.add_theme_color_override("font_color", Color(1, 0.95, 0.85, 1))
 	bubble_panel.add_child(bubble_label)
 
-func _show_bubble(message: String) -> void:
+func _on_bubble_requested(message: String) -> void:
 	if _is_showing:
+		# 排队等候，最多缓存 3 条防止堆积
+		if _queue.size() < 3:
+			_queue.append(message)
 		return
+	_show_bubble(message)
+
+func _show_bubble(message: String) -> void:
 	_is_showing = true
 	
 	bubble_label.text = message
@@ -81,3 +92,10 @@ func _show_bubble(message: String) -> void:
 	if is_instance_valid(pet_ref):
 		pet_ref.overlay_rect = Rect2()
 	_is_showing = false
+	
+	# 播放队列中下一条消息 (间隔 1 秒，避免连续弹出太急)
+	if _queue.size() > 0:
+		await get_tree().create_timer(1.0).timeout
+		if _queue.size() > 0:
+			var next_msg = _queue.pop_front()
+			_show_bubble(next_msg)

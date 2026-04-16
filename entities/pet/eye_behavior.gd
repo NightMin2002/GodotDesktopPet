@@ -72,7 +72,7 @@ func _update_pupil(delta: float) -> void:
 		target = _wander_target
 		lerp_speed = 2.0  # 慢悠悠地好奇张望
 	else:
-		# 鼠标活跃且追踪开启 → 紧锁瞳孔追踪
+		# 鼠标活跃且追踪开启 → 紧锁瞳孔追踪 (手动安静待命时也生效)
 		var to_mouse = pet.get_local_mouse_position().normalized()
 		target = to_mouse * max_offset
 		lerp_speed = 12.0

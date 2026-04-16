@@ -13,10 +13,14 @@ func enter() -> void:
 	walk_timer = 0.0
 	walk_direction = [-1.0, 1.0].pick_random()
 	if pet:
-		pet.linear_damp = 0.5
+		# 行走时保持较高的线性阻尼，让位移主要来自扭矩+摩擦力转化
+		# 而不是纯平移惯性 (这是"看起来像滚动"而非"滑行"的关键)
+		pet.linear_damp = 1.5
+		pet.angular_damp = 0.2  # 保持低角阻尼让旋转持久
 
 func exit() -> void:
-	pass
+	if pet:
+		pet.linear_damp = 0.5
 
 func process(delta: float) -> void:
 	walk_timer += delta
@@ -32,9 +36,11 @@ func physics_process(_delta: float) -> void:
 		pet.transition_to("fall")
 		return
 	
-	# 施加滚动扭矩和推力
-	pet.apply_torque(walk_direction * 60000.0) # 增大扭矩，让滚动幅度非常明显
-	pet.apply_central_force(Vector2(walk_direction * walk_force * 0.3, 0)) # 略微降低纯平移，让动力主要源自旋转带动
+	# ── 真正的滚动物理 ──
+	# 主要驱动力: 大扭矩 → 通过摩擦力转化为地面位移 (真实滚动)
+	# 辅助推力极低: 仅作为微弱补偿，不会产生可察觉的"滑行感"
+	pet.apply_torque(walk_direction * 80000.0)
+	pet.apply_central_force(Vector2(walk_direction * walk_force * 0.1, 0))
 	
 	# 碰到屏幕边缘就转向
 	var screen_width = pet.boundary_size.x

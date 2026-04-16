@@ -18,10 +18,19 @@ var ghost_walls: Array[StaticBody2D] = []
 
 # ── 窗口交互模式状态 ──
 var window_mode: int = WindowMode.FREE
-var confined_window_rect: Rect2 = Rect2()  # 封闭模式的合并后封闭区域 (本地坐标系)
-var confined_anchor_rect: Rect2 = Rect2()  # 封闭模式的原始目标窗口 (用于跨帧匹配)
-var confined_wall: StaticBody2D = null  # 封闭模式专用四面墙
-var void_fillers: Array[StaticBody2D] = []  # 封闭模式虚空填充墙池
+
+# ── 行为指令状态 ──
+var behavior_mode: int = 0  # 0=FREE, 1=QUIET
+var _quiet_by_fullscreen: bool = false  # 是否由全屏自动触发的安静模式
+var _was_fullscreen: bool = false  # 已确认的全屏状态
+var _fs_confirm_count: int = 0  # 全屏连续检测计数 (进入防抖)
+var _fs_exit_count: int = 0  # 非全屏连续检测计数 (退出防抖)
+const FS_ENTER_THRESHOLD := 3  # 进入全屏需连续 3 次检测 (1.5s×3=4.5s 确认，避免截图误触发)
+const FS_EXIT_THRESHOLD := 2   # 退出全屏需连续 2 次检测 (3s 确认)
+var _fs_exit_cooldown: float = 0.0  # 退出冷却计时器 (防止频繁进出)
+const FS_EXIT_COOLDOWN_DURATION := 30.0  # 退出全屏后 30 秒内不再重新进入
+var _fs_last_bubble_time: float = 0.0  # 上次全屏气泡时间
+const FS_BUBBLE_MIN_INTERVAL := 60.0  # 全屏气泡最小间隔 60 秒
 
 func _ready() -> void:
 	# ── 性能调频 ──
@@ -39,13 +48,17 @@ func _ready() -> void:
 	get_window().visible = false
 	
 	_setup_window()
-	await get_tree().process_frame
-	await get_tree().process_frame
 	
-	# 窗口完全就绪后推 ToolWindow 标记，再恢复可见
+	# 等待 5 帧让窗口内部 (GPU Context + DWM Surface) 完全就绪
+	for i in range(5):
+		await get_tree().process_frame
+	
+	# 先恢复可见，再推 ToolWindow 标记
+	# 必须 Show → Hide → 修改样式 → Show，否则 Shell 不会正确刷新
+	get_window().visible = true
+	await get_tree().process_frame
 	if win_manager and win_manager.has_method("HideFromTaskbar"):
 		win_manager.call("HideFromTaskbar")
-	get_window().visible = true
 	
 	_create_boundaries()
 	_spawn_pet()
@@ -63,12 +76,37 @@ func _ready() -> void:
 	EventBus.drag_ended.connect(_on_drag_ended)
 	EventBus.context_menu_toggled.connect(_on_context_menu_toggled)
 	EventBus.window_mode_changed.connect(_on_window_mode_changed)
+	EventBus.behavior_mode_changed.connect(_on_behavior_mode_changed)
+	EventBus.fullscreen_locked_changed.connect(_on_fullscreen_locked_changed)
 	
 	# 从持久化恢复窗口交互模式
 	window_mode = SettingsManager.get_int("window_mode", WindowMode.FREE)
 	
+	# 从持久化恢复行为指令
+	behavior_mode = SettingsManager.get_int("behavior_mode", 0)
+	if behavior_mode == 1:
+		EventBus.behavior_mode_changed.emit(1)
+	
+	# 启动全屏检测雷达 (1.5s 一次，进入防抖 3 次 = 4.5s 确认)
+	if win_manager and win_manager.has_method("IsUserInFullscreen"):
+		var fs_timer = Timer.new()
+		fs_timer.wait_time = 1.5
+		fs_timer.autostart = true
+		fs_timer.timeout.connect(_check_fullscreen)
+		add_child(fs_timer)
+		print("[DesktopPet] 全屏检测雷达已启动 (1.5s 间隔, 进入防抖 3 次)")
+	
+	# 启动任务栏样式守护 Timer (每5秒自检，防止引擎焦点变化时重置样式)
+	if win_manager and win_manager.has_method("EnsureHiddenFromTaskbar"):
+		var taskbar_timer = Timer.new()
+		taskbar_timer.wait_time = 5.0
+		taskbar_timer.autostart = true
+		taskbar_timer.timeout.connect(_guard_taskbar_style)
+		add_child(taskbar_timer)
+	
 	# 挂载提醒系统
 	_setup_reminder_system()
+	_setup_pet_chatter()
 	
 	_setup_system_tray()
 
@@ -83,9 +121,30 @@ func _setup_system_tray() -> void:
 		elif ResourceLoader.exists("res://icon.svg"):
 			tray.icon = load("res://icon.svg")
 		else:
+			# 利用运行时生成一个神级单眼图标：采用多段超短偏移实现硬边缘，完美复刻蓝白机械单眼！
+			# 为适应托盘极小尺寸，中心光核修改为纯白色以凸显发光感
 			var grad = Gradient.new()
-			grad.colors = PackedColorArray([Color("00ffff"), Color("001133"), Color.TRANSPARENT])
-			grad.offsets = PackedFloat32Array([0.0, 0.5, 1.0])
+			grad.colors = PackedColorArray([
+				Color.WHITE,                  # 白亮核心，带来高能亮斑
+				Color.WHITE,                  
+				Color(0.20, 0.60, 1.00, 1.0), # 冰蓝色渐变发光内环
+				Color(0.10, 0.30, 0.85, 1.0), # 湛蓝过渡层
+				Color(0.05, 0.15, 0.45, 1.0), # 深蓝色外壳垫底
+				Color(0.05, 0.15, 0.45, 1.0), 
+				Color.WHITE,                  # 最亮眼的纯白防护边框
+				Color.WHITE,                  
+				Color(0.02, 0.08, 0.25, 1.0), # 极其深沉的外围轮廓
+				Color(0.02, 0.08, 0.25, 1.0), 
+				Color.TRANSPARENT             # 外部切圆透明
+			])
+			grad.offsets = PackedFloat32Array([
+				0.0, 0.22,    # 白核区
+				0.24, 0.50,   # 亮蓝发光区
+				0.52, 0.70,   # 深蓝基地区
+				0.72, 0.82,   # 白边界
+				0.84, 0.96,   # 极暗外壳边界
+				0.98          # 透明过渡抗锯齿
+			])
 			var tex = GradientTexture2D.new()
 			tex.gradient = grad
 			tex.width = 64
@@ -95,13 +154,17 @@ func _setup_system_tray() -> void:
 			tex.fill_to = Vector2(0.5, 0.0)
 			tray.icon = tex
 			
-		tray.tooltip = "高能机械桌面单眼"
+		tray.tooltip = "桌面宠物"
 		
 		# 挂载专属托盘温馨右键菜单
 		var tray_menu = PopupMenu.new()
-		tray_menu.add_item("抚摸并让它睡觉 (休眠退出)", 1)
+		tray_menu.add_item("💤 让宠物休息 (告别退出)", 1)
+		tray_menu.add_separator()
+		tray_menu.add_item("⚡ 强制退出", 2)
 		tray_menu.id_pressed.connect(func(id: int):
 			if id == 1:
+				quit_with_farewell()
+			elif id == 2:
 				get_tree().quit()
 		)
 		add_child(tray_menu)
@@ -230,14 +293,10 @@ func _sync_ghost_walls() -> void:
 	match window_mode:
 		WindowMode.FREE:
 			_apply_free_mode(local_rects, count)
-			_hide_confined_wall()
-			_clear_void_fillers()
 		WindowMode.CONFINED:
 			_apply_confined_mode(local_rects, count)
 		WindowMode.REPELLED:
 			_apply_repelled_mode(local_rects, count)
-			_hide_confined_wall()
-			_clear_void_fillers()
 
 ## ── FREE 模式: 只生成顶/底单向踏板 (原有逻辑) ──
 
@@ -306,252 +365,205 @@ func _apply_repelled_mode(local_rects: Array[Rect2], count: int) -> void:
 		# 左右单向墙 (法线朝外: 外面进不来，里面可以走出)
 		_enable_one_way_side_walls(wall, lr)
 
-## ── CONFINED 模式: 合并外墙 + 重叠区自由通行 + 虚空填充 ──
+## ── CONFINED 模式: 重叠窗口合并为一个封闭区域 ──
+## 核心: 先将重叠窗口分组，每组合并成一个 AABB，在 AABB 外边界建墙
 
 func _apply_confined_mode(local_rects: Array[Rect2], count: int) -> void:
-	if not is_instance_valid(pet_instance):
-		_apply_free_mode(local_rects, count)
-		_hide_confined_wall()
-		_clear_void_fillers()
-		return
+	# ── Step 1: 构建重叠分组 (Union-Find) ──
+	var parent: Array[int] = []
+	for idx in range(count):
+		parent.append(idx)
 	
-	var pet_pos = pet_instance.global_position
-	
-	# ── Step 1: 找到目标窗口 ──
-	var target_idx: int = -1
-	var target_rect = Rect2()
-	
-	if confined_anchor_rect.size != Vector2.ZERO:
-		for i in range(count):
-			var lr = local_rects[i]
-			if lr.position.distance_to(confined_anchor_rect.position) < 30.0 and \
-			   lr.size.distance_to(confined_anchor_rect.size) < 30.0:
-				target_rect = lr
-				target_idx = i
-				break
-	
-	if target_idx == -1:
-		for i in range(count):
-			if local_rects[i].has_point(pet_pos):
-				target_rect = local_rects[i]
-				target_idx = i
-				break
-	
-	if target_idx == -1:
-		confined_window_rect = Rect2()
-		confined_anchor_rect = Rect2()
-		_hide_confined_wall()
-		_clear_void_fillers()
-		if is_instance_valid(pet_instance):
-			pet_instance.confined_rect = Rect2()
-		_apply_free_mode(local_rects, count)
-		return
-	
-	# ── Step 2: 合并所有重叠窗口 (跳过最大化窗口) ──
-	var merged_rect = target_rect
-	var overlapping: Array[int] = [target_idx]
-	var overlap_rects: Array[Rect2] = [target_rect]
-	
-	var changed = true
-	while changed:
-		changed = false
-		for i in range(count):
-			if overlapping.has(i):
-				continue
-			# 跳过最大化窗口: 它们覆盖整个屏幕，会导致所有窗口被合并
-			if _is_maximized_window(local_rects[i]):
-				continue
-			if merged_rect.intersects(local_rects[i]):
-				merged_rect = merged_rect.merge(local_rects[i])
-				overlapping.append(i)
-				overlap_rects.append(local_rects[i])
-				changed = true
-	
-	# ── Step 3: 合并外墙 + 虚空填充 ──
-	confined_anchor_rect = target_rect
-	confined_window_rect = merged_rect
-	_show_confined_wall(merged_rect)
-	_fill_void_areas(overlap_rects, merged_rect)
-	
-	if is_instance_valid(pet_instance):
-		pet_instance.confined_rect = merged_rect
-	
-	# ── Step 4: 生成幽灵墙 ──
-	var floor_thickness = 10.0
-	for i in range(count):
-		var lr = local_rects[i]
-		var wall = ghost_walls[i]
-		_ensure_children(wall)
-		wall.position = lr.position + lr.size / 2.0
-		
-		# 重叠组内的窗口: 禁用所有碰撞体 (封闭墙+虚空填充已处理)
-		# 最大化窗口与封闭区域交叩时: 也禁用 (避免内部干扰)
-		if overlapping.has(i) or _is_maximized_window(lr) or merged_rect.intersects(lr):
-			for k in range(wall.get_child_count()):
-				(wall.get_child(k) as CollisionShape2D).disabled = true
+	# 合并所有相交的非最大化窗口
+	for a in range(count):
+		if _is_maximized_window(local_rects[a]):
 			continue
+		for b in range(a + 1, count):
+			if _is_maximized_window(local_rects[b]):
+				continue
+			if local_rects[a].intersects(local_rects[b]):
+				# Union
+				var ra = a
+				while parent[ra] != ra: ra = parent[ra]
+				var rb = b
+				while parent[rb] != rb: rb = parent[rb]
+				parent[rb] = ra
+	
+	# 收集每个组的成员 + 合并 AABB
+	var groups: Dictionary = {}  # root_idx → { "members": [int], "aabb": Rect2 }
+	for idx in range(count):
+		if _is_maximized_window(local_rects[idx]):
+			continue
+		var root = idx
+		while parent[root] != root: root = parent[root]
+		if not groups.has(root):
+			groups[root] = { "members": [], "aabb": local_rects[idx] }
+		groups[root]["members"].append(idx)
+		groups[root]["aabb"] = (groups[root]["aabb"] as Rect2).merge(local_rects[idx])
+	
+	# 标记哪些窗口已被分组处理
+	var handled: Array[bool] = []
+	for idx in range(count):
+		handled.append(false)
+	
+	# ── Step 2: 每个组 → 用第一个成员的 ghost_wall 建外围墙 ──
+	var floor_thickness = 10.0
+	var wall_thickness = 10.0
+	for root in groups:
+		var grp = groups[root]
+		var members: Array = grp["members"]
+		var aabb: Rect2 = grp["aabb"]
 		
-		# 不重叠的窗口: 正常 FREE 模式踏板
-		var win_left = lr.position.x
-		var win_right = lr.position.x + lr.size.x
-		var top_y = lr.position.y
-		var bottom_y = lr.position.y + lr.size.y
+		# 第一个成员承载组的外围碰撞体
+		var primary_idx: int = members[0]
+		var primary_wall: StaticBody2D = ghost_walls[primary_idx]
+		_ensure_children(primary_wall)
+		primary_wall.position = aabb.position + aabb.size / 2.0
+		handled[primary_idx] = true
 		
-		var top_segs = _compute_exposed_segments(win_left, win_right, top_y, local_rects, i)
-		var bottom_segs = _compute_exposed_segments(win_left, win_right, bottom_y, local_rects, i)
+		var w = aabb.size.x
+		var h = aabb.size.y
 		
-		var wall_cx = lr.position.x + lr.size.x / 2.0
-		var top_rel_y = -lr.size.y / 2.0 + floor_thickness / 2.0
-		var bot_rel_y = lr.size.y / 2.0 - floor_thickness / 2.0
-		_apply_platform_segments(wall, 0, top_segs, wall_cx, top_rel_y, floor_thickness, true)
-		_apply_platform_segments(wall, MAX_PLATFORM_SEGMENTS, bottom_segs, wall_cx, bot_rel_y, floor_thickness, true)
+		# 顶部: 单向天花板 (rotation=PI → 从上方可落入，从内部无法跳出)
+		var col_top = primary_wall.get_child(0) as CollisionShape2D
+		col_top.position = Vector2(0, -h / 2.0 + floor_thickness / 2.0)
+		(col_top.shape as RectangleShape2D).size = Vector2(w + wall_thickness * 2, floor_thickness)
+		col_top.rotation = PI
+		col_top.one_way_collision = true
+		col_top.disabled = false
+		# 禁用其余顶部分段
+		for k in range(1, MAX_PLATFORM_SEGMENTS):
+			(primary_wall.get_child(k) as CollisionShape2D).disabled = true
 		
-		_disable_side_walls(wall)
+		# 底部: 标准单向踏板 (可以站在上面)
+		var col_bot = primary_wall.get_child(MAX_PLATFORM_SEGMENTS) as CollisionShape2D
+		col_bot.position = Vector2(0, h / 2.0 - floor_thickness / 2.0)
+		(col_bot.shape as RectangleShape2D).size = Vector2(w + wall_thickness * 2, floor_thickness)
+		col_bot.rotation = 0.0
+		col_bot.one_way_collision = true
+		col_bot.disabled = false
+		# 禁用其余底部分段
+		for k in range(1, MAX_PLATFORM_SEGMENTS):
+			(primary_wall.get_child(MAX_PLATFORM_SEGMENTS + k) as CollisionShape2D).disabled = true
+		
+		# 左墙: 实体墙
+		var si_l = MAX_PLATFORM_SEGMENTS * 2
+		var col_l = primary_wall.get_child(si_l) as CollisionShape2D
+		col_l.position = Vector2(-w / 2.0 + wall_thickness / 2.0, 0)
+		(col_l.shape as RectangleShape2D).size = Vector2(wall_thickness, h)
+		col_l.rotation = 0.0
+		col_l.one_way_collision = false
+		col_l.disabled = false
+		
+		# 右墙: 实体墙
+		var si_r = MAX_PLATFORM_SEGMENTS * 2 + 1
+		var col_r = primary_wall.get_child(si_r) as CollisionShape2D
+		col_r.position = Vector2(w / 2.0 - wall_thickness / 2.0, 0)
+		(col_r.shape as RectangleShape2D).size = Vector2(wall_thickness, h)
+		col_r.rotation = 0.0
+		col_r.one_way_collision = false
+		col_r.disabled = false
+		
+		# ── Step 2b: 虚空填充 (AABB 内未被窗口覆盖的区域) ──
+		# 收集组内所有窗口的矩形
+		var grp_rects: Array[Rect2] = []
+		for m_idx in members:
+			grp_rects.append(local_rects[m_idx])
+		var void_rects: Array[Rect2] = _compute_void_rects(grp_rects, aabb)
+		
+		# 用组内其他 ghost_wall 的碰撞体来填充虚空
+		var filler_slot := 0  # 当前使用的填充碰撞体计数
+		for m in range(1, members.size()):
+			var filler_idx = members[m]
+			var fw = ghost_walls[filler_idx]
+			_ensure_children(fw)
+			handled[filler_idx] = true
+			
+			# 将作为容器的父节点重置到世界原点，使得子节点局部坐标等于全局坐标
+			fw.position = Vector2.ZERO
+			
+			# 充分利用每个备用的 ghost_wall 中的所有碰撞子节点 (CHILDREN_PER_WALL 个)
+			for k in range(fw.get_child_count()):
+				var col = fw.get_child(k) as CollisionShape2D
+				if filler_slot < void_rects.size():
+					var vr = void_rects[filler_slot]
+					col.position = vr.position + vr.size / 2.0
+					(col.shape as RectangleShape2D).size = vr.size
+					col.rotation = 0.0
+					col.one_way_collision = false
+					col.disabled = false
+					filler_slot += 1
+				else:
+					col.disabled = true
+		
+		# 如果虚空矩形数量超过可用填充插槽，后续的虚空无法填充 (可接受)
+		# 如果还有未使用的组内成员，全部禁用
+		for m in range(1, members.size()):
+			var filler_idx = members[m]
+			if not handled[filler_idx]:
+				var fw = ghost_walls[filler_idx]
+				_ensure_children(fw)
+				for k in range(fw.get_child_count()):
+					(fw.get_child(k) as CollisionShape2D).disabled = true
+				handled[filler_idx] = true
+	
+	# ── Step 3: 未被分组处理的窗口 (最大化窗口等) → 禁用所有碰撞体 ──
+	for idx in range(count):
+		if handled[idx]:
+			continue
+		var w2 = ghost_walls[idx]
+		_ensure_children(w2)
+		w2.position = local_rects[idx].position + local_rects[idx].size / 2.0
+		for k in range(w2.get_child_count()):
+			(w2.get_child(k) as CollisionShape2D).disabled = true
 
-## 创建/更新封闭模式的四面实体墙
-func _show_confined_wall(rect: Rect2) -> void:
-	if not is_instance_valid(confined_wall):
-		confined_wall = StaticBody2D.new()
-		var mat = PhysicsMaterial.new()
-		mat.bounce = 0.3
-		mat.friction = 0.8
-		confined_wall.physics_material_override = mat
-		# 四面墙各一个碰撞体: 上/下/左/右
-		for k in range(4):
-			var col = CollisionShape2D.new()
-			col.shape = RectangleShape2D.new()
-			confined_wall.add_child(col)
-		add_child(confined_wall)
-	
-	confined_wall.position = rect.position + rect.size / 2.0
-	
-	var w = rect.size.x
-	var h = rect.size.y
-	var thickness = 10.0
-	
-	# 上墙
-	var col_top = confined_wall.get_child(0) as CollisionShape2D
-	col_top.position = Vector2(0, -h / 2.0 + thickness / 2.0)
-	(col_top.shape as RectangleShape2D).size = Vector2(w + thickness * 2, thickness)
-	col_top.disabled = false
-	
-	# 下墙
-	var col_bot = confined_wall.get_child(1) as CollisionShape2D
-	col_bot.position = Vector2(0, h / 2.0 - thickness / 2.0)
-	(col_bot.shape as RectangleShape2D).size = Vector2(w + thickness * 2, thickness)
-	col_bot.disabled = false
-	
-	# 左墙
-	var col_left = confined_wall.get_child(2) as CollisionShape2D
-	col_left.position = Vector2(-w / 2.0 + thickness / 2.0, 0)
-	(col_left.shape as RectangleShape2D).size = Vector2(thickness, h)
-	col_left.disabled = false
-	
-	# 右墙
-	var col_right = confined_wall.get_child(3) as CollisionShape2D
-	col_right.position = Vector2(w / 2.0 - thickness / 2.0, 0)
-	(col_right.shape as RectangleShape2D).size = Vector2(thickness, h)
-	col_right.disabled = false
-
-func _hide_confined_wall() -> void:
-	if is_instance_valid(confined_wall):
-		for k in range(confined_wall.get_child_count()):
-			(confined_wall.get_child(k) as CollisionShape2D).disabled = true
-
-## ── 虚空填充系统 (Sweep-Line 算法) ──
-
-## 计算合并 bounding box 内未被任何窗口覆盖的虚空区域，生成物理屏障
-func _fill_void_areas(overlap_rects: Array[Rect2], merged: Rect2) -> void:
-	# 收集所有窗口的 X 边界坐标
-	var x_coords: Array[float] = [merged.position.x, merged.end.x]
-	for r in overlap_rects:
-		x_coords.append(r.position.x)
-		x_coords.append(r.end.x)
-	x_coords.sort()
-	
+## 计算 AABB 内未被任何窗口覆盖的虚空矩形 (X-sweep 算法)
+func _compute_void_rects(rects: Array[Rect2], aabb: Rect2) -> Array[Rect2]:
+	# 收集所有 X 边界
+	var x_edges: Array[float] = [aabb.position.x, aabb.end.x]
+	for r in rects:
+		x_edges.append(r.position.x)
+		x_edges.append(r.end.x)
+	x_edges.sort()
 	# 去重 (容差 2px)
-	var unique_x: Array[float] = []
-	for x in x_coords:
-		if unique_x.is_empty() or abs(x - unique_x.back()) > 2.0:
-			unique_x.append(x)
+	var xs: Array[float] = []
+	for x in x_edges:
+		if xs.is_empty() or abs(x - xs.back()) > 2.0:
+			xs.append(x)
 	
-	# 对每个 X 切片，找出未被窗口覆盖的 Y 区间 = 虚空
-	var void_rects: Array[Rect2] = []
-	for j in range(unique_x.size() - 1):
-		var x_left = unique_x[j]
-		var x_right = unique_x[j + 1]
+	var voids: Array[Rect2] = []
+	for j in range(xs.size() - 1):
+		var x_left = xs[j]
+		var x_right = xs[j + 1]
 		if x_right - x_left < 5.0:
 			continue
 		var x_mid = (x_left + x_right) / 2.0
 		
 		# 找出在这个 X 位置被窗口覆盖的 Y 范围
 		var covered: Array = []
-		for r in overlap_rects:
+		for r in rects:
 			if r.position.x <= x_mid and r.end.x >= x_mid:
 				covered.append([r.position.y, r.end.y])
-		
-		# 合并覆盖区间
 		covered.sort()
-		var merged_y = _merge_y_ranges(covered)
 		
-		# bounding box 的 Y 范围中未被覆盖的部分 = 虚空
-		var prev_y = merged.position.y
-		for c in merged_y:
+		# 合并 Y 覆盖区间
+		var merged: Array = []
+		for c in covered:
+			if merged.is_empty() or c[0] > merged.back()[1]:
+				merged.append([c[0], c[1]])
+			else:
+				merged[merged.size() - 1] = [merged.back()[0], maxf(merged.back()[1], c[1])]
+		
+		# AABB Y 范围中未被覆盖的部分 = 虚空
+		var prev_y = aabb.position.y
+		for c in merged:
 			if c[0] > prev_y + 5.0:
-				void_rects.append(Rect2(x_left, prev_y, x_right - x_left, c[0] - prev_y))
+				voids.append(Rect2(x_left, prev_y, x_right - x_left, c[0] - prev_y))
 			prev_y = maxf(prev_y, c[1])
-		if merged.end.y > prev_y + 5.0:
-			void_rects.append(Rect2(x_left, prev_y, x_right - x_left, merged.end.y - prev_y))
+		if aabb.end.y > prev_y + 5.0:
+			voids.append(Rect2(x_left, prev_y, x_right - x_left, aabb.end.y - prev_y))
 	
-	# 同步虚空填充墙池
-	_sync_void_fillers(void_rects)
-
-## 合并重叠的 Y 区间
-func _merge_y_ranges(ranges: Array) -> Array:
-	if ranges.is_empty():
-		return []
-	var result: Array = [ranges[0].duplicate()]
-	for i in range(1, ranges.size()):
-		var prev = result.back()
-		if ranges[i][0] <= prev[1]:
-			result[result.size() - 1] = [prev[0], maxf(prev[1], ranges[i][1])]
-		else:
-			result.append(ranges[i].duplicate())
-	return result
-
-## 同步虚空填充墙对象池
-func _sync_void_fillers(void_rects: Array[Rect2]) -> void:
-	var need = void_rects.size()
-	
-	# 扩展池
-	while void_fillers.size() < need:
-		var wall = StaticBody2D.new()
-		var col = CollisionShape2D.new()
-		col.shape = RectangleShape2D.new()
-		wall.add_child(col)
-		var mat = PhysicsMaterial.new()
-		mat.bounce = 0.3
-		mat.friction = 0.8
-		wall.physics_material_override = mat
-		add_child(wall)
-		void_fillers.append(wall)
-	
-	# 更新或禁用
-	for i in range(void_fillers.size()):
-		var wall = void_fillers[i]
-		var col = wall.get_child(0) as CollisionShape2D
-		if i < need:
-			var vr = void_rects[i]
-			wall.position = vr.position + vr.size / 2.0
-			(col.shape as RectangleShape2D).size = vr.size
-			col.disabled = false
-		else:
-			col.disabled = true
-
-## 清除所有虚空填充墙
-func _clear_void_fillers() -> void:
-	for wall in void_fillers:
-		(wall.get_child(0) as CollisionShape2D).disabled = true
+	return voids
 
 ## 检测窗口是否为最大化 (覆盖 ≥90% 屏幕宽度和高度)
 func _is_maximized_window(lr: Rect2) -> bool:
@@ -671,7 +683,6 @@ func _apply_platform_segments(wall: StaticBody2D, child_offset: int, segs: Array
 ## ── 窗口模式切换回调 ──
 
 func _on_window_mode_changed(mode: int) -> void:
-	var old_mode = window_mode
 	window_mode = mode
 	SettingsManager.set_int("window_mode", mode)
 	
@@ -679,19 +690,7 @@ func _on_window_mode_changed(mode: int) -> void:
 	if is_instance_valid(pet_instance):
 		pet_instance.window_mode = mode
 	
-	# 切换到封闭模式时，立即检测目标窗口
-	if mode == WindowMode.CONFINED:
-		confined_window_rect = Rect2()  # 重置，让下次同步重新检测
-		confined_anchor_rect = Rect2()
-	
-	# 切换离开封闭模式时，释放封闭墙
-	if old_mode == WindowMode.CONFINED:
-		confined_window_rect = Rect2()
-		confined_anchor_rect = Rect2()
-		_hide_confined_wall()
-		if is_instance_valid(pet_instance):
-			pet_instance.confined_rect = Rect2()
-	
+	# 下一轮 Timer 同步 (0.1s 内) 会自动应用新模式的碰撞体
 	print("[DesktopPet] 窗口交互模式切换: ", ["自由漫游", "窗口封闭", "窗口排斥"][mode])
 
 
@@ -730,6 +729,18 @@ func _setup_reminder_system() -> void:
 		if pet_instance and bubble_node.has_method("link_pet"):
 			bubble_node.link_pet(pet_instance)
 
+# ── 宠物碎碎念 ──
+
+func _setup_pet_chatter() -> void:
+	var chatter_script = load("res://ui/pet_chatter.gd")
+	if chatter_script:
+		var chatter_node = Node.new()
+		chatter_node.set_script(chatter_script)
+		add_child(chatter_node)
+		if pet_instance and chatter_node.has_method("link_pet"):
+			chatter_node.link_pet(pet_instance)
+		print("[DesktopPet] 宠物碎碎念系统已启动 (30分钟间隔)")
+
 # ── 鼠标穿透管理 ──
 
 var last_passthrough_rect: Rect2i
@@ -739,6 +750,9 @@ var _passthrough_timer: float = 0.0
 const PASSTHROUGH_INTERVAL := 0.016
 
 func _process(delta: float) -> void:
+	# 全屏锁定时不刷新穿透 (保持全窗口穿透)
+	if is_instance_valid(pet_instance) and pet_instance.fullscreen_locked:
+		return
 	if is_dragging or is_menu_open:
 		return
 	_passthrough_timer += delta
@@ -804,3 +818,193 @@ func _on_drag_ended() -> void:
 func _on_context_menu_toggled(is_open: bool) -> void:
 	is_menu_open = is_open
 	_update_passthrough_state()
+
+# ── 行为指令 ──
+
+func _on_behavior_mode_changed(mode: int) -> void:
+	behavior_mode = mode
+	SettingsManager.set_int("behavior_mode", mode)
+	# 手动切安静待命时，也自动走向最近的屏幕边缘
+	if mode == 1 and is_instance_valid(pet_instance):
+		pet_instance.transition_to("retreat")
+
+## 任务栏样式守护: 如果引擎意外重置了 WS_EX_TOOLWINDOW，重新推入
+func _guard_taskbar_style() -> void:
+	if win_manager and win_manager.has_method("EnsureHiddenFromTaskbar"):
+		var fixed: bool = win_manager.call("EnsureHiddenFromTaskbar")
+		if fixed:
+			print("[DesktopPet] 任务栏样式守护：已自动修复 ToolWindow 标记")
+
+func _on_fullscreen_locked_changed(locked: bool) -> void:
+	if locked:
+		# 整个窗口鼠标穿透 (宠物仍然可见，但所有点击穿透到下层 app)
+		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, true)
+		print("[DesktopPet] 全屏锁定：鼠标穿透已启用")
+	else:
+		# 关闭窗口级穿透，恢复正常的区域穿透模式
+		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, false)
+		_update_passthrough_state()
+		print("[DesktopPet] 全屏解锁：鼠标交互已恢复")
+
+# ── 全屏自动检测 ──
+
+func _check_fullscreen() -> void:
+	if not win_manager:
+		return
+	# 拖拽中跳过检测 (拖动宠物会让宠物窗口抢前台，等松手后再检测)
+	if is_dragging:
+		return
+	
+	# 冷却期递减
+	if _fs_exit_cooldown > 0.0:
+		_fs_exit_cooldown -= 1.5  # 每次检测减去 timer 间隔
+	
+	var is_fs: bool = win_manager.call("IsUserInFullscreen")
+	
+	# 进入计数
+	if is_fs:
+		_fs_confirm_count += 1
+		_fs_exit_count = 0  # 重置退出计数
+	else:
+		_fs_exit_count += 1
+		_fs_confirm_count = 0  # 重置进入计数
+	
+	# 进入全屏：需连续 N 次确认 + 冷却期已过
+	if _fs_confirm_count >= FS_ENTER_THRESHOLD and not _was_fullscreen:
+		# 冷却期内忽略 (防止频繁进出全屏反复触发)
+		if _fs_exit_cooldown > 0.0:
+			_fs_confirm_count = 0
+			return
+		print("[DesktopPet] 全屏已确认 (连续 ", _fs_confirm_count, " 次)")
+		_was_fullscreen = true
+		_on_fullscreen_entered()
+	# 退出全屏：需连续 N 次确认
+	elif _fs_exit_count >= FS_EXIT_THRESHOLD and _was_fullscreen:
+		print("[DesktopPet] 全屏退出已确认")
+		_was_fullscreen = false
+		_on_fullscreen_exited()
+
+func _on_fullscreen_entered() -> void:
+	# 同步全屏标记到 pet
+	if pet_instance:
+		pet_instance.quiet_by_fullscreen = true
+	
+	var now = Time.get_ticks_msec() / 1000.0
+	if behavior_mode == 0:
+		# 当前自由模式 → 切安静 + 走边缘
+		# 气泡节流: 距上次全屏气泡超过 60 秒才冒泡 (防止频繁打扰)
+		if now - _fs_last_bubble_time >= FS_BUBBLE_MIN_INTERVAL:
+			EventBus.show_reminder_bubble.emit("主人要专注了吗？我去角落待着~")
+			_fs_last_bubble_time = now
+		behavior_mode = 1
+		EventBus.behavior_mode_changed.emit(1)
+	
+	# 无论什么模式，全屏都要走边缘
+	if pet_instance:
+		pet_instance.transition_to("retreat")
+	
+	# 必须在 emit 之后设置，因为 emit 会触发 _on_behavior_mode_changed
+	_quiet_by_fullscreen = true
+
+func _on_fullscreen_exited() -> void:
+	if not _quiet_by_fullscreen:
+		return
+	_quiet_by_fullscreen = false
+	# 启动退出冷却期 (防止频繁进出)
+	_fs_exit_cooldown = FS_EXIT_COOLDOWN_DURATION
+	# 同步全屏标记到 pet + 解锁鼠标交互
+	if pet_instance:
+		pet_instance.quiet_by_fullscreen = false
+		pet_instance.fullscreen_locked = false
+	# 恢复鼠标交互
+	EventBus.fullscreen_locked_changed.emit(false)
+	# 气泡消息 (节流同理)
+	var now = Time.get_ticks_msec() / 1000.0
+	if now - _fs_last_bubble_time >= FS_BUBBLE_MIN_INTERVAL:
+		EventBus.show_reminder_bubble.emit("主人忙完了？😊")
+		_fs_last_bubble_time = now
+	# 恢复自由行动
+	behavior_mode = 0
+	EventBus.behavior_mode_changed.emit(0)
+	# 强制切到 idle 重置阻尼，让宠物立刻恢复活力
+	if pet_instance:
+		pet_instance.transition_to("idle")
+
+# ── 告别退出 ──
+
+var _is_quitting := false  # 防止重复触发告别流程
+
+## 播放告别动画后退出: 宠物说一句告别的话 → 等待落地 → 滚向屏幕边缘外 → 渐隐消失 → 退出程序
+func quit_with_farewell() -> void:
+	if _is_quitting:
+		return
+	_is_quitting = true
+	
+	var farewell_lines := [
+		"主人再见！我去休息啦~ 🌙",
+		"拜拜~ 下次见面要摸摸我哦！",
+		"困了困了... 晚安主人 😴",
+		"好的！我先去充个电~ ⚡",
+		"下次再来陪你玩！再见~ 👋",
+	]
+	var line = farewell_lines[randi() % farewell_lines.size()]
+	EventBus.show_reminder_bubble.emit(line)
+	
+	if pet_instance:
+		# 解除所有锁定状态
+		pet_instance.fullscreen_locked = false
+		pet_instance.quiet_by_fullscreen = false
+		EventBus.fullscreen_locked_changed.emit(false)
+		
+		# 切换到安静模式, 防止撤退到达边缘后随机跳跃/行走
+		pet_instance.behavior_mode = 1
+		
+		# 如果宠物在空中/正在下落，先等待落地 (最多 6 秒防止卡死)
+		if not pet_instance.is_settled() or pet_instance.current_state_name in ["fall", "jump", "drag"]:
+			# 如果在拖拽中，先释放
+			if pet_instance.current_state_name == "drag":
+				pet_instance.transition_to("fall")
+			# 等待落地稳定
+			var wait_time := 0.0
+			while wait_time < 6.0:
+				await get_tree().create_timer(0.2).timeout
+				wait_time += 0.2
+				if pet_instance.is_settled() and pet_instance.current_state_name not in ["fall", "jump", "drag"]:
+					break
+		
+		# 等气泡展示 2 秒 (给用户阅读告别语的缓冲)
+		await get_tree().create_timer(2.0).timeout
+		
+		# 冻结物理, tween 全权控制退场
+		pet_instance.freeze = true
+		
+		# 计算退场路径: 当前位置 → 滑出屏幕外
+		var slide_dir = -1.0 if pet_instance.global_position.x < boundary_size.x / 2.0 else 1.0
+		var dist_to_edge = pet_instance.global_position.x if slide_dir < 0 else boundary_size.x - pet_instance.global_position.x
+		var total_dist = dist_to_edge + 150.0  # 多滑 150px 确保完全出屏
+		var exit_pos = pet_instance.global_position + Vector2(slide_dir * total_dist, 0)
+		# 滚动角度 = 距离 / 半径 (模拟真实滚动)
+		var roll_angle = pet_instance.rotation + slide_dir * total_dist / 30.0
+		# 时间与距离成正比, 最少 0.8s 最多 2.0s
+		var slide_time = clampf(total_dist / 400.0, 0.8, 2.0)
+		
+		# 退场动画: 滑出 + 滚动 + 渐隐 (全部并行)
+		var tween = create_tween().set_parallel(true)
+		tween.tween_property(pet_instance, "global_position", exit_pos, slide_time) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tween.tween_property(pet_instance, "rotation", roll_angle, slide_time) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tween.tween_property(pet_instance, "modulate:a", 0.0, slide_time)
+		pet_instance.overlay_rect = Rect2()
+		# 气泡同步淡出
+		for child in get_children():
+			if child.has_method("is_busy"):
+				for sub in child.get_children():
+					if sub is PanelContainer and sub.visible:
+						tween.tween_property(sub, "modulate:a", 0.0, slide_time * 0.7)
+		tween.chain().tween_callback(func(): get_tree().quit())
+		return
+	
+	# 无宠物实例时直接退出
+	await get_tree().create_timer(2.0).timeout
+	get_tree().quit()
