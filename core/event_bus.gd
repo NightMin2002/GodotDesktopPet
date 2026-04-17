@@ -21,6 +21,7 @@ signal setting_toggled(setting_id: String, is_on: bool)
 # ── 系统功能 ──
 signal autostart_toggled(is_on: bool)
 signal show_reminder_bubble(message: String)
+signal force_show_bubble(message: String)  # 强制显示: 中断当前气泡+清空队列+立即播放
 signal show_targeted_bubble(message: String, target: Node2D)
 signal show_reminder_panel
 

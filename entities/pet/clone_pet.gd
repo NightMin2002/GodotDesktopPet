@@ -8,7 +8,7 @@ func _ready() -> void:
 	# clone_hue_shift 由 main.gd 在 add_child 前设置
 	super._ready()
 
-func _input(event: InputEvent) -> void:
+func _unhandled_input(event: InputEvent) -> void:
 	# 传递给状态机 (支持拖拽等交互)
 	if current_state:
 		current_state.input(event)

@@ -750,6 +750,15 @@ func _update_passthrough_box() -> void:
 		var sw := int(r.size.x / 8.0) * 8 + 16
 		var sh := int(r.size.y / 8.0) * 8 + 16
 		rects.append(Rect2i(sx, sy, sw, sh))
+		
+		# 气泡覆盖层作为独立矩形 (不与宠物本体合并, 避免产生巨大 AABB)
+		if p.overlay_rect.size != Vector2.ZERO:
+			var ov = p.overlay_rect
+			var ox := int(ov.position.x / 8.0) * 8
+			var oy := int(ov.position.y / 8.0) * 8
+			var ow := int(ov.size.x / 8.0) * 8 + 16
+			var oh := int(ov.size.y / 8.0) * 8 + 16
+			rects.append(Rect2i(ox, oy, ow, oh))
 	
 	if rects.is_empty():
 		return
@@ -863,6 +872,11 @@ func quit_with_farewell() -> void:
 		return
 	_is_quitting = true
 	
+	# 🛡️ 立即禁用所有宠物的输入处理，防止退出动画期间误触
+	for p in pet_instances:
+		if is_instance_valid(p):
+			p.set_process_unhandled_input(false)
+	
 	var farewell_lines := [
 		"主人再见！我去休息啦~ 🌙",
 		"拜拜~ 下次见面要摸摸我哦！",
@@ -871,7 +885,7 @@ func quit_with_farewell() -> void:
 		"下次再来陪你玩！再见~ 👋",
 	]
 	var line = farewell_lines[randi() % farewell_lines.size()]
-	EventBus.show_reminder_bubble.emit(line)
+	EventBus.force_show_bubble.emit(line)
 	
 	# 统一设置为安静模式
 	for p in pet_instances:

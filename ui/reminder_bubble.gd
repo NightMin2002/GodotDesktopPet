@@ -9,12 +9,14 @@ var bubble_label: Label
 var pet_ref: RigidBody2D
 var _is_showing := false
 var _queue: Array[String] = []  # 待播放的消息队列
+var _show_generation: int = 0   # 协程取消令牌 (每次强制显示时递增，旧协程自动终止)
 
 func _ready() -> void:
 	layer = 110
 	_build_bubble()
 	EventBus.show_reminder_bubble.connect(_on_bubble_requested)
 	EventBus.show_targeted_bubble.connect(_on_targeted_bubble_requested)
+	EventBus.force_show_bubble.connect(_on_force_bubble_requested)
 
 func link_pet(pet: Node2D) -> void:
 	pet_ref = pet as RigidBody2D
@@ -36,6 +38,21 @@ func _on_targeted_bubble_requested(msg: String, target: Node2D) -> void:
 	_last_target = target
 	_on_bubble_requested(msg)
 
+func _on_force_bubble_requested(message: String) -> void:
+	# 强制中断: 清空队列 + 立即播放
+	_queue.clear()
+	_show_generation += 1  # 令旧的 _show_bubble 协程自动终止
+	if _is_showing:
+		bubble_panel.hide()
+		# 先清理旧目标的 overlay_rect (此时 _last_target 仍指向原气泡目标)
+		var old_pet = _get_active_pet()
+		if is_instance_valid(old_pet):
+			old_pet.overlay_rect = Rect2()
+		_is_showing = false
+	# 清理完毕后再重置目标到原体 (防止克隆体气泡跳转)
+	_last_target = null
+	_show_bubble(message)
+
 func is_busy() -> bool:
 	return _is_showing
 
@@ -52,13 +69,14 @@ func _process(_delta: float) -> void:
 	target_pos.y = clampf(target_pos.y, 8, vp.y - bubble_panel.size.y - 8)
 	bubble_panel.position = bubble_panel.position.lerp(target_pos, _delta * 10.0)
 	
-	# 将气泡区域注册到宠物的穿透多边形计算中 (grow(60) 覆盖淡出上飘动画)
-	active_pet.overlay_rect = Rect2(bubble_panel.position, bubble_panel.size).grow(60)
+	# 将气泡区域注册到宠物的穿透多边形计算中 (紧贴气泡尺寸+小余量)
+	active_pet.overlay_rect = Rect2(bubble_panel.position, bubble_panel.size).grow(10)
 
 func _build_bubble() -> void:
 	bubble_panel = PanelContainer.new()
 	bubble_panel.visible = false
 	bubble_panel.custom_minimum_size = Vector2(60, 30)
+	bubble_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 气泡不拦截鼠标
 	
 	var style = StyleBoxFlat.new()
 	style.bg_color = Color(0.05, 0.1, 0.2, 0.92)
@@ -72,9 +90,12 @@ func _build_bubble() -> void:
 	bubble_label = Label.new()
 	bubble_label.add_theme_font_size_override("font_size", 20)
 	bubble_label.add_theme_color_override("font_color", Color(1, 0.95, 0.85, 1))
+	bubble_label.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 标签不拦截鼠标
 	bubble_panel.add_child(bubble_label)
 
 func _on_bubble_requested(message: String) -> void:
+	# 非定向气泡始终显示在原体上 (清除 show_targeted_bubble 留下的克隆体引用)
+	_last_target = null
 	if _is_showing:
 		# 🚨 防过度点拽刷屏：如果当前屏幕正在显示的，或是队列里已经有完全一模一样的话，直接抛弃不复读！
 		if bubble_label.text == message or _queue.has(message):
@@ -88,6 +109,7 @@ func _on_bubble_requested(message: String) -> void:
 
 func _show_bubble(message: String) -> void:
 	_is_showing = true
+	var gen = _show_generation  # 捕获当前代数，用于协程取消检测
 	
 	bubble_label.text = message
 	
@@ -106,6 +128,8 @@ func _show_bubble(message: String) -> void:
 	tween.tween_property(bubble_panel, "modulate:a", 1.0, 0.2)
 	
 	await get_tree().create_timer(6.0).timeout
+	if gen != _show_generation:
+		return  # 被 force_show_bubble 中断，安全退出旧协程
 	if not is_instance_valid(bubble_panel):
 		_is_showing = false
 		return
@@ -113,6 +137,8 @@ func _show_bubble(message: String) -> void:
 	fade.tween_property(bubble_panel, "modulate:a", 0.0, 0.6)
 	fade.tween_property(bubble_panel, "position:y", bubble_panel.position.y - 40, 0.6)
 	await fade.finished
+	if gen != _show_generation:
+		return  # 被 force_show_bubble 中断，安全退出旧协程
 	bubble_panel.hide()
 	# 清除覆盖区域
 	var active_pet2 = _get_active_pet()
@@ -123,6 +149,8 @@ func _show_bubble(message: String) -> void:
 	# 播放队列中下一条消息 (间隔 1 秒，避免连续弹出太急)
 	if _queue.size() > 0:
 		await get_tree().create_timer(1.0).timeout
+		if gen != _show_generation:
+			return  # 队列等待期间也可能被中断
 		if _queue.size() > 0:
 			var next_msg = _queue.pop_front()
 			_show_bubble(next_msg)

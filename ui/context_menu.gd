@@ -415,3 +415,4 @@ func _unhandled_input(event: InputEvent) -> void:
 		var rect = Rect2(Vector2.ZERO, hud.size)
 		if not rect.has_point(local_mouse):
 			_close_hud()
+			get_viewport().set_input_as_handled()  # 消费事件，防止穿透到宠物

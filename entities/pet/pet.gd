@@ -190,9 +190,9 @@ func get_render_rect() -> Rect2:
 		clock_rect.size += Vector2(10, 10)
 		rect = rect.merge(clock_rect)
 	
-	# 合并外部覆盖层区域 (如气泡通知)
-	if overlay_rect.size != Vector2.ZERO:
-		rect = rect.merge(overlay_rect)
+	# 注意: overlay_rect (气泡通知等) 不再合并到这里
+	# 改由 main.gd._update_passthrough_box() 作为独立矩形添加到 DWM 多矩形区域
+	# 避免宠物+气泡合并为巨大 AABB 导致桌面大面积不可点击
 	
 	return rect
 
@@ -268,7 +268,7 @@ func _on_body_entered(_body: Node) -> void:
 	if shockwave_enabled and last_frame_speed > 350.0:
 		trigger_shockwave()
 
-func _input(event: InputEvent) -> void:
+func _unhandled_input(event: InputEvent) -> void:
 	if current_state:
 		current_state.input(event)
 	

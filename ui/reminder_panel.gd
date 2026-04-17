@@ -5,8 +5,6 @@ extends CanvasLayer
 
 var panel: PanelContainer
 var list_box: VBoxContainer
-var hour_spin: SpinBox       # 小时选择 (0-23)
-var minute_spin: SpinBox     # 分钟选择 (0-59)
 var msg_input: LineEdit
 var once_btn: Button        # 一次性/每日 切换按钮
 
@@ -146,122 +144,179 @@ func _build_ui() -> void:
 	input_sep.add_theme_color_override("separator_color", Color(1, 0.85, 0.3, 0.15))
 	vbox.add_child(input_sep)
 	
-	var add_row = HBoxContainer.new()
-	add_row.add_theme_constant_override("separation", 8)
-	add_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_child(add_row)
+	# ── 第一行：时间选择器 + 模式切换 ──
+	var time_row = HBoxContainer.new()
+	time_row.add_theme_constant_override("separation", 4)
+	time_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_child(time_row)
 	
-	# 时间选择器 — 小时 SpinBox + 冒号 + 分钟 SpinBox
-	hour_spin = _make_time_spinbox(0, 23, 9)
-	add_row.add_child(hour_spin)
+	# 构建 滚轮式时间选择器 ▲ [数字] ▼
+	var hour_col = _build_roller(0, 23, 9, "_hour_val")
+	time_row.add_child(hour_col)
 	
 	var colon_label = Label.new()
 	colon_label.text = ":"
-	colon_label.add_theme_font_size_override("font_size", 20)
-	colon_label.add_theme_color_override("font_color", Color(1, 0.85, 0.3, 0.9))
-	add_row.add_child(colon_label)
+	colon_label.add_theme_font_size_override("font_size", 28)
+	colon_label.add_theme_color_override("font_color", Color(1, 0.85, 0.3, 0.8))
+	time_row.add_child(colon_label)
 	
-	minute_spin = _make_time_spinbox(0, 59, 0)
-	add_row.add_child(minute_spin)
+	var minute_col = _build_roller(0, 59, 0, "_minute_val")
+	time_row.add_child(minute_col)
 	
-	# 消息输入
-	msg_input = _make_input("该休息了...", 0, 0)
-	msg_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	add_row.add_child(msg_input)
+	# 间距弹簧
+	var spacer = Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	time_row.add_child(spacer)
 	
-	# 一次性/每日 切换按钮 (纯文字药丸形)
+	# 一次性/每日 切换按钮 (胶囊式双态)
 	once_btn = Button.new()
-	once_btn.text = "单次" if _add_once else "每日"
-	once_btn.tooltip_text = "极简文字切换"
-	once_btn.add_theme_font_size_override("font_size", 14)
+	once_btn.text = "1×单次" if _add_once else "🔁每日"
+	once_btn.add_theme_font_size_override("font_size", 15)
 	once_btn.add_theme_color_override("font_color", Color(0.9, 0.95, 1, 1))
-	once_btn.custom_minimum_size = Vector2(46, 32)
+	once_btn.add_theme_color_override("font_hover_color", Color(1, 1, 1, 1))
+	once_btn.add_theme_color_override("font_pressed_color", Color(1, 1, 1, 1))
+	once_btn.custom_minimum_size = Vector2(72, 36)
 	
 	var btn_style = StyleBoxFlat.new()
-	btn_style.bg_color = Color(0.15, 0.25, 0.4, 0.8)
-	btn_style.border_color = Color(0.3, 0.5, 0.7, 0.8)
+	btn_style.bg_color = Color(0.12, 0.22, 0.38, 0.9)
+	btn_style.border_color = Color(0.3, 0.55, 0.8, 0.7)
 	btn_style.set_border_width_all(1)
-	btn_style.set_corner_radius_all(6)
+	btn_style.set_corner_radius_all(18)
 	once_btn.add_theme_stylebox_override("normal", btn_style)
 	
 	var btn_hover = btn_style.duplicate()
-	btn_hover.bg_color = Color(0.2, 0.35, 0.55, 0.9)
-	btn_hover.border_color = Color(0.4, 0.7, 0.9, 1.0)
+	btn_hover.bg_color = Color(0.18, 0.32, 0.5, 1.0)
+	btn_hover.border_color = Color(0.4, 0.7, 0.95, 1.0)
 	once_btn.add_theme_stylebox_override("hover", btn_hover)
 	once_btn.add_theme_stylebox_override("pressed", btn_hover)
 	once_btn.pressed.connect(_on_once_toggled)
-	add_row.add_child(once_btn)
+	time_row.add_child(once_btn)
 	
-	# 添加按钮 (醒目提亮)
+	# ── 第二行：消息输入 + 添加按钮 ──
+	var msg_row = HBoxContainer.new()
+	msg_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(msg_row)
+	
+	# 消息输入
+	msg_input = _make_input("输入提醒内容...", 0, 0)
+	msg_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	msg_row.add_child(msg_input)
+	
+	# 添加按钮 (醒目发光)
 	var add_btn = Button.new()
-	add_btn.text = "添加"
-	add_btn.add_theme_font_size_override("font_size", 14)
+	add_btn.text = "＋ 添加"
+	add_btn.add_theme_font_size_override("font_size", 15)
 	
-	# 强制锁定所有状态下的文字颜色为深绿/黑色，防止悬停时变成默认白色导致看不清
-	var dark_green = Color(0.05, 0.15, 0.05, 1)
+	var dark_green = Color(0.02, 0.12, 0.05, 1)
 	add_btn.add_theme_color_override("font_color", dark_green)
 	add_btn.add_theme_color_override("font_hover_color", dark_green)
 	add_btn.add_theme_color_override("font_pressed_color", dark_green)
 	add_btn.add_theme_color_override("font_focus_color", dark_green)
-	add_btn.custom_minimum_size = Vector2(46, 32)
+	add_btn.custom_minimum_size = Vector2(72, 36)
 	
 	var add_style = StyleBoxFlat.new()
-	add_style.bg_color = Color(0.4, 0.9, 0.6, 0.9)
-	add_style.set_corner_radius_all(6)
+	add_style.bg_color = Color(0.35, 0.85, 0.55, 0.9)
+	add_style.set_corner_radius_all(18)
 	add_btn.add_theme_stylebox_override("normal", add_style)
 	
 	var add_hover = add_style.duplicate()
-	add_hover.bg_color = Color(0.5, 1.0, 0.7, 1.0)
+	add_hover.bg_color = Color(0.45, 0.95, 0.65, 1.0)
 	add_btn.add_theme_stylebox_override("hover", add_hover)
 	add_btn.add_theme_stylebox_override("pressed", add_hover)
 	add_btn.pressed.connect(_on_add_pressed)
-	add_row.add_child(add_btn)
+	msg_row.add_child(add_btn)
 	
 	_refresh_list()
 
-func _make_time_spinbox(min_val: int, max_val: int, default_val: int) -> SpinBox:
-	var spin = SpinBox.new()
-	spin.min_value = min_val
-	spin.max_value = max_val
-	spin.value = default_val
-	spin.step = 1
-	spin.custom_minimum_size = Vector2(72, 0)
-	spin.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	spin.add_theme_font_size_override("font_size", 17)
-	# SpinBox 内嵌 LineEdit 的样式
-	var line = spin.get_line_edit()
-	line.add_theme_font_size_override("font_size", 17)
-	line.add_theme_color_override("font_color", Color(0.9, 0.95, 1, 1))
-	line.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	# 内嵌输入框的深色背景
-	var input_style = StyleBoxFlat.new()
-	input_style.bg_color = Color(0.06, 0.1, 0.2, 0.8)
-	input_style.border_color = Color(0.15, 0.3, 0.5, 0.5)
-	input_style.set_border_width_all(1)
-	input_style.set_corner_radius_all(8)
-	input_style.content_margin_left = 6
-	input_style.content_margin_right = 6
-	input_style.content_margin_top = 6
-	input_style.content_margin_bottom = 6
-	line.add_theme_stylebox_override("normal", input_style)
-	var focus_style = input_style.duplicate()
-	focus_style.border_color = Color(1, 0.85, 0.3, 0.6)
-	line.add_theme_stylebox_override("focus", focus_style)
-	# SpinBox 上下箭头区域样式 (使其与面板风格统一)
-	var up_style = StyleBoxFlat.new()
-	up_style.bg_color = Color(0.08, 0.12, 0.25, 0.8)
-	up_style.set_corner_radius_all(4)
-	spin.add_theme_stylebox_override("up_background", up_style)
-	spin.add_theme_stylebox_override("down_background", up_style)
-	var up_hover = up_style.duplicate()
-	up_hover.bg_color = Color(0.12, 0.2, 0.4, 0.9)
-	spin.add_theme_stylebox_override("up_background_hovered", up_hover)
-	spin.add_theme_stylebox_override("down_background_hovered", up_hover)
-	var up_pressed = up_style.duplicate()
-	up_pressed.bg_color = Color(0.15, 0.25, 0.5, 1.0)
-	spin.add_theme_stylebox_override("up_background_pressed", up_pressed)
-	spin.add_theme_stylebox_override("down_background_pressed", up_pressed)
-	return spin
+# ── 滚轮式时间选择器组件 ──
+
+var _hour_val: int = 9
+var _minute_val: int = 0
+var _roller_labels: Dictionary = {}  # meta_key → Label
+
+func _build_roller(min_val: int, max_val: int, default_val: int, meta_key: String) -> VBoxContainer:
+	var col = VBoxContainer.new()
+	col.add_theme_constant_override("separation", 2)
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	
+	# ▲ 递增按钮
+	var up_btn = Button.new()
+	up_btn.text = "▲"
+	up_btn.add_theme_font_size_override("font_size", 14)
+	up_btn.add_theme_color_override("font_color", Color(0.6, 0.75, 0.9, 0.8))
+	up_btn.add_theme_color_override("font_hover_color", Color(1, 0.85, 0.3, 1))
+	up_btn.add_theme_color_override("font_pressed_color", Color(1, 0.85, 0.3, 1))
+	up_btn.custom_minimum_size = Vector2(56, 24)
+	_style_roller_btn(up_btn)
+	up_btn.pressed.connect(func(): _adjust_roller(meta_key, 1, min_val, max_val))
+	col.add_child(up_btn)
+	
+	# 大数字显示
+	var num_label = Label.new()
+	num_label.text = "%02d" % default_val
+	num_label.add_theme_font_size_override("font_size", 32)
+	num_label.add_theme_color_override("font_color", Color(0.95, 0.97, 1.0, 1.0))
+	num_label.add_theme_color_override("font_outline_color", Color(0.1, 0.2, 0.4, 0.6))
+	num_label.add_theme_constant_override("outline_size", 3)
+	num_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	num_label.custom_minimum_size = Vector2(56, 38)
+	
+	# 数字底板
+	var num_bg = StyleBoxFlat.new()
+	num_bg.bg_color = Color(0.04, 0.07, 0.16, 0.9)
+	num_bg.border_color = Color(0.15, 0.3, 0.55, 0.5)
+	num_bg.set_border_width_all(1)
+	num_bg.set_corner_radius_all(10)
+	num_bg.content_margin_left = 4
+	num_bg.content_margin_right = 4
+	num_bg.content_margin_top = 2
+	num_bg.content_margin_bottom = 2
+	num_label.add_theme_stylebox_override("normal", num_bg)
+	col.add_child(num_label)
+	
+	# ▼ 递减按钮
+	var down_btn = Button.new()
+	down_btn.text = "▼"
+	down_btn.add_theme_font_size_override("font_size", 14)
+	down_btn.add_theme_color_override("font_color", Color(0.6, 0.75, 0.9, 0.8))
+	down_btn.add_theme_color_override("font_hover_color", Color(1, 0.85, 0.3, 1))
+	down_btn.add_theme_color_override("font_pressed_color", Color(1, 0.85, 0.3, 1))
+	down_btn.custom_minimum_size = Vector2(56, 24)
+	_style_roller_btn(down_btn)
+	down_btn.pressed.connect(func(): _adjust_roller(meta_key, -1, min_val, max_val))
+	col.add_child(down_btn)
+	
+	# 保存初始值和标签引用
+	set(meta_key, default_val)
+	_roller_labels[meta_key] = num_label
+	return col
+
+func _style_roller_btn(btn: Button) -> void:
+	var s = StyleBoxFlat.new()
+	s.bg_color = Color(0.06, 0.1, 0.22, 0.7)
+	s.border_color = Color(0.2, 0.35, 0.55, 0.4)
+	s.set_border_width_all(1)
+	s.set_corner_radius_all(8)
+	btn.add_theme_stylebox_override("normal", s)
+	var h = s.duplicate()
+	h.bg_color = Color(0.1, 0.18, 0.35, 0.9)
+	h.border_color = Color(1, 0.85, 0.3, 0.6)
+	btn.add_theme_stylebox_override("hover", h)
+	btn.add_theme_stylebox_override("pressed", h)
+
+func _adjust_roller(meta_key: String, delta: int, min_val: int, max_val: int) -> void:
+	var val: int = get(meta_key)
+	val += delta
+	if val > max_val: val = min_val
+	if val < min_val: val = max_val
+	set(meta_key, val)
+	if _roller_labels.has(meta_key):
+		var label: Label = _roller_labels[meta_key]
+		label.text = "%02d" % val
+		# 微弹跳动画反馈
+		var tw = create_tween()
+		tw.tween_property(label, "scale", Vector2(1.15, 1.15), 0.06)
+		tw.tween_property(label, "scale", Vector2.ONE, 0.1).set_trans(Tween.TRANS_BACK)
 
 func _make_input(placeholder: String, min_width: int, max_len: int) -> LineEdit:
 	var input = LineEdit.new()
@@ -412,14 +467,12 @@ func _refresh_list() -> void:
 func _on_once_toggled() -> void:
 	_add_once = not _add_once
 	if _add_once:
-		once_btn.text = "单次"
-		once_btn.tooltip_text = "时间到了后自动删除"
+		once_btn.text = "1×单次"
 	else:
-		once_btn.text = "每日"
-		once_btn.tooltip_text = "每天这个时间都会触发"
+		once_btn.text = "🔁每日"
 
 func _on_add_pressed() -> void:
-	var t = "%02d:%02d" % [int(hour_spin.value), int(minute_spin.value)]
+	var t = "%02d:%02d" % [_hour_val, _minute_val]
 	var m = msg_input.text.strip_edges()
 	if m.is_empty():
 		m = "⏰ 时间到了！"
@@ -470,7 +523,7 @@ func _open_panel() -> void:
 		.set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
 	await get_tree().process_frame
 	await get_tree().process_frame
-	hour_spin.get_line_edit().grab_focus()
+	msg_input.grab_focus()
 
 func _close_panel() -> void:
 	panel.pivot_offset = panel.size / 2.0
