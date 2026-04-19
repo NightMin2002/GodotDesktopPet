@@ -795,9 +795,14 @@ func reorganize_quiet_queue() -> void:
 	left_q.sort_custom(func(a, b): return a.global_position.x < b.global_position.x)
 	right_q.sort_custom(func(a, b): return a.global_position.x > b.global_position.x)
 	
-	var spacing := 65.0
-	_apply_queue_targets(left_q, 40.0, spacing, 1.0)
-	_apply_queue_targets(right_q, boundary_size.x - 40.0, spacing, -1.0)
+	# 基于宠物实际直径计算统一间距 (直径 + 间隙)
+	var pet_diameter := 60.0  # PET_RADIUS(30) * 2
+	var gap := 10.0           # 宠物之间的视觉间隙 (整齐且紧凑)
+	var spacing := pet_diameter + gap  # = 70px
+	# 基准位置: 距屏幕边缘恰好一个半径 + 少量留白
+	var edge_margin := 35.0  # 30(半径) + 5(留白)
+	_apply_queue_targets(left_q, edge_margin, spacing, 1.0)
+	_apply_queue_targets(right_q, boundary_size.x - edge_margin, spacing, -1.0)
 
 func _apply_queue_targets(q: Array[RigidBody2D], base_x: float, spacing: float, dir: float) -> void:
 	for i in range(q.size()):
@@ -825,7 +830,8 @@ func _guard_taskbar_style() -> void:
 
 var _is_quitting := false  # 防止重复触发告别流程
 
-## 播放告别动画后退出: 宠物说一句告别的话 → 等待落地 → 滚向屏幕边缘外 → 渐隐消失 → 退出程序
+## 播放告别动画后退出:
+## 本体气泡告别 → 克隆体依次说再见并滚出屏幕 → 本体最后退场 → 退出程序
 func quit_with_farewell() -> void:
 	if _is_quitting:
 		return
@@ -836,32 +842,19 @@ func quit_with_farewell() -> void:
 		if is_instance_valid(p):
 			p.set_process_unhandled_input(false)
 	
-	var farewell_lines := [
-		"主人再见！我去休息啦~ 🌙",
-		"拜拜~ 下次见面要摸摸我哦！",
-		"困了困了... 晚安主人 😴",
-		"好的！我先去充个电~ ⚡",
-		"下次再来陪你玩！再见~ 👋",
-	]
-	var line = farewell_lines[randi() % farewell_lines.size()]
-	EventBus.force_show_bubble.emit(line)
+	# 告别语延迟到克隆体全部退场后再说 (船长最后离开)
 	
-	# 统一设置为安静模式
+	# 所有宠物就地刹车 (仅高阻尼减速，不触发安静待命排队以免闪现到边缘)
 	for p in pet_instances:
 		if is_instance_valid(p):
-			p.behavior_mode = 1
+			p.linear_damp = 5.0
+			p.angular_damp = 8.0
 	
-	# 先让克隆体快速缩放淡出 + 禁用碰撞 (防止隐形实体阻挡原体退场)
+	# 收集克隆体
+	var clones: Array[RigidBody2D] = []
 	for p in pet_instances:
 		if is_instance_valid(p) and p.is_clone:
-			p.freeze = true
-			p.collision_layer = 0
-			p.collision_mask = 0
-			var ctw = create_tween().set_parallel(true)
-			ctw.tween_property(p, "modulate:a", 0.0, 0.4)
-			ctw.tween_property(p, "scale", Vector2(0.1, 0.1), 0.4)
-			var cp = p
-			ctw.finished.connect(func(): cp.queue_free())
+			clones.append(p)
 	
 	if pet_instance:
 		# 如果宠物在空中/正在下落，先等待落地 (最多 6 秒防止卡死)
@@ -875,10 +868,78 @@ func quit_with_farewell() -> void:
 				if pet_instance.is_settled() and pet_instance.current_state_name not in ["fall", "jump", "drag"]:
 					break
 		
-		# 等气泡展示 2 秒 (给用户阅读告别语的缓冲)
-		await get_tree().create_timer(2.0).timeout
+		# 短暂缓冲让所有宠物稳定下来
+		await get_tree().create_timer(0.5).timeout
 		
-		# 冻结物理, tween 全权控制退场
+		# 本体禁用碰撞层: 让克隆体可以穿过本体滚出屏幕, 但保留 collision_mask 以站稳地面
+		pet_instance.collision_layer = 0
+		
+		# ── 克隆体依次滚出屏幕 ──
+		if not clones.is_empty():
+			var clone_farewells := ["拜拜~✌️", "先撤啦!🏃", "下次见!👋", "我先走一步~", "886!🫡", "本体加油!💪", "要想我哦~🥺"]
+			var last_tween: Tween = null
+			
+			for i in range(clones.size()):
+				var clone = clones[i]
+				if not is_instance_valid(clone):
+					continue
+				
+				# 临时提升说话者的 z_index，确保气泡不被相邻宠物遮挡
+				clone.z_index = 100
+				
+				# 克隆体说一句告别
+				clone.show_local_bubble(clone_farewells[i % clone_farewells.size()])
+				await get_tree().create_timer(0.6).timeout  # 短暂展示告别语
+				
+				# 冻结物理, tween 全权控制退场动画
+				clone.freeze = true
+				clone.collision_layer = 0
+				clone.collision_mask = 0
+				
+				# 计算退场路径: 从当前位置 → 滚出最近的屏幕边缘
+				var slide_dir = -1.0 if clone.global_position.x < boundary_size.x / 2.0 else 1.0
+				var dist_to_edge = clone.global_position.x if slide_dir < 0 else boundary_size.x - clone.global_position.x
+				var total_dist = dist_to_edge + 150.0
+				var exit_pos = clone.global_position + Vector2(slide_dir * total_dist, 0)
+				var roll_angle = clone.rotation + slide_dir * total_dist / 30.0
+				var slide_time = clampf(total_dist / 400.0, 0.6, 1.5)
+				
+				var tw = create_tween().set_parallel(true)
+				tw.tween_property(clone, "global_position", exit_pos, slide_time) \
+					.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+				tw.tween_property(clone, "rotation", roll_angle, slide_time) \
+					.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+				tw.tween_property(clone, "modulate:a", 0.0, slide_time * 0.8).set_delay(slide_time * 0.2)
+				
+				var c = clone
+				tw.finished.connect(func():
+					pet_instances.erase(c)
+					c.queue_free()
+				)
+				last_tween = tw
+				
+				# 错开出场节奏 (最后一个不用等)
+				if i < clones.size() - 1:
+					await get_tree().create_timer(0.35).timeout
+			
+			# 等待最后一个克隆体完成退场
+			if last_tween != null and last_tween.is_running():
+				await last_tween.finished
+		
+		# ── 本体告别 + 退场 ──
+		var farewell_lines := [
+			"好的，我去充电啦，下次我会好好监视你哦~ 🔋👁️",
+			"要乖乖的，不然我会知道的哦~ 晚安！🌙",
+			"虽然要走了...但我无时无刻不在想你哦 💭",
+			"好好吃饭好好休息！不然下次我会碎碎念一整天！😤",
+			"我先闪了~ 记得想我！不想也行，反正我会自己回来 🫠",
+			"据我观测，你已经盯屏幕太久了！快去休息！😠💤",
+			"放心走吧，你的桌面我替你守着呢~ 🛡️✨",
+		]
+		var farewell_line = farewell_lines[randi() % farewell_lines.size()]
+		EventBus.force_show_bubble.emit(farewell_line)
+		await get_tree().create_timer(2.0).timeout  # 等用户读完告别语
+		
 		pet_instance.freeze = true
 		
 		# 计算退场路径: 当前位置 → 滑出屏幕外

@@ -6,7 +6,7 @@ extends PetState
 var target_x: float = 0.0       # 目标 X 坐标 (屏幕边缘)
 var direction: float = 0.0      # -1.0 左, 1.0 右
 var retreat_force: float = 350.0
-const ARRIVE_THRESHOLD := 20.0  # 到达边缘的判定距离 (缩紧以确保排队精准停靠)
+const ARRIVE_THRESHOLD := 12.0  # 到达边缘的判定距离 (精准停靠)
 const SLOWDOWN_DIST := 200.0    # 开始减速的距离
 var _stuck_time: float = 0.0    # 防撞墙卡死计时器
 var _last_stuck_x: float = 0.0  # 防撞墙位移参考点
@@ -21,9 +21,9 @@ func enter() -> void:
 	else:
 		var pet_x = pet.global_position.x
 		if pet_x < screen_width / 2.0:
-			target_x = 40.0        # 左边缘留出一个身位
+			target_x = 35.0        # 左边缘: 与队列基准对齐 (半径+留白)
 		else:
-			target_x = screen_width - 40.0
+			target_x = screen_width - 35.0
 			
 	if pet.global_position.x < target_x:
 		direction = 1.0
@@ -64,10 +64,11 @@ func process(delta: float) -> void:
 		_last_stuck_x = pet.global_position.x
 		
 	if is_arrived:
-		# 主动刹车，防止撞墙反弹
+		# 主动刹车，最后几像素的精确对齐交给 idle 的 lerp 微校正柔滑完成
 		pet.linear_velocity = Vector2(0, pet.linear_velocity.y)
 		pet.angular_velocity = 0.0
-		pet.linear_damp = 3.0
+		pet.linear_damp = 5.0
+		pet.angular_damp = 5.0
 		pet.transition_to("idle")
 
 func physics_process(_delta: float) -> void:

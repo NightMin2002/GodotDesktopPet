@@ -16,8 +16,8 @@ func enter() -> void:
 		pet.linear_damp = 0.8
 		pet.angular_damp = 1.0
 		if pet.behavior_mode == 1:
-			pet.linear_damp = 3.0
-			pet.angular_damp = 5.0
+			pet.linear_damp = 5.0
+			pet.angular_damp = 8.0
 
 func exit() -> void:
 	if pet:
@@ -25,9 +25,19 @@ func exit() -> void:
 
 func process(delta: float) -> void:
 	idle_timer += delta
+	
+	# ── 安静模式位置锁定：持续微校正物理漂移 ──
+	if pet.behavior_mode == 1 and pet.has_meta("retreat_target_x"):
+		var target_x: float = pet.get_meta("retreat_target_x")
+		var drift := pet.global_position.x - target_x
+		if absf(drift) > 2.0:
+			# 轻柔吸附回槽位 (速率8让对齐干脆又不失柔滑，约0.3秒归位)
+			pet.global_position.x = lerpf(pet.global_position.x, target_x, 8.0 * delta)
+			pet.linear_velocity.x *= 0.8  # 同步衰减水平速度
+	
 	if idle_timer >= idle_duration:
 		if pet.behavior_mode == 1:
-			if not _is_near_edge():
+			if not _is_at_slot():
 				pet.transition_to("retreat")
 				return
 			idle_timer = 0.0
@@ -91,8 +101,13 @@ func input(event: InputEvent) -> void:
 				pet.get_viewport().set_input_as_handled()
 				pet.transition_to("drag")
 
-func _is_near_edge() -> bool:
+## 精确判定是否已停靠在分配的队列槽位上 (替代旧的模糊边缘检测)
+func _is_at_slot() -> bool:
 	if not pet: return false
+	if pet.has_meta("retreat_target_x"):
+		var target_x: float = pet.get_meta("retreat_target_x")
+		return absf(pet.global_position.x - target_x) < 25.0
+	# 没有分配过槽位时回退到边缘检测
 	var x = pet.global_position.x
 	var w = pet.boundary_size.x
 	return x < 100.0 or x > w - 100.0
