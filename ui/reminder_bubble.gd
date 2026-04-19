@@ -1,7 +1,8 @@
-# reminder_bubble.gd — 提醒气泡通知
-# 在宠物头顶冒出语音气泡式提示，自动消散
+# reminder_bubble.gd — 全局通知气泡
+# 在原体宠物头顶冒出提示气泡，自动消散
 # 通过 pet.overlay_rect 将自身区域注册到穿透多边形
 # 支持消息队列：多条消息依次播放，不会互相吞掉
+# 注意: 定向气泡 (戳一戳/吐槽) 已迁移至 pet.gd.show_local_bubble()
 extends CanvasLayer
 
 var bubble_panel: PanelContainer
@@ -15,17 +16,12 @@ func _ready() -> void:
 	layer = 110
 	_build_bubble()
 	EventBus.show_reminder_bubble.connect(_on_bubble_requested)
-	EventBus.show_targeted_bubble.connect(_on_targeted_bubble_requested)
 	EventBus.force_show_bubble.connect(_on_force_bubble_requested)
 
 func link_pet(pet: Node2D) -> void:
 	pet_ref = pet as RigidBody2D
 
-var _last_target: Node2D = null
-
 func _get_active_pet() -> RigidBody2D:
-	if is_instance_valid(_last_target):
-		return _last_target as RigidBody2D
 	if is_instance_valid(pet_ref):
 		return pet_ref
 	var main_node = get_tree().root.get_node_or_null("Main")
@@ -34,23 +30,16 @@ func _get_active_pet() -> RigidBody2D:
 		return pet_ref
 	return null
 
-func _on_targeted_bubble_requested(msg: String, target: Node2D) -> void:
-	_last_target = target
-	_on_bubble_requested(msg)
-
 func _on_force_bubble_requested(message: String) -> void:
 	# 强制中断: 清空队列 + 立即播放
 	_queue.clear()
 	_show_generation += 1  # 令旧的 _show_bubble 协程自动终止
 	if _is_showing:
 		bubble_panel.hide()
-		# 先清理旧目标的 overlay_rect (此时 _last_target 仍指向原气泡目标)
 		var old_pet = _get_active_pet()
 		if is_instance_valid(old_pet):
 			old_pet.overlay_rect = Rect2()
 		_is_showing = false
-	# 清理完毕后再重置目标到原体 (防止克隆体气泡跳转)
-	_last_target = null
 	_show_bubble(message)
 
 func is_busy() -> bool:
@@ -94,13 +83,10 @@ func _build_bubble() -> void:
 	bubble_panel.add_child(bubble_label)
 
 func _on_bubble_requested(message: String) -> void:
-	# 非定向气泡始终显示在原体上 (清除 show_targeted_bubble 留下的克隆体引用)
-	_last_target = null
 	if _is_showing:
-		# 🚨 防过度点拽刷屏：如果当前屏幕正在显示的，或是队列里已经有完全一模一样的话，直接抛弃不复读！
+		# 🚨 防过度刷屏：完全一样的消息不复读
 		if bubble_label.text == message or _queue.has(message):
 			return
-			
 		# 其他不同消息则排队等候，最多缓存 3 条
 		if _queue.size() < 3:
 			_queue.append(message)

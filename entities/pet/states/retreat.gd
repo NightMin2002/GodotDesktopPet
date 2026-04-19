@@ -85,6 +85,11 @@ func physics_process(_delta: float) -> void:
 	pet.apply_torque(direction * 80000.0 * force_scale)
 	pet.apply_central_force(Vector2(direction * retreat_force * 0.1 * force_scale, 0))
 
-func input(_event: InputEvent) -> void:
-	# 撤退中不响应任何鼠标交互
-	pass
+func input(event: InputEvent) -> void:
+	# 撤退中也可以被拖拽 (松手后会通过 fall→retreat 自动回归队列)
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			if pet.is_mouse_on_pet():
+				pet.get_viewport().set_input_as_handled()
+				pet.transition_to("drag")
+

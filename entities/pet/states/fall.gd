@@ -33,7 +33,7 @@ func process(delta: float) -> void:
 				# 手动安静待命：也走回边缘
 				if pet._was_dragged_in_quiet:
 					pet._was_dragged_in_quiet = false
-					EventBus.show_targeted_bubble.emit("我要回去待命啦...", pet)
+					pet.show_local_bubble("我要回去待命啦...")
 				pet.transition_to("retreat")
 			else:
 				pet._was_dragged_in_quiet = false
@@ -49,4 +49,5 @@ func input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			if pet.is_mouse_on_pet():
+				pet.get_viewport().set_input_as_handled()
 				pet.transition_to("drag")

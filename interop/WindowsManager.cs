@@ -104,7 +104,6 @@ public partial class WindowsManager : Node
 
     public override void _Ready()
     {
-        // 获取当前运行时的进程 ID（但无法彻底防御你在使用编辑器预览时的编辑器窗口）
         _myProcessId = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
         _shellWindow = GetShellWindow();
     }
@@ -157,44 +156,30 @@ public partial class WindowsManager : Node
     }
 
     /// <summary>
-    /// 将主窗口彻底从 Windows 任务栏中抹除（使其变成工具悬浮层属性）
-    /// 三步法: Hide → 修改样式 → Show，强制 Windows Shell 刷新任务栏状态
+    /// 将主窗口彻底从 Windows 任务栏中抹除
     /// </summary>
     public void HideFromTaskbar()
     {
         IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
-        
-        // Step 1: 先隐藏窗口，让 Shell 从任务栏移除此条目
         ShowWindow(hwnd, SW_HIDE);
-        
-        // Step 2: 修改扩展样式
         int style = GetWindowLong(hwnd, GWL_EXSTYLE);
         style |= WS_EX_TOOLWINDOW;
         style &= ~WS_EX_APPWINDOW;
         SetWindowLong(hwnd, GWL_EXSTYLE, style);
-        
-        // Step 3: 重新显示窗口 (Shell 会根据新样式决定是否添加到任务栏)
         ShowWindow(hwnd, SW_SHOW);
-        
-        // Step 4: 通知系统窗口帧已变更 (强制刷新)
         SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     }
 
     /// <summary>
     /// 自检：如果窗口扩展样式被引擎意外重置，重新推入 ToolWindow 标记
-    /// 返回 true = 样式被修复 (需要调用方关注)
     /// </summary>
     public bool EnsureHiddenFromTaskbar()
     {
         IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
         int style = GetWindowLong(hwnd, GWL_EXSTYLE);
-        
         bool needsFix = (style & WS_EX_TOOLWINDOW) == 0 || (style & WS_EX_APPWINDOW) != 0;
-        if (needsFix)
-        {
-            HideFromTaskbar();
-        }
+        if (needsFix) HideFromTaskbar();
         return needsFix;
     }
 
@@ -215,49 +200,35 @@ public partial class WindowsManager : Node
         {
             if (hWnd == _shellWindow) continue;
             if (!IsWindowVisible(hWnd)) continue;
-            if (IsIconic(hWnd)) continue; // 忽略最小化的窗口
+            if (IsIconic(hWnd)) continue;
 
-            // 过滤自身
             GetWindowThreadProcessId(hWnd, out uint processId);
             if (processId == _myProcessId) continue;
 
-            // 过滤没有标题的幽灵窗口（有些系统的隐形基础挂靠）
             System.Text.StringBuilder title = new System.Text.StringBuilder(256);
             GetWindowText(hWnd, title, 256);
             if (title.Length == 0) continue;
 
-            // 过滤已知的系统隐形窗口类名 (桌面管理器、任务栏、UWP覆盖层等)
             var clsBuf = new StringBuilder(256);
             GetClassName(hWnd, clsBuf, 256);
             if (_ghostWindowClasses.Contains(clsBuf.ToString())) continue;
 
-            // 过滤 ToolWindow (工具悬浮窗口，包括宠物自身的 WS_EX_TOOLWINDOW 窗口)
             int exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
             if ((exStyle & WS_EX_TOOLWINDOW) != 0) continue;
-            // 过滤完全透明的叠加层窗口
             if ((exStyle & WS_EX_TRANSPARENT) != 0 && (exStyle & WS_EX_LAYERED) != 0) continue;
 
-            // 过滤隐形的 Win10/11 Cloaked 系统虚空层（极为致命！必须过滤）
             DwmGetWindowAttribute(hWnd, DWMWA_CLOAKED, out int cloaked, sizeof(int));
             if (cloaked != 0) continue;
 
-            // 获取真实的视觉边框坐标（剔除 Win10/11 那看不见的 7 像素拖拽阴影边框）
             if (DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out RECT rect, Marshal.SizeOf(typeof(RECT))) == 0)
             {
-                // 如果被后台挂载的极小虚空碎片干扰，则直接丢弃
                 if (rect.Right - rect.Left < 100 || rect.Bottom - rect.Top < 50) continue;
 
                 var newRect = new Rect2I(
-                    rect.Left,
-                    rect.Top,
-                    rect.Right - rect.Left,
-                    rect.Bottom - rect.Top
+                    rect.Left, rect.Top,
+                    rect.Right - rect.Left, rect.Bottom - rect.Top
                 );
 
-                // Z-Order 空间遮挡剔除测试 (Z-Culling)
-                // 因为 EnumWindows 天然返回从最顶层向下遍历的窗口数组结果
-                // 所以如果在 result 里有某一个更高层级的界面（例如前台最大化的浏览器）“完全包围/盖住”了当前的新窗口
-                // 那么这个被埋在下面的背景窗口就应该被我们剔除，防止宠物在视觉覆盖物里撞空气墙
                 bool isTotallyOccluded = false;
                 foreach (var topRect in result)
                 {
@@ -269,9 +240,7 @@ public partial class WindowsManager : Node
                 }
 
                 if (!isTotallyOccluded)
-                {
                     result.Add(newRect);
-                }
             }
         }
 
@@ -279,13 +248,17 @@ public partial class WindowsManager : Node
     }
 
 
-
-    // ── 多矩形窗口区域 (GDI Region API) ──
-    // 绕过 Godot window_set_mouse_passthrough 的单多边形限制
-    // 使用 CombineRgn(RGN_OR) 将多个矩形合并为真正的联合区域
+    // ══════════════════════════════════════════════════════════════
+    //  混合形状窗口区域 (GDI Region API)
+    //  ── 椭圆区域 (宠物本体精确命中) + 矩形区域 (UI 气泡/时钟) ──
+    //  ── 通过 CombineRgn(RGN_OR) 合并后应用到窗口 ──
+    // ══════════════════════════════════════════════════════════════
 
     [DllImport("gdi32.dll")]
     private static extern IntPtr CreateRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateEllipticRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect);
 
     [DllImport("gdi32.dll")]
     private static extern int CombineRgn(IntPtr hrgnDest, IntPtr hrgnSrc1, IntPtr hrgnSrc2, int iMode);
@@ -299,38 +272,86 @@ public partial class WindowsManager : Node
     private const int RGN_OR = 2; // 联合模式: 合并两个区域
 
     /// <summary>
-    /// 将多个独立矩形区域合并后应用为窗口可见/可交互区域。
-    /// 每个矩形独立存在，矩形之间的间隙完全穿透。
+    /// 混合形状命中区域: 椭圆 (宠物) + 矩形 (UI) 合并后应用为窗口区域。
+    /// circles: [cx1, cy1, r1, cx2, cy2, r2, ...]  — 宠物本体 (创建椭圆区域)
+    /// rects:   [x1, y1, w1, h1, x2, y2, w2, h2, ...] — UI 元素 (创建矩形区域)
     /// 坐标为窗口客户区坐标 (与 Godot 视口坐标一致)。
+    /// 区域间隙完全穿透到桌面。
     /// </summary>
-    public void SetWindowRegion(Godot.Collections.Array<Rect2I> rects)
+    public void UpdateHitRegions(float[] circles, float[] rects)
     {
         IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
 
-        if (rects == null || rects.Count == 0)
+        IntPtr combined = IntPtr.Zero;
+
+        // ── 圆形区域: 使用 CreateEllipticRgn (精确圆形命中) ──
+        if (circles != null)
         {
-            // 空数组 = 清除区域限制 (整个窗口可见)
-            SetWindowRgn(hwnd, IntPtr.Zero, true);
-            return;
+            for (int i = 0; i + 2 < circles.Length; i += 3)
+            {
+                float cx = circles[i], cy = circles[i + 1], r = circles[i + 2];
+                IntPtr rgn = CreateEllipticRgn(
+                    (int)(cx - r), (int)(cy - r),
+                    (int)(cx + r), (int)(cy + r)
+                );
+
+                if (combined == IntPtr.Zero)
+                {
+                    combined = rgn;
+                }
+                else
+                {
+                    CombineRgn(combined, combined, rgn, RGN_OR);
+                    DeleteObject(rgn);
+                }
+            }
         }
 
-        // 创建第一个矩形作为基础区域
-        var r0 = rects[0];
-        IntPtr combined = CreateRectRgn(r0.Position.X, r0.Position.Y,
-            r0.Position.X + r0.Size.X, r0.Position.Y + r0.Size.Y);
-
-        // 逐个合并后续矩形
-        for (int i = 1; i < rects.Count; i++)
+        // ── 矩形区域: 使用 CreateRectRgn (UI 元素) ──
+        if (rects != null)
         {
-            var r = rects[i];
-            IntPtr temp = CreateRectRgn(r.Position.X, r.Position.Y,
-                r.Position.X + r.Size.X, r.Position.Y + r.Size.Y);
-            CombineRgn(combined, combined, temp, RGN_OR);
-            DeleteObject(temp); // 临时区域用完即删
+            for (int i = 0; i + 3 < rects.Length; i += 4)
+            {
+                float x = rects[i], y = rects[i + 1], w = rects[i + 2], h = rects[i + 3];
+                IntPtr rgn = CreateRectRgn(
+                    (int)x, (int)y,
+                    (int)(x + w), (int)(y + h)
+                );
+
+                if (combined == IntPtr.Zero)
+                {
+                    combined = rgn;
+                }
+                else
+                {
+                    CombineRgn(combined, combined, rgn, RGN_OR);
+                    DeleteObject(rgn);
+                }
+            }
         }
 
-        // 应用到窗口 (系统接管区域句柄的所有权，无需手动删除)
+        // 无任何区域时设置最小占位 (1x1 像素，防止全屏捕获)
+        if (combined == IntPtr.Zero)
+        {
+            combined = CreateRectRgn(0, 0, 1, 1);
+        }
+
+        // 应用到窗口 (系统接管区域句柄的所有权)
         SetWindowRgn(hwnd, combined, true);
+    }
+
+    /// <summary>
+    /// 切换全窗口交互模式 (拖拽/菜单打开时整个窗口可点击)
+    /// </summary>
+    public void SetFullWindowHit(bool enabled)
+    {
+        IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
+        if (enabled)
+        {
+            // 清除区域限制 → 整个窗口可交互
+            SetWindowRgn(hwnd, IntPtr.Zero, true);
+        }
+        // disabled 时不需要做什么，下一帧 UpdateHitRegions 会自然恢复精确区域
     }
 
     /// <summary>

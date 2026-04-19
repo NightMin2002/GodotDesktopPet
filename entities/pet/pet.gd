@@ -53,6 +53,10 @@ var boundary_size: Vector2  # 视口坐标系的实际边界
 var last_frame_speed: float = 0.0 # 用于捕获撞击前瞬时速度
 var overlay_rect: Rect2 = Rect2() # 外部覆盖层的屏幕区域 (气泡通知等)
 
+# ── 本地定向气泡 (戳一戳/吐槽等，每个宠物独立显示，支持向上堆叠) ──
+const MAX_LOCAL_BUBBLES := 3
+var _local_bubbles: Array[PanelContainer] = []
+
 # ── 窗口交互模式 (由 main.gd 通过 EventBus 同步) ──
 var window_mode: int = 0  # 0=FREE, 1=CONFINED, 2=REPELLED
 
@@ -93,6 +97,7 @@ func _ready() -> void:
 	else:
 		hud_clock_enabled = false  # 克隆体不显示时钟
 	_init_hud_clock()
+	# 本地气泡系统: 按需动态创建，无需初始化
 	eye_behavior.tracking_enabled = SettingsManager.get_bool("eye_track", true)
 	shockwave_enabled = SettingsManager.get_bool("shockwave", true)
 	trail_enabled = SettingsManager.get_bool("trail_fx", true)
@@ -153,6 +158,79 @@ func _init_hud_clock() -> void:
 	hud_clock_label.visible = hud_clock_enabled
 	add_child(hud_clock_label)
 
+## 创建一个本地气泡面板 (每次调用 show_local_bubble 动态创建)
+func _create_local_bubble_panel(message: String) -> PanelContainer:
+	var panel = PanelContainer.new()
+	panel.top_level = true  # 脱离刚体物理旋转
+	panel.custom_minimum_size = Vector2(60, 30)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.05, 0.1, 0.2, 0.92)
+	var border_hue = fmod(0.13 + clone_hue_shift, 1.0)  # 金色基底 + 色偏
+	style.border_color = Color.from_hsv(border_hue, 0.7, 1.0, 0.85)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(14)
+	style.set_content_margin_all(14)
+	panel.add_theme_stylebox_override("panel", style)
+	
+	var label = Label.new()
+	label.add_theme_font_size_override("font_size", 18)
+	label.add_theme_color_override("font_color", Color(1, 0.95, 0.85, 1))
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.text = message
+	panel.add_child(label)
+	return panel
+
+func show_local_bubble(message: String) -> void:
+	# 超出上限时移除最旧的气泡
+	while _local_bubbles.size() >= MAX_LOCAL_BUBBLES:
+		var oldest = _local_bubbles.pop_front()
+		if is_instance_valid(oldest):
+			oldest.queue_free()
+	
+	var panel = _create_local_bubble_panel(message)
+	add_child(panel)
+	_local_bubbles.append(panel)
+	
+	# 弹入动画
+	var pet_pos = get_global_transform_with_canvas().get_origin()
+	panel.position = pet_pos + Vector2(-80, -90)
+	panel.modulate.a = 0.0
+	panel.scale = Vector2(0.5, 0.5)
+	panel.show()
+	
+	var tween = create_tween().set_parallel(true)
+	tween.tween_property(panel, "scale", Vector2.ONE, 0.35) \
+		.set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
+	tween.tween_property(panel, "modulate:a", 1.0, 0.2)
+	
+	# 独立协程管理消亡 (不影响其他气泡)
+	_schedule_bubble_removal(panel)
+
+## 气泡到期后淡出上飘并销毁
+func _schedule_bubble_removal(panel: PanelContainer) -> void:
+	await get_tree().create_timer(4.0).timeout
+	if not is_instance_valid(panel): return
+	
+	var fade = create_tween().set_parallel(true)
+	fade.tween_property(panel, "modulate:a", 0.0, 0.6)
+	fade.tween_property(panel, "position:y", panel.position.y - 30, 0.6)
+	await fade.finished
+	if not is_instance_valid(panel): return
+	_local_bubbles.erase(panel)
+	panel.queue_free()
+
+## 返回所有可见本地气泡的屏幕矩形 (供 main.gd 作为独立 DWM 小矩形注册)
+func get_local_bubble_rects() -> Array[Rect2]:
+	var result: Array[Rect2] = []
+	for panel in _local_bubbles:
+		if is_instance_valid(panel) and panel.visible:
+			var r = Rect2(panel.position, panel.get_combined_minimum_size())
+			r = r.grow(5)
+			result.append(r)
+	return result
+
 # ── 辅助方法 ──
 
 func is_mouse_on_pet() -> bool:
@@ -190,9 +268,9 @@ func get_render_rect() -> Rect2:
 		clock_rect.size += Vector2(10, 10)
 		rect = rect.merge(clock_rect)
 	
-	# 注意: overlay_rect (气泡通知等) 不再合并到这里
-	# 改由 main.gd._update_passthrough_box() 作为独立矩形添加到 DWM 多矩形区域
-	# 避免宠物+气泡合并为巨大 AABB 导致桌面大面积不可点击
+	# 注意: overlay_rect (全局气泡) 和 local_bubble_rects (本地气泡)
+	# 均由 main.gd._update_passthrough_box() 作为独立小矩形注册到 DWM
+	# 不合并进宠物本体 rect，避免产生巨大 AABB 挡桌面点击
 	
 	return rect
 
@@ -214,8 +292,8 @@ func _process(delta: float) -> void:
 		var center_p = global_position + Vector2(-text_size.x / 2.0, -PET_RADIUS - 28.0 + float_y)
 		hud_clock_label.global_position = center_p
 		
-		# 当气泡出现（overlay_rect不为零）时自动避让隐藏时钟，防重叠字体重叠
-		var should_hide = (overlay_rect.size != Vector2.ZERO)
+		# 当气泡出现（全局或本地）时自动避让隐藏时钟，防字体重叠
+		var should_hide = (overlay_rect.size != Vector2.ZERO) or _local_bubbles.size() > 0
 		if should_hide != _is_clock_hidden:
 			_is_clock_hidden = should_hide
 			var tw = create_tween()
@@ -226,6 +304,28 @@ func _process(delta: float) -> void:
 	
 	# 更新眼球行为（追踪/游走/眨眼）
 	eye_behavior.update(delta)
+	
+	# 本地气泡堆叠跟随宠物位置 (最新的最靠近宠物，旧的依次向上推)
+	if _local_bubbles.size() > 0:
+		# 清理已释放的无效引用
+		var valid_bubbles: Array[PanelContainer] = []
+		for b in _local_bubbles:
+			if is_instance_valid(b) and b.visible:
+				valid_bubbles.append(b)
+		_local_bubbles = valid_bubbles
+		
+		var pet_pos = get_global_transform_with_canvas().get_origin()
+		var stack_y := 0.0
+		var vp = get_viewport_rect().size
+		# 从最新到最旧遍历 (最新的紧贴宠物头顶)
+		for i in range(_local_bubbles.size() - 1, -1, -1):
+			var panel = _local_bubbles[i]
+			var min_size = panel.get_combined_minimum_size()
+			var target_pos = pet_pos + Vector2(-min_size.x / 2.0, -90 - stack_y)
+			target_pos.x = clampf(target_pos.x, 8, vp.x - min_size.x - 8)
+			target_pos.y = clampf(target_pos.y, 8, vp.y - min_size.y - 8)
+			panel.position = panel.position.lerp(target_pos, delta * 10.0)
+			stack_y += min_size.y + 6  # 堆叠间距
 	
 	# 收集或消散残影以形成拖尾特效
 	var has_visual_change := false

@@ -696,12 +696,13 @@ func _setup_pet_chatter() -> void:
 			chatter_node.link_pet(pet_instance)
 		print("[DesktopPet] 宠物碎碎念系统已启动 (30分钟间隔)")
 
-# ── 鼠标穿透管理 ──
+# ── 鼠标穿透管理 (WM_NCHITTEST 命中测试方案) ──
 
-var _last_region_key: String = ""
 var _passthrough_timer: float = 0.0
-# 穿透区域刷新限流：DWM 重组合是头号性能杀手;
-# 渲染跑 120fps，穿透检测只需 ~60hz 即可（延迟 ≤16ms 人眼不可感知）
+var _last_circles: PackedFloat32Array = PackedFloat32Array()
+var _last_rects: PackedFloat32Array = PackedFloat32Array()
+# 穿透检测限流：命中测试不修改窗口形状，开销极低
+# 但数据传递与变化检测仍需限流，~60hz 足够
 const PASSTHROUGH_INTERVAL := 0.016
 
 func _process(delta: float) -> void:
@@ -710,13 +711,13 @@ func _process(delta: float) -> void:
 	_passthrough_timer += delta
 	if _passthrough_timer >= PASSTHROUGH_INTERVAL:
 		_passthrough_timer = 0.0
-		_update_passthrough_box()
+		_update_hit_regions()
 
 func _update_passthrough_state() -> void:
 	if is_dragging or is_menu_open:
-		# 拖拽/菜单打开时: 清除区域限制，整个窗口可见可交互
-		if win_manager and win_manager.has_method("ClearWindowRegion"):
-			win_manager.call("ClearWindowRegion")
+		# 拖拽/菜单打开时: 全窗口可交互
+		if win_manager and win_manager.has_method("SetFullWindowHit"):
+			win_manager.call("SetFullWindowHit", true)
 		else:
 			# 回退到 Godot API
 			var full := PackedVector2Array([
@@ -727,72 +728,117 @@ func _update_passthrough_state() -> void:
 			])
 			DisplayServer.window_set_mouse_passthrough(full)
 	else:
-		_last_region_key = ""
-		_update_passthrough_box()
+		if win_manager and win_manager.has_method("SetFullWindowHit"):
+			win_manager.call("SetFullWindowHit", false)
+		_last_circles = PackedFloat32Array()
+		_last_rects = PackedFloat32Array()
+		_update_hit_regions()
 
-func _update_passthrough_box() -> void:
-	# 为每个宠物实例生成独立的栅格对齐矩形
-	var rects: Array[Rect2i] = []
+## 收集所有宠物/UI 元素的命中区域，传递给 C# 层
+func _update_hit_regions() -> void:
+	# 圆形区域: [cx, cy, radius, ...] — 宠物本体 (精确椭圆命中)
+	var circles := PackedFloat32Array()
+	# 矩形区域: [x, y, w, h, ...] — UI/特效包围盒
+	var rects := PackedFloat32Array()
+	
 	for p in pet_instances:
 		if not is_instance_valid(p):
 			continue
-		var r: Rect2
-		if p.has_method("get_render_rect"):
-			r = p.get_render_rect()
-		else:
-			var pos := p.global_position
-			r = Rect2(pos - Vector2(50, 50), Vector2(100, 100))
-		if r.size.x < 1.0 or r.size.y < 1.0:
-			continue
-		# 8 像素栅格对齐 (减少刷新频率)
-		var sx := int(r.position.x / 8.0) * 8
-		var sy := int(r.position.y / 8.0) * 8
-		var sw := int(r.size.x / 8.0) * 8 + 16
-		var sh := int(r.size.y / 8.0) * 8 + 16
-		rects.append(Rect2i(sx, sy, sw, sh))
 		
-		# 气泡覆盖层作为独立矩形 (不与宠物本体合并, 避免产生巨大 AABB)
+		# ── 宠物本体: 精确圆形命中 ──
+		var pet_pos := p.global_position
+		var pet_r: float = p.PET_RADIUS + 15.0  # 半径 + 容差匹配 is_mouse_on_pet
+		circles.append(_q(pet_pos.x))
+		circles.append(_q(pet_pos.y))
+		circles.append(_q(pet_r))
+		
+		# ── 拖影尾巴: 单个 AABB 矩形包围盒 (视觉特效无需精确命中) ──
+		if p.trail_enabled and p.trail_history.size() > 0:
+			var min_x := pet_pos.x
+			var min_y := pet_pos.y
+			var max_x := pet_pos.x
+			var max_y := pet_pos.y
+			for trail_pos in p.trail_history:
+				min_x = minf(min_x, trail_pos.x - p.PET_RADIUS)
+				min_y = minf(min_y, trail_pos.y - p.PET_RADIUS)
+				max_x = maxf(max_x, trail_pos.x + p.PET_RADIUS)
+				max_y = maxf(max_y, trail_pos.y + p.PET_RADIUS)
+			rects.append(_q(min_x - 5))
+			rects.append(_q(min_y - 5))
+			rects.append(_q(max_x - min_x + 10))
+			rects.append(_q(max_y - min_y + 10))
+		
+		# ── 冲击波: 单个 AABB 矩形包围盒 ──
+		for shock in p.shockwaves:
+			if shock["alpha"] > 0.1:
+				var s_pos = pet_pos + shock["local_pos"]
+				var sr: float = shock["radius"] + 10.0
+				rects.append(_q(s_pos.x - sr))
+				rects.append(_q(s_pos.y - sr))
+				rects.append(_q(sr * 2.0))
+				rects.append(_q(sr * 2.0))
+		
+		# ── 全息时钟 HUD: 矩形 ──
+		if p.hud_clock_enabled and is_instance_valid(p.hud_clock_label) and p.hud_clock_label.visible:
+			var clock_pos = p.hud_clock_label.global_position
+			var clock_size = p.hud_clock_label.get_minimum_size()
+			rects.append(_q(clock_pos.x - 5))
+			rects.append(_q(clock_pos.y - 5))
+			rects.append(_q(clock_size.x + 10))
+			rects.append(_q(clock_size.y + 10))
+		
+		# ── 全局气泡覆盖层: 矩形 ──
 		if p.overlay_rect.size != Vector2.ZERO:
 			var ov = p.overlay_rect
-			var ox := int(ov.position.x / 8.0) * 8
-			var oy := int(ov.position.y / 8.0) * 8
-			var ow := int(ov.size.x / 8.0) * 8 + 16
-			var oh := int(ov.size.y / 8.0) * 8 + 16
-			rects.append(Rect2i(ox, oy, ow, oh))
+			rects.append(_q(ov.position.x))
+			rects.append(_q(ov.position.y))
+			rects.append(_q(ov.size.x))
+			rects.append(_q(ov.size.y))
+		
+		# ── 本地定向气泡堆栈: 每个气泡独立矩形 ──
+		if p.has_method("get_local_bubble_rects"):
+			for br in p.get_local_bubble_rects():
+				rects.append(_q(br.position.x))
+				rects.append(_q(br.position.y))
+				rects.append(_q(br.size.x))
+				rects.append(_q(br.size.y))
 	
-	if rects.is_empty():
+	# 变化检测: 栅格量化后只有显著变化才跨语言传递
+	if circles == _last_circles and rects == _last_rects:
 		return
+	_last_circles = circles
+	_last_rects = rects
 	
-	# 变化检测 (避免无意义的 DWM 重组合)
-	var key := ""
-	for rect in rects:
-		key += str(rect) + ";"
-	if key == _last_region_key:
-		return
-	_last_region_key = key
-	
-	# 优先使用 C# 层 CombineRgn 实现真正的多矩形独立区域
-	if win_manager and win_manager.has_method("SetWindowRegion"):
-		var typed_rects := Rect2iArrayToGodotArray(rects)
-		win_manager.call("SetWindowRegion", typed_rects)
+	# 优先使用 C# 层混合形状区域 (椭圆+矩形)
+	if win_manager and win_manager.has_method("UpdateHitRegions"):
+		win_manager.call("UpdateHitRegions", circles, rects)
 	else:
-		# 回退: 合并为单个 AABB (间隙会被阻挡，但至少可用)
-		var merged := rects[0]
-		for i in range(1, rects.size()):
-			merged = merged.merge(rects[i])
-		var polygon := PackedVector2Array([
-			Vector2(merged.position),
-			Vector2(merged.end.x, merged.position.y),
-			Vector2(merged.end),
-			Vector2(merged.position.x, merged.end.y),
-		])
-		DisplayServer.window_set_mouse_passthrough(polygon)
+		# 回退: Godot API (单多边形 AABB)
+		if circles.size() >= 3:
+			var min_x := circles[0] - circles[2]
+			var min_y := circles[1] - circles[2]
+			var max_x := circles[0] + circles[2]
+			var max_y := circles[1] + circles[2]
+			for i in range(0, circles.size(), 3):
+				min_x = minf(min_x, circles[i] - circles[i+2])
+				min_y = minf(min_y, circles[i+1] - circles[i+2])
+				max_x = maxf(max_x, circles[i] + circles[i+2])
+				max_y = maxf(max_y, circles[i+1] + circles[i+2])
+			for i in range(0, rects.size(), 4):
+				min_x = minf(min_x, rects[i])
+				min_y = minf(min_y, rects[i+1])
+				max_x = maxf(max_x, rects[i] + rects[i+2])
+				max_y = maxf(max_y, rects[i+1] + rects[i+3])
+			DisplayServer.window_set_mouse_passthrough(PackedVector2Array([
+				Vector2(min_x, min_y),
+				Vector2(max_x, min_y),
+				Vector2(max_x, max_y),
+				Vector2(min_x, max_y),
+			]))
 
-## 将 GDScript Array[Rect2i] 转换为 C# 可接收的 Godot.Collections.Array<Rect2I>
-func Rect2iArrayToGodotArray(rects: Array[Rect2i]) -> Array:
-	var arr: Array[Rect2i] = []
-	arr.assign(rects)
-	return arr
+## 4px 栅格量化: 减少亚像素抖动导致的无意义 SetWindowRgn 刷新
+func _q(v: float) -> float:
+	return float(int(v / 4.0) * 4)
 
 func _on_drag_started() -> void:
 	is_dragging = true
@@ -846,12 +892,10 @@ func _apply_queue_targets(q: Array[RigidBody2D], base_x: float, spacing: float, 
 		p.set_meta("retreat_target_x", new_tgt)
 		
 		# 如果目标车位发生了显著挪动，且宠物正在发呆，叫醒它滚向新目标
-		if absf(old_tgt - new_tgt) > 5.0 and p.has_node("StateMachine"):
-			var state_machine = p.get_node("StateMachine")
-			if state_machine.current_state and state_machine.current_state.name == "idle":
-				# 确保不是原地微调
-				if absf(p.global_position.x - new_tgt) > 20.0:
-					p.transition_to("retreat")
+		if absf(old_tgt - new_tgt) > 5.0 and p.current_state_name == "idle":
+			# 确保不是原地微调
+			if absf(p.global_position.x - new_tgt) > 20.0:
+				p.transition_to("retreat")
 
 ## 任务栏样式守护: 如果引擎意外重置了 WS_EX_TOOLWINDOW，重新推入
 func _guard_taskbar_style() -> void:

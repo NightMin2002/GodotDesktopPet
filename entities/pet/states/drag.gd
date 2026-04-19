@@ -11,6 +11,7 @@ const DRAG_GRAVITY_SCALE := 0.1  # 拖拽时降低重力
 var original_gravity_scale: float = 1.0
 var _drag_time: float = 0.0
 var _init_mouse_pos: Vector2
+var _init_pet_pos: Vector2  # 拖拽起始时宠物位置 (用于判定是否真的被拖走)
 
 func enter() -> void:
 	if pet:
@@ -19,6 +20,7 @@ func enter() -> void:
 		pet.linear_damp = 0.5
 		_drag_time = 0.0
 		_init_mouse_pos = pet.get_global_mouse_position()
+		_init_pet_pos = pet.global_position
 		EventBus.drag_started.emit()
 
 func process(delta: float) -> void:
@@ -27,9 +29,11 @@ func process(delta: float) -> void:
 func exit() -> void:
 	if pet:
 		pet.gravity_scale = original_gravity_scale
-		# 安静模式下标记被拖拽，用于落地时吐槽
+		# 安静模式下：只有宠物真正被拖离原位时才记录 (poke 原地点击不触发吐槽)
 		if pet.behavior_mode == 1:
-			pet._was_dragged_in_quiet = true
+			var moved = pet.global_position.distance_to(_init_pet_pos)
+			if moved > 30.0:
+				pet._was_dragged_in_quiet = true
 		EventBus.drag_ended.emit()
 
 func physics_process(_delta: float) -> void:
@@ -61,4 +65,4 @@ func _handle_poke() -> void:
 	# Godot 4 weekday: 0 = Sun, 1 = Mon ...
 	var wd = weekdays[d.weekday % 7]
 	var msg := "今天是 %d年%02d月%02d日 (周%s)。" % [d.year, d.month, d.day, wd]
-	EventBus.show_targeted_bubble.emit(msg, pet)
+	pet.show_local_bubble(msg)

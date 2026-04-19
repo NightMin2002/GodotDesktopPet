@@ -53,4 +53,5 @@ func input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			if pet.is_mouse_on_pet():
+				pet.get_viewport().set_input_as_handled()
 				pet.transition_to("drag")
