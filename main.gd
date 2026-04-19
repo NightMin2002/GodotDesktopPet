@@ -325,43 +325,21 @@ func _apply_free_mode(local_rects: Array[Rect2], count: int) -> void:
 		# 禁用左右侧墙
 		_disable_side_walls(wall)
 
-## ── REPELLED 模式: 顶部保留踏板 + 左右底部实体墙阻止进入 ──
+## ── REPELLED 模式: 复用多边形合并，法线朝内阻止进入 ──
+## 重叠窗口先合并为连通外轮廓，避免内部小窗口产生虚假排斥墙
 
 func _apply_repelled_mode(local_rects: Array[Rect2], count: int) -> void:
-	var floor_thickness = 10.0
-	for i in range(count):
-		var lr = local_rects[i]
-		var wall = ghost_walls[i]
-		
-		_ensure_children(wall)
-		wall.position = lr.position + lr.size / 2.0
-		
-		# 最大化窗口: 禁用所有碰撞体 (避免全屏墙封锁宠物)
-		if _is_maximized_window(lr):
-			for k in range(wall.get_child_count()):
-				(wall.get_child(k) as CollisionShape2D).disabled = true
-			continue
-		
-		var win_left = lr.position.x
-		var win_right = lr.position.x + lr.size.x
-		var top_y = lr.position.y
-		var bottom_y = lr.position.y + lr.size.y
-		
-		# 顶部保留单向踏板 (可以站在上面，从内部可以跳出)
-		var top_segs = _compute_exposed_segments(win_left, win_right, top_y, local_rects, i)
-		var wall_cx = lr.position.x + lr.size.x / 2.0
-		var top_rel_y = -lr.size.y / 2.0 + floor_thickness / 2.0
-		_apply_platform_segments(wall, 0, top_segs, wall_cx, top_rel_y, floor_thickness, true)
-		
-		# 底部单向墙 (rotation=π, 法线朝下: 外面进不来，里面可以掉出)
-		var bottom_segs = _compute_exposed_segments(win_left, win_right, bottom_y, local_rects, i)
-		var bot_rel_y = lr.size.y / 2.0 - floor_thickness / 2.0
-		_apply_platform_segments(wall, MAX_PLATFORM_SEGMENTS, bottom_segs, wall_cx, bot_rel_y, floor_thickness, true, PI)
-		
-		# 左右单向墙 (法线朝外: 外面进不来，里面可以走出)
-		_enable_one_way_side_walls(wall, lr)
+	# rotation_offset=0: 不加 PI，法线指向窗内 → 拦截向内移动 (排斥)
+	_apply_polygon_wall_mode(local_rects, count, 0.0)
 
 func _apply_confined_mode(local_rects: Array[Rect2], count: int) -> void:
+	# rotation_offset=PI: 加 PI 反转法线指向窗外 → 拦截向外移动 (封闭)
+	_apply_polygon_wall_mode(local_rects, count, PI)
+
+## ── 通用多边形合并建墙 (CONFINED / REPELLED 共用) ──
+## rotation_offset=PI → 封闭模式 (拦截外出)；rotation_offset=0 → 排斥模式 (拦截进入)
+
+func _apply_polygon_wall_mode(local_rects: Array[Rect2], count: int, rotation_offset: float) -> void:
 	# 收集所有非最大化窗口作为离散多边形
 	var polys: Array[PackedVector2Array] = []
 	for i in range(count):
@@ -376,7 +354,7 @@ func _apply_confined_mode(local_rects: Array[Rect2], count: int) -> void:
 		]))
 		
 	# ── 多边形合并 (Clipper) ──
-	# 计算所有窗口连通块的确切外轮廓（包括内部孔洞洞）
+	# 计算所有窗口连通块的确切外轮廓（包括内部孔洞）
 	var merged_polys: Array[PackedVector2Array] = polys.duplicate()
 	var merged_happened = true
 	while merged_happened and merged_polys.size() > 1:
@@ -431,9 +409,10 @@ func _apply_confined_mode(local_rects: Array[Rect2], count: int) -> void:
 			# 延伸 10 像素以覆盖角落缝隙
 			rect_shape.size = Vector2(length + 10.0, 10.0)
 			# Godot 单向碰撞原理：拦截向着 Local +Y 方向的移动，允许向着 Local -Y 的移动。
-			# 外轮廓顺时针，(b-a).angle() 的 Local +Y 指向窗内。如果不加 PI，则拦截向内移动（变成排斥模式）。
-			# 加上 PI 反转法线，使得 Local +Y 指向窗外。拦截向外移动，允许向内移动，即真正的封闭模式！
-			col.rotation = (b - a).angle() + PI
+			# 外轮廓顺时针，(b-a).angle() 的 Local +Y 指向窗内。
+			# rotation_offset=0   → 不反转，拦截向内移动 → 排斥模式 (REPELLED)
+			# rotation_offset=PI  → 反转法线指向窗外，拦截向外移动 → 封闭模式 (CONFINED)
+			col.rotation = (b - a).angle() + rotation_offset
 			col.one_way_collision = true
 			col.disabled = false
 			child_idx += 1
@@ -464,50 +443,6 @@ func _ensure_children(wall: StaticBody2D) -> void:
 		col.disabled = true
 		wall.add_child(col)
 
-## 启用左右实体侧墙 (双面，用于 REPELLED-封闭式拒绝)
-func _enable_side_walls(wall: StaticBody2D, lr: Rect2) -> void:
-	var side_idx_left = MAX_PLATFORM_SEGMENTS * 2
-	var side_idx_right = MAX_PLATFORM_SEGMENTS * 2 + 1
-	var wall_thickness = 10.0
-	
-	# 左侧墙
-	var col_l = wall.get_child(side_idx_left) as CollisionShape2D
-	col_l.position = Vector2(-lr.size.x / 2.0 + wall_thickness / 2.0, 0)
-	(col_l.shape as RectangleShape2D).size = Vector2(wall_thickness, lr.size.y)
-	col_l.rotation = 0.0
-	col_l.one_way_collision = false
-	col_l.disabled = false
-	
-	# 右侧墙
-	var col_r = wall.get_child(side_idx_right) as CollisionShape2D
-	col_r.position = Vector2(lr.size.x / 2.0 - wall_thickness / 2.0, 0)
-	(col_r.shape as RectangleShape2D).size = Vector2(wall_thickness, lr.size.y)
-	col_r.rotation = 0.0
-	col_r.one_way_collision = false
-	col_r.disabled = false
-
-## 启用左右单向侧墙 (外面进不来，里面可以出去，用于 REPELLED 模式)
-func _enable_one_way_side_walls(wall: StaticBody2D, lr: Rect2) -> void:
-	var side_idx_left = MAX_PLATFORM_SEGMENTS * 2
-	var side_idx_right = MAX_PLATFORM_SEGMENTS * 2 + 1
-	var wall_thickness = 10.0
-	
-	# 左侧墙: rotation=-π/2 → 法线朝左 → 外面进不来，里面可以左出
-	var col_l = wall.get_child(side_idx_left) as CollisionShape2D
-	col_l.position = Vector2(-lr.size.x / 2.0 + wall_thickness / 2.0, 0)
-	# 旋转后宽高互换: 原(thickness, height) → 设置为(height, thickness)
-	(col_l.shape as RectangleShape2D).size = Vector2(lr.size.y, wall_thickness)
-	col_l.rotation = -PI / 2.0
-	col_l.one_way_collision = true
-	col_l.disabled = false
-	
-	# 右侧墙: rotation=π/2 → 法线朝右 → 外面进不来，里面可以右出
-	var col_r = wall.get_child(side_idx_right) as CollisionShape2D
-	col_r.position = Vector2(lr.size.x / 2.0 - wall_thickness / 2.0, 0)
-	(col_r.shape as RectangleShape2D).size = Vector2(lr.size.y, wall_thickness)
-	col_r.rotation = PI / 2.0
-	col_r.one_way_collision = true
-	col_r.disabled = false
 
 ## 禁用左右侧墙 (重置旋转状态)
 func _disable_side_walls(wall: StaticBody2D) -> void:
