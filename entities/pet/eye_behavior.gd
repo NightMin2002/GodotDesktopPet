@@ -1,5 +1,6 @@
 # eye_behavior.gd — 瞳孔行为控制器
 # 管理：鼠标追踪 → 闲置好奇游走 过渡 + 机械虹膜眨眼
+# 所有方向计算在世界坐标系中进行，不受刚体旋转影响
 class_name EyeBehavior
 extends RefCounted
 
@@ -13,10 +14,10 @@ var _last_mouse_pos := Vector2.ZERO
 var _mouse_idle_time := 0.0
 const MOUSE_IDLE_THRESHOLD := 2.5  # 鼠标静止超过此秒数 → 进入好奇游走
 
-# ── 游走目标 ──
+# ── 游走目标 (世界坐标系方向偏移) ──
 var _wander_target := Vector2.ZERO
 var _wander_timer := 0.0
-var _pupil_pos := Vector2.ZERO  # 当前瞳孔插值位置 (局部空间)
+var _pupil_pos := Vector2.ZERO  # 当前瞳孔偏移 (世界坐标系，相对于宠物中心)
 
 # ── 机械虹膜眨眼 ──
 var _blink_timer := 3.0        # 到下一次眨眼的等待时间
@@ -31,7 +32,7 @@ func update(delta: float) -> void:
 	_update_pupil(delta)
 	_update_blink(delta)
 
-## 获取当前瞳孔相对于眼球中心的偏移量 (已含游走/追踪插值)
+## 获取当前瞳孔相对于眼球中心的偏移量 (世界坐标系，可直接用于反旋转绘制)
 func get_pupil_offset() -> Vector2:
 	return _pupil_pos
 
@@ -65,15 +66,19 @@ func _update_pupil(delta: float) -> void:
 	if not tracking_enabled or _mouse_idle_time > MOUSE_IDLE_THRESHOLD:
 		_wander_timer -= delta
 		if _wander_timer <= 0:
-			var angle = randf() * TAU
-			var dist = randf_range(0.3, 1.0)
-			_wander_target = Vector2(cos(angle), sin(angle)) * max_offset * dist
-			_wander_timer = randf_range(1.5, 4.0)
+			# 70% 概率看向某个方向，30% 概率回到中心 (模拟自然的注意力回收)
+			if randf() > 0.3:
+				var angle = randf() * TAU
+				var dist = randf_range(0.2, 0.8)
+				_wander_target = Vector2(cos(angle), sin(angle)) * max_offset * dist
+			else:
+				_wander_target = Vector2.ZERO  # 视线回到中心
+			_wander_timer = randf_range(2.0, 5.0)  # 更长的停留时间，更从容
 		target = _wander_target
-		lerp_speed = 2.0  # 慢悠悠地好奇张望
+		lerp_speed = 1.5  # 慢悠悠地转动，更自然
 	else:
-		# 鼠标活跃且追踪开启 → 紧锁瞳孔追踪 (手动安静待命时也生效)
-		var to_mouse = pet.get_local_mouse_position().normalized()
+		# 鼠标活跃且追踪开启 → 世界空间追踪方向
+		var to_mouse = (pet.get_global_mouse_position() - pet.global_position).normalized()
 		target = to_mouse * max_offset
 		lerp_speed = 12.0
 	

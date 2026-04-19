@@ -10,10 +10,10 @@ func enter() -> void:
 	# 闲置时间大幅压缩，彻底表现出"不停歇"的多动机制
 	idle_duration = randf_range(0.3, 1.5)
 	idle_timer = 0.0
-	# 减缓速度
+	# 自然减速：不急刹，让残余惯性滑行消散
 	if pet:
-		pet.linear_damp = 1.0
-		pet.angular_damp = 1.5
+		pet.linear_damp = 0.8
+		pet.angular_damp = 1.0
 		# 安静模式：提高阻尼让宠物真正安静下来
 		if pet.behavior_mode == 1:
 			pet.linear_damp = 3.0
@@ -36,8 +36,8 @@ func process(delta: float) -> void:
 			idle_timer = 0.0
 			idle_duration = randf_range(1.0, 3.0)
 			return
-		# 随机多巴胺路由选择
-		if randf() > 0.35:
+		# 随机多巴胺路由选择 (85% 小蹦跳, 15% 大跳)
+		if randf() > 0.15:
 			pet.transition_to("walk")
 		else:
 			pet.transition_to("jump")

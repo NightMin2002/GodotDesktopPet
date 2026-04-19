@@ -1,53 +1,44 @@
-# walk.gd — 行走状态
-# 宠物沿地面水平移动，到达目标或超时后回到 Idle
+# walk.gd — 小蹦跳状态 (Hop)
+# 宠物通过小幅度蹦跳向一个方向移动，落地后回到 Idle
 class_name StateWalk
 extends PetState
 
-var walk_timer: float = 0.0
-var walk_duration: float = 0.0
-var walk_direction: float = 0.0  # -1.0 左, 1.0 右
-var walk_force: float = 300.0
-
 func enter() -> void:
-	walk_duration = randf_range(1.5, 4.0)
-	walk_timer = 0.0
-	walk_direction = [-1.0, 1.0].pick_random()
 	if pet:
-		# 行走时保持较高的线性阻尼，让位移主要来自扭矩+摩擦力转化
-		# 而不是纯平移惯性 (这是"看起来像滚动"而非"滑行"的关键)
-		pet.linear_damp = 1.5
-		pet.angular_damp = 0.2  # 保持低角阻尼让旋转持久
+		pet.linear_damp = 0.3   # 低阻尼，空中保持惯性
+		pet.angular_damp = 0.5  # 适度角阻尼，落地后自然停转
+		
+		# 小蹦跳：温柔的向上冲量 + 随机水平方向
+		var hop_dir = [-1.0, 1.0].pick_random()
+		
+		# 边缘检测：如果靠近边缘就往回跳
+		var x = pet.global_position.x
+		var w = pet.boundary_size.x
+		if x < 100.0:
+			hop_dir = 1.0
+		elif x > w - 100.0:
+			hop_dir = -1.0
+		
+		var hop_height = randf_range(180.0, 350.0)
+		var hop_horizontal = randf_range(80.0, 220.0) * hop_dir
+		pet.apply_central_impulse(Vector2(hop_horizontal, -hop_height))
+		
+		# 轻微自然旋转 (不是驱动力，只是蹦跳时的自然翻滚)
+		pet.apply_torque_impulse(hop_dir * randf_range(2000.0, 6000.0))
 
 func exit() -> void:
-	if pet:
-		pet.linear_damp = 0.5
+	pass
 
-func process(delta: float) -> void:
-	walk_timer += delta
-	if walk_timer >= walk_duration:
-		pet.transition_to("idle")
+func process(_delta: float) -> void:
+	pass
 
 func physics_process(_delta: float) -> void:
 	if not pet:
 		return
 	
-	# 检查是否掉落了
-	if not pet.is_settled():
-		pet.transition_to("fall")
-		return
-	
-	# ── 真正的滚动物理 ──
-	# 主要驱动力: 大扭矩 → 通过摩擦力转化为地面位移 (真实滚动)
-	# 辅助推力极低: 仅作为微弱补偿，不会产生可察觉的"滑行感"
-	pet.apply_torque(walk_direction * 80000.0)
-	pet.apply_central_force(Vector2(walk_direction * walk_force * 0.1, 0))
-	
-	# 碰到屏幕边缘就转向
-	var screen_width = pet.boundary_size.x
-	if pet.global_position.x < 50:
-		walk_direction = 1.0
-	elif pet.global_position.x > screen_width - 50:
-		walk_direction = -1.0
+	# 落地稳定后回到 Idle
+	if pet.is_settled():
+		pet.transition_to("idle")
 
 func input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:

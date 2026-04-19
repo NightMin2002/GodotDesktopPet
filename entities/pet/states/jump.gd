@@ -1,21 +1,30 @@
-# jump.gd — 高能弹跳状态
-# 球体获得强大的向上冲量和旋转扭矩，在屏幕内弹跳碰撞直到动能耗尽
+# jump.gd — 大跳状态
+# 宠物获得较大的向上冲量，在空中划出弧线后落地
 class_name StateJump
 extends PetState
 
 func enter() -> void:
 	if pet:
-		# 降低阻尼，让它在空中能保持动能疯狂弹跳
-		pet.linear_damp = 0.5
+		pet.linear_damp = 0.2   # 空中低阻尼，保持抛物线惯性
+		pet.angular_damp = 0.8  # 适度角阻尼，旋转自然衰减
 		
-		# 朝上并且附带左/右的一个随机角度开火
-		var burst_dir = Vector2(randf_range(-1.2, 1.2), -randf_range(1.5, 3.0)).normalized()
-		var force = randf_range(800.0, 1600.0)  # 物理冲量，直接转化为瞬间速度
+		# 大跳：明显更高更远的冲量
+		var hop_dir = [-1.0, 1.0].pick_random()
+		
+		# 边缘检测
+		var x = pet.global_position.x
+		var w = pet.boundary_size.x
+		if x < 100.0:
+			hop_dir = 1.0
+		elif x > w - 100.0:
+			hop_dir = -1.0
+		
+		var burst_dir = Vector2(hop_dir * randf_range(0.6, 1.4), -randf_range(2.0, 3.0)).normalized()
+		var force = randf_range(900.0, 1500.0)
 		pet.apply_central_impulse(burst_dir * force)
 		
-		# 极度疯狂的自旋扭矩冲量
-		var spin = randf_range(-100000.0, 100000.0)
-		pet.apply_torque_impulse(spin)
+		# 适度旋转 (空中翻滚的视觉效果)
+		pet.apply_torque_impulse(hop_dir * randf_range(8000.0, 18000.0))
 
 func exit() -> void:
 	pass
@@ -26,8 +35,8 @@ func process(_delta: float) -> void:
 func physics_process(_delta: float) -> void:
 	if not pet:
 		return
-		
-	# 只要跳跃/撞击结束后速度低于阈值一定时间，就会判定为落实地并重归闲置
+	
+	# 落地稳定后回到 Idle
 	if pet.is_settled():
 		pet.transition_to("idle")
 

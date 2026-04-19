@@ -65,16 +65,16 @@ var behavior_mode: int = 0  # 0=FREE(自由行动), 1=QUIET(安静待命)
 var _was_dragged_in_quiet: bool = false  # 安静模式下被拖拽的标记 (用于吐槽)
 
 func _ready() -> void:
-	# 物理材质 (弹性)
+	# 物理材质
 	var mat := PhysicsMaterial.new()
-	mat.bounce = 0.4     # 降低弹力，减少无逻辑的蹦蹦跳跳
-	mat.friction = 0.8   # 保持高摩擦，利于滚动
+	mat.bounce = 0.35    # 适度弹性，落地有轻微回弹但不过度
+	mat.friction = 0.6   # 中等摩擦，落地后自然减速
 	physics_material_override = mat
 	
 	# 质量与阻尼
 	mass = 2.0
-	linear_damp = 0.5    # 增加一点线性阻尼，让平移慢下来，主要表现为原地转
-	angular_damp = 0.2   # 降低一点角阻尼，让滚动持续时间长些
+	linear_damp = 0.5    # 基础线性阻尼 (各状态会动态覆盖)
+	angular_damp = 0.5   # 基础角阻尼，落地后旋转较快停止
 	
 	# 开启连续碰撞检测 (防止高速穿墙)
 	continuous_cd = RigidBody2D.CCD_MODE_CAST_RAY
@@ -440,23 +440,30 @@ func _draw() -> void:
 		var right_base = Vector2(cos(angle + half_hw), sin(angle + half_hw)) * (base_r * 0.95)
 		draw_polygon(PackedVector2Array([left_base, tip_pos, right_base]), PackedColorArray([dark_blue, dark_blue, dark_blue]))
 	
-	# 机械虹膌：眨眼时内部光圈收缩向中心
+	# 机械虹膜：眨眼时内部光圈收缩向中心
+	# 眼球反向旋转补偿：抵消 RigidBody2D 的滚动角度，让眼球始终保持水平
+	draw_set_transform(Vector2.ZERO, -rotation, Vector2.ONE)
 	var blink = eye_behavior.get_blink_amount()
-	var iris_scale = 1.0 - blink * 0.95  # 闭眼峰值时虹膌缩至 5%
+	var iris_scale = 1.0 - blink * 0.95  # 闭眼峰值时虹膜缩至 5%
 	if iris_scale > 0.05:
-		# 第一层：占据主视觉的最外侧浅灰白层
+		# 虹膜内三层跟随鼠标偏移，眼白固定
+		# eye_behavior 直接输出世界坐标系偏移，draw_set_transform 已转为世界对齐绘制
+		var iris_offset = eye_behavior.get_pupil_offset() * iris_scale
+		# 第一层：眼白（巩膜）— 固定在圆心不动
 		draw_circle(Vector2.ZERO, PET_RADIUS * 0.54 * iris_scale, _shift_color(Color(0.85, 0.88, 0.92, 1.0)))
-		# 第二层：灰蓝色瞳环渐变层
-		draw_circle(Vector2.ZERO, PET_RADIUS * 0.42 * iris_scale, _shift_color(Color(0.55, 0.65, 0.80, 1.0)))
-		# 第三层：深蓝色次瞳孔
-		draw_circle(Vector2.ZERO, PET_RADIUS * 0.28 * iris_scale, _shift_color(Color(0.15, 0.28, 0.68, 1.0)))
-		# 第四层：极暗的黑底核心
-		draw_circle(Vector2.ZERO, PET_RADIUS * 0.16 * iris_scale, _shift_color(Color(0.05, 0.08, 0.20, 1.0)))
+		# 第二层：灰蓝色虹膜外环 — 跟随鼠标
+		draw_circle(iris_offset, PET_RADIUS * 0.42 * iris_scale, _shift_color(Color(0.55, 0.65, 0.80, 1.0)))
+		# 第三层：深蓝色虹膜内环 — 跟随鼠标
+		draw_circle(iris_offset, PET_RADIUS * 0.28 * iris_scale, _shift_color(Color(0.15, 0.28, 0.68, 1.0)))
+		# 第四层：极暗的瞳孔核心 — 跟随鼠标
+		draw_circle(iris_offset, PET_RADIUS * 0.16 * iris_scale, _shift_color(Color(0.05, 0.08, 0.20, 1.0)))
 		
-		# 追踪光点 (随鼠标移动的小圆，形成有层次感的真实高光光斑)
-		var pupil_pos = eye_behavior.get_pupil_offset() * iris_scale
-		draw_circle(pupil_pos, PET_RADIUS * 0.11 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale))
-		draw_circle(pupil_pos, PET_RADIUS * 0.06 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale))
+		# 高光反射点 (固定在虹膜左上方，模拟环境光泽)
+		var highlight_offset = iris_offset + Vector2(-PET_RADIUS * 0.08, -PET_RADIUS * 0.10) * iris_scale
+		draw_circle(highlight_offset, PET_RADIUS * 0.11 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale * 0.85))
+		draw_circle(highlight_offset, PET_RADIUS * 0.06 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale))
+	# 恢复默认变换，避免影响后续绘制
+	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 
 ## 克隆色偏工具函数: 将 RGB 颜色转到 HSV 空间偏移 hue 后转回
 func _shift_color(c: Color) -> Color:
