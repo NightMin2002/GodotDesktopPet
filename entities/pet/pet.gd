@@ -241,39 +241,6 @@ func is_mouse_on_pet() -> bool:
 func is_settled() -> bool:
 	return linear_velocity.length() < 20.0 and abs(linear_velocity.y) < 10.0
 
-func get_render_rect() -> Rect2:
-	# 初始框定宠物本体
-	var rect := Rect2(global_position - Vector2(PET_RADIUS, PET_RADIUS), Vector2(PET_RADIUS * 2.0, PET_RADIUS * 2.0))
-	
-	# 囊括长长的拖影尾巴
-	for pos in trail_history:
-		rect = rect.expand(pos + Vector2(PET_RADIUS, PET_RADIUS))
-		rect = rect.expand(pos - Vector2(PET_RADIUS, PET_RADIUS))
-		
-	# 囊括所有的爆炸冲击波（注意：冲击波位置目前位于 local_pos）
-	for shock in shockwaves:
-		var sr: float = shock["radius"] + 15.0
-		var s_pos = global_position + shock["local_pos"]
-		rect = rect.expand(s_pos + Vector2(sr, sr))
-		rect = rect.expand(s_pos - Vector2(sr, sr))
-		
-	# 加入外扩安全边界像素，确保抗锯齿边缘光斑不会贴墙被裁剪
-	rect.position -= Vector2(10, 10)
-	rect.size += Vector2(20, 20)
-	
-	# 合并全息时钟 UI 区域
-	if hud_clock_enabled and is_instance_valid(hud_clock_label) and hud_clock_label.visible:
-		var clock_rect = Rect2(hud_clock_label.global_position, hud_clock_label.get_minimum_size())
-		# 为时钟增加一点外边框余量
-		clock_rect.position -= Vector2(5, 5)
-		clock_rect.size += Vector2(10, 10)
-		rect = rect.merge(clock_rect)
-	
-	# 注意: overlay_rect (全局气泡) 和 local_bubble_rects (本地气泡)
-	# 均由 main.gd._update_passthrough_box() 作为独立小矩形注册到 DWM
-	# 不合并进宠物本体 rect，避免产生巨大 AABB 挡桌面点击
-	
-	return rect
 
 # ── 主循环 ──
 

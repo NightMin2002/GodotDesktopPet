@@ -636,9 +636,8 @@ func _setup_pet_chatter() -> void:
 var _passthrough_timer: float = 0.0
 var _last_circles: PackedFloat32Array = PackedFloat32Array()
 var _last_rects: PackedFloat32Array = PackedFloat32Array()
-# 穿透检测限流：命中测试不修改窗口形状，开销极低
-# 但数据传递与变化检测仍需限流，~60hz 足够
-const PASSTHROUGH_INTERVAL := 0.016
+# 穿透检测限流：已优化为仅圆形+UI矩形，配合 bRedraw=false 开销极低
+const PASSTHROUGH_INTERVAL := 0.008  # ~120fps 足够
 
 func _process(delta: float) -> void:
 	if is_dragging or is_menu_open:
@@ -651,10 +650,14 @@ func _process(delta: float) -> void:
 func _update_passthrough_state() -> void:
 	if is_dragging or is_menu_open:
 		# 拖拽/菜单打开时: 全窗口可交互
+		# 先强制重绘所有宠物，清除帧缓冲中的残留像素 (旧 trail 路径等)
+		for p in pet_instances:
+			if is_instance_valid(p):
+				p.queue_redraw()
+		RenderingServer.force_draw(false)  # 立即刷新一帧，清除残留
 		if win_manager and win_manager.has_method("SetFullWindowHit"):
 			win_manager.call("SetFullWindowHit", true)
 		else:
-			# 回退到 Godot API
 			var full := PackedVector2Array([
 				Vector2.ZERO,
 				Vector2(boundary_size.x, 0),
@@ -673,7 +676,7 @@ func _update_passthrough_state() -> void:
 func _update_hit_regions() -> void:
 	# 圆形区域: [cx, cy, radius, ...] — 宠物本体 (精确椭圆命中)
 	var circles := PackedFloat32Array()
-	# 矩形区域: [x, y, w, h, ...] — UI/特效包围盒
+	# 矩形区域: [x, y, w, h, ...] — UI 元素
 	var rects := PackedFloat32Array()
 	
 	for p in pet_instances:
@@ -682,36 +685,13 @@ func _update_hit_regions() -> void:
 		
 		# ── 宠物本体: 精确圆形命中 ──
 		var pet_pos := p.global_position
-		var pet_r: float = p.PET_RADIUS + 15.0  # 半径 + 容差匹配 is_mouse_on_pet
+		var pet_r: float = p.PET_RADIUS + 15.0
 		circles.append(_q(pet_pos.x))
 		circles.append(_q(pet_pos.y))
 		circles.append(_q(pet_r))
 		
-		# ── 拖影尾巴: 单个 AABB 矩形包围盒 (视觉特效无需精确命中) ──
-		if p.trail_enabled and p.trail_history.size() > 0:
-			var min_x := pet_pos.x
-			var min_y := pet_pos.y
-			var max_x := pet_pos.x
-			var max_y := pet_pos.y
-			for trail_pos in p.trail_history:
-				min_x = minf(min_x, trail_pos.x - p.PET_RADIUS)
-				min_y = minf(min_y, trail_pos.y - p.PET_RADIUS)
-				max_x = maxf(max_x, trail_pos.x + p.PET_RADIUS)
-				max_y = maxf(max_y, trail_pos.y + p.PET_RADIUS)
-			rects.append(_q(min_x - 5))
-			rects.append(_q(min_y - 5))
-			rects.append(_q(max_x - min_x + 10))
-			rects.append(_q(max_y - min_y + 10))
-		
-		# ── 冲击波: 单个 AABB 矩形包围盒 ──
-		for shock in p.shockwaves:
-			if shock["alpha"] > 0.1:
-				var s_pos = pet_pos + shock["local_pos"]
-				var sr: float = shock["radius"] + 10.0
-				rects.append(_q(s_pos.x - sr))
-				rects.append(_q(s_pos.y - sr))
-				rects.append(_q(sr * 2.0))
-				rects.append(_q(sr * 2.0))
+		# 注意: trail 和 shockwave 是纯视觉特效，不注册命中区域
+		# 用户不需要点击拖影和冲击波，节省 GDI Region 开销
 		
 		# ── 全息时钟 HUD: 矩形 ──
 		if p.hud_clock_enabled and is_instance_valid(p.hud_clock_label) and p.hud_clock_label.visible:
