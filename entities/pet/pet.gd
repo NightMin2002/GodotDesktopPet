@@ -320,7 +320,7 @@ func handle_poke() -> void:
 	# ── 优先级 2: 未确认的碎碎念 (关怀回应，不复读原文) ──
 	if _pending_chatter != "":
 		_pending_chatter = ""
-		var line = COMEBACK_LINES[randi() % COMEBACK_LINES.size()]
+		var line = _pick_unique(COMEBACK_LINES)
 		show_local_bubble(line)
 		_last_poke_time = now
 		_poke_combo = 0

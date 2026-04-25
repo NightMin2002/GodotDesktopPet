@@ -18,17 +18,21 @@ const MOUSE_IDLE_THRESHOLD := 2.5  # 鼠标静止超过此秒数 → 进入游�
 var _wander_target := Vector2.ZERO
 var _wander_timer := 0.0
 var _pupil_pos := Vector2.ZERO  # 当前瞳孔偏移 (世界坐标系)
+var _prev_pupil_pos := Vector2.ZERO  # 上帧瞳孔位置 (按需重绘检测用)
 var _look_at_pet: RigidBody2D = null  # 当前注视的同伴 (动态追踪)
 
 # ── 机械虹膜眨眼 ──
 var _blink_timer := 3.0
 var _is_blinking := false
+var _was_blinking := false  # 上帧是否在眨眼 (保证眨眼结束后多重绘一帧)
 var _blink_progress := 0.0
 const BLINK_SPEED := 10.0
 
 func update(delta: float) -> void:
 	if not is_instance_valid(pet):
 		return
+	_prev_pupil_pos = _pupil_pos
+	_was_blinking = _is_blinking  # 捕获眨眼状态 (blink更新前)
 	_update_idle_detection(delta)
 	_update_pupil(delta)
 	_update_blink(delta)
@@ -43,9 +47,11 @@ func get_blink_amount() -> float:
 		return 0.0
 	return sin(_blink_progress * PI)
 
-## 眼球始终活跃
+## 只在眸球实际变化时才需要重绘 (眩眶或瞳孔移动中)
 func is_animating() -> bool:
-	return true
+	if _is_blinking or _was_blinking:  # 眨眼结束后多绘一帧恢复原尺寸
+		return true
+	return _pupil_pos.distance_to(_prev_pupil_pos) > 0.05
 
 # ── 内部逻辑 ──
 
