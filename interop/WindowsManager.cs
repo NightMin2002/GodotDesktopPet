@@ -252,6 +252,7 @@ public partial class WindowsManager : Node
     //  混合形状窗口区域 (GDI Region API)
     //  ── 椭圆区域 (宠物本体精确命中) + 矩形区域 (UI 气泡/时钟) ──
     //  ── 通过 CombineRgn(RGN_OR) 合并后应用到窗口 ──
+    //  ── 已知限制: SetWindowRgn 会同时裁剪视觉特效 (冲击波/拖影) ──
     // ══════════════════════════════════════════════════════════════
 
     [DllImport("gdi32.dll")]
@@ -269,7 +270,7 @@ public partial class WindowsManager : Node
     [DllImport("user32.dll")]
     private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool bRedraw);
 
-    private const int RGN_OR = 2; // 联合模式: 合并两个区域
+    private const int RGN_OR = 2;
 
     /// <summary>
     /// 混合形状命中区域: 椭圆 (宠物) + 矩形 (UI) 合并后应用为窗口区域。

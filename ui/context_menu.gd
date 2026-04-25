@@ -241,9 +241,9 @@ func _on_dismiss_btn_pressed() -> void:
 
 func _update_clone_label() -> void:
 	var main_node = get_tree().root.get_node_or_null("Main")
-	if main_node and main_node.has_method("get") and "pet_instances" in main_node:
+	if main_node and "pet_instances" in main_node:
 		var count: int = (main_node.pet_instances as Array).size() - 1
-		var max_c: int = main_node.MAX_CLONES
+		var max_c: int = main_node.clone_mgr.MAX_CLONES if main_node.clone_mgr else 5
 		clone_btn.text = "🧬 召唤分身 (" + str(count) + "/" + str(max_c) + ")"
 
 func _update_date_label() -> void:
