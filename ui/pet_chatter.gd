@@ -98,6 +98,9 @@ func _check_time() -> void:
 func _trigger_chatter() -> void:
 	var line = _pick_line()
 	EventBus.show_reminder_bubble.emit(line)
+	# 记为待确认 (覆盖旧的，只保留最新一条)
+	if is_instance_valid(_pet):
+		_pet._pending_chatter = line
 	# 轻弹跳引起注意 (仅自由行动模式下)
 	if is_instance_valid(_pet) and _pet.behavior_mode == 0:
 		_gentle_bounce()

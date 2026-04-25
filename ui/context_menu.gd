@@ -3,6 +3,7 @@
 extends CanvasLayer
 
 @onready var hud: PanelContainer = $HUDPanel
+@onready var date_label: Label = $HUDPanel/Margin/VBox/DateLabel
 @onready var track_btn: Button = $HUDPanel/Margin/VBox/EyeTrackBtn
 @onready var shockwave_btn: Button = $HUDPanel/Margin/VBox/ShockwaveBtn
 @onready var trail_btn: Button = $HUDPanel/Margin/VBox/TrailBtn
@@ -126,6 +127,7 @@ func _on_show_context_menu(target_node: Node2D) -> void:
 		return
 	EventBus.context_menu_toggled.emit(true)
 	_update_clone_label()  # 每次开菜单时刷新克隆计数
+	_update_date_label()   # 刷新日期显示
 	var pet_pos = target.get_global_transform_with_canvas().get_origin()
 	var panel_pos = _clamp_to_viewport(pet_pos + Vector2(45, -65))
 	hud.position = panel_pos
@@ -243,6 +245,12 @@ func _update_clone_label() -> void:
 		var count: int = (main_node.pet_instances as Array).size() - 1
 		var max_c: int = main_node.MAX_CLONES
 		clone_btn.text = "🧬 召唤分身 (" + str(count) + "/" + str(max_c) + ")"
+
+func _update_date_label() -> void:
+	var d = Time.get_date_dict_from_system()
+	var weekdays = ["日", "一", "二", "三", "四", "五", "六"]
+	var wd = weekdays[d.weekday % 7]
+	date_label.text = "%d年%02d月%02d日 (周%s)" % [d.year, d.month, d.day, wd]
 
 # ── 退出按钮 ──
 

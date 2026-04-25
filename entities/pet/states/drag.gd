@@ -60,9 +60,4 @@ func input(event: InputEvent) -> void:
 			pet.transition_to("fall")
 
 func _handle_poke() -> void:
-	var d = Time.get_date_dict_from_system()
-	var weekdays = ["日", "一", "二", "三", "四", "五", "六"]
-	# Godot 4 weekday: 0 = Sun, 1 = Mon ...
-	var wd = weekdays[d.weekday % 7]
-	var msg := "今天是 %d年%02d月%02d日 (周%s)。" % [d.year, d.month, d.day, wd]
-	pet.show_local_bubble(msg)
+	pet.handle_poke()
