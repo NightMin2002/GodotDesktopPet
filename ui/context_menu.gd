@@ -42,25 +42,27 @@ func _ready() -> void:
 	EventBus.show_context_menu.connect(_on_show_context_menu)
 	track_btn.pressed.connect(_on_track_btn_pressed)
 	hud_clock_btn.pressed.connect(_on_hud_clock_btn_pressed)
-	autostart_btn.pressed.connect(_on_autostart_btn_pressed)
-	window_mode_btn.pressed.connect(_on_window_mode_btn_pressed)
-	window_mode_btn.mouse_entered.connect(func(): _show_mode_desc(true))
-	window_mode_btn.mouse_exited.connect(func(): _show_mode_desc(false))
-	behavior_mode_btn.pressed.connect(_on_behavior_mode_btn_pressed)
-	behavior_mode_btn.mouse_entered.connect(func(): _show_behavior_desc(true))
-	behavior_mode_btn.mouse_exited.connect(func(): _show_behavior_desc(false))
+	chatter_btn.pressed.connect(_on_chatter_btn_pressed)
+	chatter_btn.mouse_entered.connect(func(): _show_chatter_desc(true))
+	chatter_btn.mouse_exited.connect(func(): _show_chatter_desc(false))
+	# 模式子菜单触发器
+	window_mode_btn.mouse_entered.connect(func(): _on_submenu_trigger_hover("window_mode"))
+	window_mode_btn.mouse_exited.connect(func(): _on_submenu_trigger_exit())
+	window_mode_btn.pressed.connect(func(): _toggle_submenu("window_mode"))
+	behavior_mode_btn.mouse_entered.connect(func(): _on_submenu_trigger_hover("behavior_mode"))
+	behavior_mode_btn.mouse_exited.connect(func(): _on_submenu_trigger_exit())
+	behavior_mode_btn.pressed.connect(func(): _toggle_submenu("behavior_mode"))
+	# 功能子菜单触发器
 	effects_btn.mouse_entered.connect(func(): _on_submenu_trigger_hover("effects"))
 	effects_btn.mouse_exited.connect(func(): _on_submenu_trigger_exit())
 	effects_btn.pressed.connect(func(): _toggle_submenu("effects"))
 	entertain_btn.mouse_entered.connect(func(): _on_submenu_trigger_hover("entertain"))
 	entertain_btn.mouse_exited.connect(func(): _on_submenu_trigger_exit())
 	entertain_btn.pressed.connect(func(): _toggle_submenu("entertain"))
-	chatter_btn.pressed.connect(_on_chatter_btn_pressed)
-	chatter_btn.mouse_entered.connect(func(): _show_chatter_desc(true))
-	chatter_btn.mouse_exited.connect(func(): _show_chatter_desc(false))
 	reminder_btn.pressed.connect(_on_reminder_btn_pressed)
 	clone_btn.pressed.connect(_on_clone_btn_pressed)
 	dismiss_btn.pressed.connect(_on_dismiss_btn_pressed)
+	autostart_btn.pressed.connect(_on_autostart_btn_pressed)
 	quit_btn.pressed.connect(_on_quit_btn_pressed)
 	
 	# 监听外部行为模式变化同步按钮状态
@@ -79,13 +81,15 @@ func _load_saved_settings() -> void:
 	# 子菜单按钮状态初始化
 	_refresh_submenu_states()
 	
-	# 窗口交互模式状态
+	# 窗口交互模式状态 (按钮文字 + 子菜单选中)
 	var wm = SettingsManager.get_int("window_mode", 0)
 	_update_window_mode_label(wm)
+	_refresh_radio_submenu("window_mode", wm)
 	
-	# 行为指令状态
+	# 行为指令状态 (按钮文字 + 子菜单选中)
 	var bm = SettingsManager.get_int("behavior_mode", 0)
 	_update_behavior_mode_label(bm)
+	_refresh_radio_submenu("behavior_mode", bm)
 	
 	# 宠物碎碎念模式
 	var chatter_mode = SettingsManager.get_int("pet_chatter_mode", 1)
@@ -293,50 +297,33 @@ func _on_quit_btn_pressed() -> void:
 	else:
 		get_tree().quit()
 
-# ── 窗口模式切换 ──
+# ── 窗口模式 (子菜单单选回调) ──
 
-const WINDOW_MODE_LABELS := ["🌍 自由漫游", "🔒 窗口封闭", "🚫 窗口排斥"]
-const WINDOW_MODE_DESCS := [
-	"在窗口间自由行走，不受限制",
-	"被困在当前窗口内，无法离开",
-	"无法进入任何窗口，但可以出来",
-]
+const WINDOW_MODE_LABELS := ["🌍 自由漫游 ▸", "🔒 窗口封闭 ▸", "🚫 窗口排斥 ▸"]
 
-func _on_window_mode_btn_pressed() -> void:
-	var current = SettingsManager.get_int("window_mode", 0)
-	var next_mode = (current + 1) % 3
-	_update_window_mode_label(next_mode)
-	EventBus.window_mode_changed.emit(next_mode)
-	# 如果 tooltip 正在显示则即时更新文字
-	if _tooltip_panel.visible and _active_tooltip_btn == window_mode_btn:
-		_tooltip_label.text = WINDOW_MODE_DESCS[next_mode]
+func _on_radio_window_mode(value: int) -> void:
+	_update_window_mode_label(value)
+	EventBus.window_mode_changed.emit(value)
+	_refresh_radio_submenu("window_mode", value)
 
 func _update_window_mode_label(mode: int) -> void:
 	window_mode_btn.text = WINDOW_MODE_LABELS[mode]
 
-# ── 行为指令切换 ──
+# ── 行为指令 (子菜单单选回调) ──
 
-const BEHAVIOR_MODE_LABELS := ["🏃 自由行动", "🧘 安静待命"]
-const BEHAVIOR_MODE_DESCS := [
-	"正常滚动、跳跃，活力满满",
-	"安安静静，乖乖不动",
-]
+const BEHAVIOR_MODE_LABELS := ["🏃 自由行动 ▸", "🧘 安静待命 ▸"]
 
-func _on_behavior_mode_btn_pressed() -> void:
-	var current = SettingsManager.get_int("behavior_mode", 0)
-	var next_mode = (current + 1) % 2
-	_update_behavior_mode_label(next_mode)
-	EventBus.behavior_mode_changed.emit(next_mode)
-	# 如果 tooltip 正在显示则即时更新文字
-	if _tooltip_panel.visible and _active_tooltip_btn == behavior_mode_btn:
-		_tooltip_label.text = BEHAVIOR_MODE_DESCS[next_mode]
+func _on_radio_behavior_mode(value: int) -> void:
+	_update_behavior_mode_label(value)
+	EventBus.behavior_mode_changed.emit(value)
+	_refresh_radio_submenu("behavior_mode", value)
 
 func _update_behavior_mode_label(mode: int) -> void:
 	behavior_mode_btn.text = BEHAVIOR_MODE_LABELS[mode]
 
 func _on_behavior_mode_synced(mode: int) -> void:
-	# 同步按钮文字
 	_update_behavior_mode_label(mode)
+	_refresh_radio_submenu("behavior_mode", mode)
 
 # ── 自定义浮动 Tooltip ──
 
@@ -407,13 +394,11 @@ func _show_tooltip_for(btn: Button, text: String, show: bool) -> void:
 		_tooltip_tween.tween_property(_tooltip_panel, "scale", Vector2(0.7, 0.7), 0.1)
 		_tooltip_tween.finished.connect(func(): _tooltip_panel.hide())
 
-func _show_mode_desc(show: bool) -> void:
-	var mode = SettingsManager.get_int("window_mode", 0)
-	_show_tooltip_for(window_mode_btn, WINDOW_MODE_DESCS[mode], show)
+func _show_mode_desc(_show: bool) -> void:
+	pass  # 已迁移至子菜单
 
-func _show_behavior_desc(show: bool) -> void:
-	var mode = SettingsManager.get_int("behavior_mode", 0)
-	_show_tooltip_for(behavior_mode_btn, BEHAVIOR_MODE_DESCS[mode], show)
+func _show_behavior_desc(_show: bool) -> void:
+	pass  # 已迁移至子菜单
 
 # ── 工具函数 ──
 
@@ -457,14 +442,25 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## 创建所有子菜单面板 (一次性构建，按需显隐)
 func _build_submenus() -> void:
-	# 视觉特效子菜单
+	# 窗口模式子菜单 (单选)
+	_create_radio_submenu("window_mode", [
+		{"value": 0, "label": "🌍 自由漫游", "desc": "在窗口间自由行走"},
+		{"value": 1, "label": "🔒 窗口封闭", "desc": "被困在当前窗口内"},
+		{"value": 2, "label": "🚫 窗口排斥", "desc": "无法进入任何窗口"},
+	], func(v): _on_radio_window_mode(v))
+	# 行为指令子菜单 (单选)
+	_create_radio_submenu("behavior_mode", [
+		{"value": 0, "label": "🏃 自由行动", "desc": "活力满满，随意滚动跳跃"},
+		{"value": 1, "label": "🧘 安静待命", "desc": "安安静静，乖乖不动"},
+	], func(v): _on_radio_behavior_mode(v))
+	# 视觉特效子菜单 (开关)
 	_create_submenu("effects", [
 		{"id": "shockwave", "on": "◉ 撞击冲击波", "off": "○ 撞击冲击波",
 		 "key": "shockwave", "default": true},
 		{"id": "trail_fx", "on": "◉ 粒子尾流", "off": "○ 粒子尾流",
 		 "key": "trail_fx", "default": true},
 	])
-	# 娱乐玩法子菜单
+	# 娱乐玩法子菜单 (开关)
 	_create_submenu("entertain", [
 		{"id": "stroll", "on": "◉ 滚动散步", "off": "○ 滚动散步",
 		 "key": "stroll", "default": true},
@@ -587,12 +583,8 @@ func _show_submenu(menu_id: String) -> void:
 
 ## 更新子菜单位置 (锚定到触发按钮右侧)
 func _update_submenu_position(menu_id: String) -> void:
-	var trigger_btn: Button
-	if menu_id == "effects":
-		trigger_btn = effects_btn
-	elif menu_id == "entertain":
-		trigger_btn = entertain_btn
-	else:
+	var trigger_btn: Button = _get_submenu_trigger(menu_id)
+	if not trigger_btn:
 		return
 	
 	var panel: PanelContainer = _submenus[menu_id]
@@ -633,7 +625,7 @@ func _hide_all_submenus_instant() -> void:
 ## 检测鼠标是否在子菜单区域内 (含触发按钮)
 func _is_mouse_in_submenu_area() -> bool:
 	# 检查触发按钮
-	for btn in [effects_btn, entertain_btn]:
+	for btn in [window_mode_btn, behavior_mode_btn, effects_btn, entertain_btn]:
 		var local = btn.get_local_mouse_position()
 		if Rect2(Vector2.ZERO, btn.size).has_point(local):
 			return true
@@ -644,4 +636,81 @@ func _is_mouse_in_submenu_area() -> bool:
 			if Rect2(Vector2.ZERO, panel.size).has_point(local):
 				return true
 	return false
+
+## 获取子菜单对应的触发按钮
+func _get_submenu_trigger(menu_id: String) -> Button:
+	match menu_id:
+		"window_mode": return window_mode_btn
+		"behavior_mode": return behavior_mode_btn
+		"effects": return effects_btn
+		"entertain": return entertain_btn
+	return null
+
+## 创建单选子菜单 (窗口模式/行为指令)
+var _radio_buttons: Dictionary = {}  # menu_id -> [{btn, value, label}]
+var _radio_callbacks: Dictionary = {}  # menu_id -> Callable
+
+func _create_radio_submenu(menu_id: String, items: Array, callback: Callable) -> void:
+	var panel = PanelContainer.new()
+	panel.visible = false
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.04, 0.08, 0.16, 0.92)
+	style.border_color = Color(0.1, 0.8, 1.0, 0.8)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(12)
+	style.content_margin_left = 14
+	style.content_margin_right = 14
+	style.content_margin_top = 10
+	style.content_margin_bottom = 10
+	panel.add_theme_stylebox_override("panel", style)
+	
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+	panel.add_child(vbox)
+	
+	var group_items: Array = []
+	for item in items:
+		var btn = Button.new()
+		btn.flat = true
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.add_theme_font_size_override("font_size", 19)
+		btn.add_theme_color_override("font_color", Color(0.8, 0.9, 1, 1))
+		btn.add_theme_color_override("font_hover_color", Color(0.1, 1, 0.9, 1))
+		btn.text = "○ " + item.label
+		var v = item.value
+		var mid = menu_id
+		btn.pressed.connect(func(): _on_radio_item_pressed(mid, v))
+		# 如果有描述，悬停显示 tooltip
+		if item.has("desc"):
+			var desc_text = item.desc
+			var b = btn
+			btn.mouse_entered.connect(func(): _show_tooltip_for(b, desc_text, true))
+			btn.mouse_exited.connect(func(): _show_tooltip_for(b, desc_text, false))
+		vbox.add_child(btn)
+		group_items.append({"btn": btn, "value": item.value, "label": item.label})
+	
+	panel.mouse_entered.connect(func(): _on_submenu_panel_enter())
+	panel.mouse_exited.connect(func(): _on_submenu_panel_exit())
+	
+	add_child(panel)
+	_submenus[menu_id] = panel
+	_radio_buttons[menu_id] = group_items
+	_radio_callbacks[menu_id] = callback
+
+## 单选项被点击
+func _on_radio_item_pressed(menu_id: String, value: int) -> void:
+	if _radio_callbacks.has(menu_id):
+		_radio_callbacks[menu_id].call(value)
+
+## 刷新单选子菜单的选中状态
+func _refresh_radio_submenu(menu_id: String, current_value: int) -> void:
+	if not _radio_buttons.has(menu_id): return
+	for item in _radio_buttons[menu_id]:
+		var btn: Button = item.btn
+		if item.value == current_value:
+			btn.text = "● " + item.label
+		else:
+			btn.text = "○ " + item.label
 

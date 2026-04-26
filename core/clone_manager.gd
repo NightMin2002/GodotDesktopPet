@@ -74,16 +74,47 @@ func _on_dismiss_clones_requested() -> void:
 		EventBus.show_reminder_bubble.emit("没有分身可以遣散哦~")
 		return
 	
-	for clone in clones_to_remove:
+	var farewells := ["拜拜~", "先撤啦!", "下次见!", "我先走一步~", "886!", "要想我哦~", "本体加油!"]
+	
+	# 依次告别滚出 (和退出告别同风格)
+	for i in range(clones_to_remove.size()):
+		var clone = clones_to_remove[i]
+		if not is_instance_valid(clone):
+			continue
+		
+		# 从 pet_instances 中移除 (不再参与命中检测)
 		_main.pet_instances.erase(clone)
+		
+		# 告别语气泡
+		clone.show_local_bubble(farewells[i % farewells.size()])
+		await get_tree().create_timer(0.5).timeout
+		
+		# 冻结物理，清除碰撞
 		clone.freeze = true
 		clone.collision_layer = 0
 		clone.collision_mask = 0
+		
+		# 滚向最近的屏幕边缘
+		var slide_dir = -1.0 if clone.global_position.x < _main.boundary_size.x / 2.0 else 1.0
+		var dist_to_edge = clone.global_position.x if slide_dir < 0 else _main.boundary_size.x - clone.global_position.x
+		var total_dist = dist_to_edge + 150.0
+		var exit_pos = clone.global_position + Vector2(slide_dir * total_dist, 0)
+		var roll_angle = clone.rotation + slide_dir * total_dist / 30.0
+		var slide_time = clampf(total_dist / 400.0, 0.6, 1.5)
+		
 		var tw = _main.create_tween().set_parallel(true)
-		tw.tween_property(clone, "modulate:a", 0.0, 0.5)
-		tw.tween_property(clone, "scale", Vector2(0.1, 0.1), 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+		tw.tween_property(clone, "global_position", exit_pos, slide_time) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tw.tween_property(clone, "rotation", roll_angle, slide_time) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tw.tween_property(clone, "modulate:a", 0.0, slide_time * 0.8).set_delay(slide_time * 0.2)
+		
 		var c = clone
 		tw.finished.connect(func(): c.queue_free())
+		
+		# 多个克隆体间隔退场
+		if i < clones_to_remove.size() - 1:
+			await get_tree().create_timer(0.35).timeout
 	
 	SettingsManager.set_int("clone_count", 0)
 	EventBus.show_reminder_bubble.emit("分身们，辛苦了！下次再见~")
