@@ -69,6 +69,32 @@ func _update_hit_regions() -> void:
 		circles.append(_q(pet_pos.y))
 		circles.append(_q(pet_r))
 		
+		# ── 特效视觉保护: 拖影单个 AABB 包围盒 (矩形计算量极大低于椭圆，不会掉帧) ──
+		if p.trail_enabled and p.trail_history.size() > 0:
+			var min_x: float = pet_pos.x
+			var min_y: float = pet_pos.y
+			var max_x: float = pet_pos.x
+			var max_y: float = pet_pos.y
+			for trail_pos in p.trail_history:
+				min_x = minf(min_x, trail_pos.x - p.PET_RADIUS)
+				min_y = minf(min_y, trail_pos.y - p.PET_RADIUS)
+				max_x = maxf(max_x, trail_pos.x + p.PET_RADIUS)
+				max_y = maxf(max_y, trail_pos.y + p.PET_RADIUS)
+			rects.append(_q(min_x - 5))
+			rects.append(_q(min_y - 5))
+			rects.append(_q(max_x - min_x + 10))
+			rects.append(_q(max_y - min_y + 10))
+			
+		# ── 特效视觉保护: 冲击波单个 AABB 包围盒 ──
+		for shock in p.shockwaves:
+			if shock["alpha"] > 0.1:
+				var s_pos = pet_pos + shock["local_pos"]
+				var sr: float = shock["radius"] + 10.0
+				rects.append(_q(s_pos.x - sr))
+				rects.append(_q(s_pos.y - sr))
+				rects.append(_q(sr * 2.0))
+				rects.append(_q(sr * 2.0))
+				
 		# 全息时钟 HUD: 矩形
 		if p.hud_clock_enabled and is_instance_valid(p.hud_clock_label) and p.hud_clock_label.visible:
 			var clock_pos = p.hud_clock_label.global_position
