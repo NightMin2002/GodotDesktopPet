@@ -80,7 +80,7 @@ layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.3, 1, 0.5, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "🌍 自由漫游 ▸"
+text = "🌍 窗口 · 自由漫游 ▸"
 flat = true
 alignment = 0
 
@@ -89,7 +89,7 @@ layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.3, 0.8, 1, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "🏃 自由行动 ▸"
+text = "🏃 指令 · 自由行动 ▸"
 flat = true
 alignment = 0
 

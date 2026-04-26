@@ -299,7 +299,7 @@ func _on_quit_btn_pressed() -> void:
 
 # ── 窗口模式 (子菜单单选回调) ──
 
-const WINDOW_MODE_LABELS := ["🌍 自由漫游 ▸", "🔒 窗口封闭 ▸", "🚫 窗口排斥 ▸"]
+const WINDOW_MODE_LABELS := ["🌍 窗口 · 自由漫游 ▸", "🔒 窗口 · 窗口封闭 ▸", "🚫 窗口 · 窗口排斥 ▸"]
 
 func _on_radio_window_mode(value: int) -> void:
 	_update_window_mode_label(value)
@@ -311,7 +311,7 @@ func _update_window_mode_label(mode: int) -> void:
 
 # ── 行为指令 (子菜单单选回调) ──
 
-const BEHAVIOR_MODE_LABELS := ["🏃 自由行动 ▸", "🧘 安静待命 ▸"]
+const BEHAVIOR_MODE_LABELS := ["🏃 指令 · 自由行动 ▸", "🧘 指令 · 安静待命 ▸"]
 
 func _on_radio_behavior_mode(value: int) -> void:
 	_update_behavior_mode_label(value)
