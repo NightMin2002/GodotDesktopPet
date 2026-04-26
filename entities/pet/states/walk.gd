@@ -1,14 +1,14 @@
-# walk.gd — 蹦跳 / 滚动漫步 移动状态
-# 两种模式：单次蹦跳 (92%) 和滚动漫步 (8%)
+# walk.gd — 蹦跳 / 悠闲散步 移动状态
+# 两种模式：单次蹦跳 (92%) 和悠闲散步 (8%)
 # 蹦跳：一次性冲量 → 落地回 Idle
-# 漫步：持续扭矩滚动到屏幕对面 → 到达边缘回 Idle
+# 散步：缓速扭矩滚动到屏幕对面 → 到达边缘回 Idle
 class_name StateWalk
 extends PetState
 
 var _has_landed: bool = false
 var _land_pause: float = 0.0
-var _is_stroll: bool = false       # 是否为滚动漫步模式
-var _stroll_direction: float = 0.0 # 漫步滚动方向
+var _is_stroll: bool = false       # 是否为悠闲散步模式
+var _stroll_direction: float = 0.0 # 散步滚动方向
 var _stroll_last_x: float = 0.0   # 卡死检测：上次位置
 var _stroll_stuck_timer: float = 0.0  # 卡死计时
 
@@ -17,8 +17,8 @@ func enter() -> void:
 	_has_landed = false
 	_land_pause = 0.0
 	
-	# 8% 概率进入滚动漫步
-	if not _is_stroll and randf() < 0.08:
+	# 8% 概率进入悠闲散步 (受设置开关控制)
+	if not _is_stroll and pet.stroll_enabled and randf() < 0.08:
 		_is_stroll = true
 		pet.is_strolling = true
 		_stroll_direction = [-1.0, 1.0].pick_random()
@@ -29,8 +29,8 @@ func enter() -> void:
 		var w = pet.boundary_size.x
 		if x < 120.0: _stroll_direction = 1.0
 		elif x > w - 120.0: _stroll_direction = -1.0
-		pet.linear_damp = 0.8
-		pet.angular_damp = 0.3
+		pet.linear_damp = 1.5     # 较高阻尼：滚动更稳重，不会越滚越快
+		pet.angular_damp = 0.5
 	else:
 		# 普通蹦跳
 		_is_stroll = false
@@ -71,7 +71,7 @@ func physics_process(delta: float) -> void:
 	if not pet: return
 	
 	if _is_stroll:
-		# 卡死检测：0.8 秒内没移动超过 5px → 放弃漫步
+		# 卡死检测：0.8 秒内没移动超过 5px → 放弃散步
 		if absf(pet.global_position.x - _stroll_last_x) < 5.0:
 			_stroll_stuck_timer += delta
 			if _stroll_stuck_timer > 0.8:
@@ -81,14 +81,14 @@ func physics_process(delta: float) -> void:
 			_stroll_stuck_timer = 0.0
 			_stroll_last_x = pet.global_position.x
 		
-		# 通知前方同伴跳开让路 (跳绳效果)
+		# 通知前方同伴跳开让路
 		_nudge_pets_ahead()
 		
-		# 持续扭矩驱动滚动
-		pet.apply_torque(_stroll_direction * 50000.0)
-		pet.apply_central_force(Vector2(_stroll_direction * 30.0, 0))
+		# 缓速扭矩驱动悠闲滚动
+		pet.apply_torque(_stroll_direction * 25000.0)
+		pet.apply_central_force(Vector2(_stroll_direction * 15.0, 0))
 		
-		# 到达对面边缘 → 漫步结束
+		# 到达对面边缘 → 散步结束
 		var x = pet.global_position.x
 		var w = pet.boundary_size.x
 		if (_stroll_direction > 0.0 and x > w - 80.0) or (_stroll_direction < 0.0 and x < 80.0):
@@ -97,7 +97,7 @@ func physics_process(delta: float) -> void:
 		if not _has_landed and pet.is_settled():
 			_has_landed = true
 
-## 散步者主动通知前方的宠物跳开
+## 散步者通知前方的宠物跳开让路
 var _nudged_pets: Dictionary = {}
 func _nudge_pets_ahead() -> void:
 	var parent = pet.get_parent()
@@ -110,30 +110,30 @@ func _nudge_pets_ahead() -> void:
 		# 对方也在散步 → 不推，让卡死检测处理
 		if "is_strolling" in child and child.is_strolling: continue
 		
-		# 只看前方 250px
+		# 只看前方 120px
 		var dx = child.global_position.x - pet.global_position.x
 		if _stroll_direction > 0 and dx < 0: continue
 		if _stroll_direction < 0 and dx > 0: continue
 		
 		var dist = absf(dx)
-		if dist > 250.0: continue
+		if dist > 140.0: continue
 		
 		# 已经通知过且还在空中 → 不重复
 		var cid = child.get_instance_id()
 		if _nudged_pets.has(cid) and absf(child.linear_velocity.y) > 30.0:
 			continue
 		
-		# 3% 概率：撞飞彩蛋！被水平甩出去
-		if randf() < 0.03:
+		# 1% 概率：轻推彩蛋 (温和版)
+		if randf() < 0.01:
 			var launch_dir = _stroll_direction
-			child.apply_central_impulse(Vector2(launch_dir * 1800.0, -300.0))
-			child.apply_torque_impulse(launch_dir * 50000.0)
+			child.apply_central_impulse(Vector2(launch_dir * 600.0, -200.0))
+			child.apply_torque_impulse(launch_dir * 15000.0)
 			if child.has_method("trigger_shockwave"):
 				child.trigger_shockwave()
 		else:
-			# 正常跳跃让路
-			child.apply_central_impulse(Vector2(0, -500.0))
-			child.apply_torque_impulse(randf_range(-1500.0, 1500.0))
+			# 轻轻跳开让路 (原地小跳，不飞走)
+			child.apply_central_impulse(Vector2(0, -280.0))
+			child.apply_torque_impulse(randf_range(-800.0, 800.0))
 		_nudged_pets[cid] = true
 
 func _end_stroll() -> void:

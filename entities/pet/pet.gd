@@ -19,6 +19,7 @@ var current_state_name: String = ""
 var speed: float = 200.0            # 移动速度基数
 var shockwave_enabled: bool = true   # 撞击冲击波特效开关
 var trail_enabled: bool = true       # 粒子尾流特效开关
+var stroll_enabled: bool = true      # 滚动散步开关
 var hue_time: float = 0.0           # 供虹彩渐变使用的时间戳
 
 # ── 克隆系统 ──
@@ -110,6 +111,7 @@ func _ready() -> void:
 	eye_behavior.tracking_enabled = SettingsManager.get_bool("eye_track", true)
 	shockwave_enabled = SettingsManager.get_bool("shockwave", true)
 	trail_enabled = SettingsManager.get_bool("trail_fx", true)
+	stroll_enabled = SettingsManager.get_bool("stroll", true)
 	
 	# 监听运行时设置变更
 	EventBus.setting_toggled.connect(_on_setting_toggled)
@@ -122,6 +124,8 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		shockwave_enabled = is_on
 	elif setting_id == "trail_fx":
 		trail_enabled = is_on
+	elif setting_id == "stroll":
+		stroll_enabled = is_on
 	elif setting_id == "hud_clock":
 		if is_clone:
 			return  # 克隆体永远不显示时钟

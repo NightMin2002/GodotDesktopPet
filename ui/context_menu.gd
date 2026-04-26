@@ -5,17 +5,25 @@ extends CanvasLayer
 @onready var hud: PanelContainer = $HUDPanel
 @onready var date_label: Label = $HUDPanel/Margin/VBox/DateLabel
 @onready var track_btn: Button = $HUDPanel/Margin/VBox/EyeTrackBtn
-@onready var shockwave_btn: Button = $HUDPanel/Margin/VBox/ShockwaveBtn
-@onready var trail_btn: Button = $HUDPanel/Margin/VBox/TrailBtn
 @onready var hud_clock_btn: Button = $HUDPanel/Margin/VBox/HUDClockBtn
 @onready var autostart_btn: Button = $HUDPanel/Margin/VBox/AutoStartBtn
 @onready var window_mode_btn: Button = $HUDPanel/Margin/VBox/WindowModeBtn
 @onready var behavior_mode_btn: Button = $HUDPanel/Margin/VBox/BehaviorModeBtn
+@onready var effects_btn: Button = $HUDPanel/Margin/VBox/EffectsBtn
+@onready var entertain_btn: Button = $HUDPanel/Margin/VBox/EntertainBtn
 @onready var chatter_btn: Button = $HUDPanel/Margin/VBox/ChatterBtn
 @onready var reminder_btn: Button = $HUDPanel/Margin/VBox/ReminderBtn
 @onready var clone_btn: Button = $HUDPanel/Margin/VBox/CloneBtn
 @onready var dismiss_btn: Button = $HUDPanel/Margin/VBox/DismissBtn
 @onready var quit_btn: Button = $HUDPanel/Margin/VBox/QuitBtn
+
+# ── 级联子菜单系统 ──
+var _submenus: Dictionary = {}         # id -> PanelContainer
+var _submenu_items: Dictionary = {}    # "id/key" -> Button
+var _active_submenu: String = ""
+var _submenu_hover_timer: float = -1.0
+var _submenu_pending_id: String = ""
+var _submenu_close_timer: float = -1.0
 
 var _tooltip_panel: PanelContainer
 var _tooltip_label: Label
@@ -26,14 +34,13 @@ var target: Node2D = null
 func _ready() -> void:
 	hud.hide()
 	_build_mode_tooltip()
+	_build_submenus()
 	
 	# 从持久化存储恢复上次的设置状态
 	_load_saved_settings()
 	
 	EventBus.show_context_menu.connect(_on_show_context_menu)
 	track_btn.pressed.connect(_on_track_btn_pressed)
-	shockwave_btn.pressed.connect(_on_shockwave_btn_pressed)
-	trail_btn.pressed.connect(_on_trail_btn_pressed)
 	hud_clock_btn.pressed.connect(_on_hud_clock_btn_pressed)
 	autostart_btn.pressed.connect(_on_autostart_btn_pressed)
 	window_mode_btn.pressed.connect(_on_window_mode_btn_pressed)
@@ -42,6 +49,12 @@ func _ready() -> void:
 	behavior_mode_btn.pressed.connect(_on_behavior_mode_btn_pressed)
 	behavior_mode_btn.mouse_entered.connect(func(): _show_behavior_desc(true))
 	behavior_mode_btn.mouse_exited.connect(func(): _show_behavior_desc(false))
+	effects_btn.mouse_entered.connect(func(): _on_submenu_trigger_hover("effects"))
+	effects_btn.mouse_exited.connect(func(): _on_submenu_trigger_exit())
+	effects_btn.pressed.connect(func(): _toggle_submenu("effects"))
+	entertain_btn.mouse_entered.connect(func(): _on_submenu_trigger_hover("entertain"))
+	entertain_btn.mouse_exited.connect(func(): _on_submenu_trigger_exit())
+	entertain_btn.pressed.connect(func(): _toggle_submenu("entertain"))
 	chatter_btn.pressed.connect(_on_chatter_btn_pressed)
 	chatter_btn.mouse_entered.connect(func(): _show_chatter_desc(true))
 	chatter_btn.mouse_exited.connect(func(): _show_chatter_desc(false))
@@ -57,15 +70,14 @@ func _ready() -> void:
 
 func _load_saved_settings() -> void:
 	var eye = SettingsManager.get_bool("eye_track", true)
-	var shock = SettingsManager.get_bool("shockwave", true)
-	var trail = SettingsManager.get_bool("trail_fx", true)
 	var clock = SettingsManager.get_bool("hud_clock", false)
 	
 	# 应用到本地按钮显示 (pet 自己从 SettingsManager 读取，不依赖信号)
 	_set_toggle(track_btn, eye, "◉ 眼球追踪鼠标", "○ 眼球追踪鼠标")
-	_set_toggle(shockwave_btn, shock, "◉ 撞击冲击波特效", "○ 撞击冲击波特效")
-	_set_toggle(trail_btn, trail, "◉ 粒子尾流特效", "○ 粒子尾流特效")
 	_set_toggle(hud_clock_btn, clock, "◉ 赛博全息时钟", "○ 赛博全息时钟")
+	
+	# 子菜单按钮状态初始化
+	_refresh_submenu_states()
 	
 	# 窗口交互模式状态
 	var wm = SettingsManager.get_int("window_mode", 0)
@@ -107,9 +119,25 @@ func _process(delta: float) -> void:
 		var target_pos = target.get_global_transform_with_canvas().get_origin() + Vector2(45, -65)
 		target_pos = _clamp_to_viewport(target_pos)
 		hud.position = hud.position.lerp(target_pos, delta * 15.0)
+		# 子菜单跟随主菜单
+		if _active_submenu != "":
+			_update_submenu_position(_active_submenu)
 	# tooltip 跟随按钮位置
 	if _tooltip_panel.visible:
 		_update_tooltip_position()
+	# 子菜单 hover 延时弹出
+	if _submenu_hover_timer >= 0:
+		_submenu_hover_timer -= delta
+		if _submenu_hover_timer < 0:
+			_show_submenu(_submenu_pending_id)
+	# 子菜单延时关闭 (关闭前二次验证鼠标位置)
+	if _submenu_close_timer >= 0:
+		_submenu_close_timer -= delta
+		if _submenu_close_timer < 0:
+			if _is_mouse_in_submenu_area():
+				_submenu_close_timer = -1.0  # 鼠标回来了，取消关闭
+			else:
+				_hide_all_submenus()
 
 func _clamp_to_viewport(pos: Vector2) -> Vector2:
 	var vp = get_viewport().get_visible_rect().size
@@ -143,8 +171,9 @@ func _on_show_context_menu(target_node: Node2D) -> void:
 	tween.tween_property(hud, "modulate:a", 1.0, 0.2)
 
 func _close_hud() -> void:
-	# 关闭时确保 tooltip 也消失
+	# 关闭时确保 tooltip 和子菜单也消失
 	_tooltip_panel.hide()
+	_hide_all_submenus_instant()
 	# 收缩回宠物位置：更新锚点到当前宠物坐标
 	if is_instance_valid(target):
 		hud.pivot_offset = target.get_global_transform_with_canvas().get_origin() - hud.position
@@ -164,16 +193,6 @@ func _on_track_btn_pressed() -> void:
 	var on = _flip_toggle(track_btn, "◉ 眼球追踪鼠标", "○ 眼球追踪鼠标")
 	SettingsManager.set_bool("eye_track", on)
 	EventBus.setting_toggled.emit("eye_track", on)
-
-func _on_shockwave_btn_pressed() -> void:
-	var on = _flip_toggle(shockwave_btn, "◉ 撞击冲击波特效", "○ 撞击冲击波特效")
-	SettingsManager.set_bool("shockwave", on)
-	EventBus.setting_toggled.emit("shockwave", on)
-
-func _on_trail_btn_pressed() -> void:
-	var on = _flip_toggle(trail_btn, "◉ 粒子尾流特效", "○ 粒子尾流特效")
-	SettingsManager.set_bool("trail_fx", on)
-	EventBus.setting_toggled.emit("trail_fx", on)
 
 func _on_hud_clock_btn_pressed() -> void:
 	var on = _flip_toggle(hud_clock_btn, "◉ 赛博全息时钟", "○ 赛博全息时钟")
@@ -421,6 +440,208 @@ func _unhandled_input(event: InputEvent) -> void:
 	if hud.visible and event is InputEventMouseButton and event.pressed:
 		var local_mouse = hud.get_local_mouse_position()
 		var rect = Rect2(Vector2.ZERO, hud.size)
-		if not rect.has_point(local_mouse):
+		var in_hud = rect.has_point(local_mouse)
+		# 检测是否点击在子菜单内
+		var in_submenu = false
+		for panel in _submenus.values():
+			if panel.visible:
+				var sm_local = panel.get_local_mouse_position()
+				if Rect2(Vector2.ZERO, panel.size).has_point(sm_local):
+					in_submenu = true
+					break
+		if not in_hud and not in_submenu:
 			_close_hud()
-			get_viewport().set_input_as_handled()  # 消费事件，防止穿透到宠物
+			get_viewport().set_input_as_handled()
+
+# ── 级联子菜单系统 ──
+
+## 创建所有子菜单面板 (一次性构建，按需显隐)
+func _build_submenus() -> void:
+	# 视觉特效子菜单
+	_create_submenu("effects", [
+		{"id": "shockwave", "on": "◉ 撞击冲击波", "off": "○ 撞击冲击波",
+		 "key": "shockwave", "default": true},
+		{"id": "trail_fx", "on": "◉ 粒子尾流", "off": "○ 粒子尾流",
+		 "key": "trail_fx", "default": true},
+	])
+	# 娱乐玩法子菜单
+	_create_submenu("entertain", [
+		{"id": "stroll", "on": "◉ 滚动散步", "off": "○ 滚动散步",
+		 "key": "stroll", "default": true},
+	])
+
+## 创建单个子菜单面板
+func _create_submenu(menu_id: String, items: Array) -> void:
+	var panel = PanelContainer.new()
+	panel.visible = false
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.04, 0.08, 0.16, 0.92)
+	style.border_color = Color(0.1, 0.8, 1.0, 0.8)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(12)
+	style.content_margin_left = 14
+	style.content_margin_right = 14
+	style.content_margin_top = 10
+	style.content_margin_bottom = 10
+	panel.add_theme_stylebox_override("panel", style)
+	
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 6)
+	panel.add_child(vbox)
+	
+	for item in items:
+		var btn = Button.new()
+		btn.flat = true
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.add_theme_font_size_override("font_size", 19)
+		btn.add_theme_color_override("font_color", Color(0.8, 0.9, 1, 1))
+		btn.add_theme_color_override("font_hover_color", Color(0.1, 1, 0.9, 1))
+		var item_data = item  # 捕获闭包变量
+		btn.pressed.connect(func(): _on_submenu_item_pressed(item_data))
+		vbox.add_child(btn)
+		_submenu_items[item.id] = btn
+	
+	# hover 进出检测
+	panel.mouse_entered.connect(func(): _on_submenu_panel_enter())
+	panel.mouse_exited.connect(func(): _on_submenu_panel_exit())
+	
+	add_child(panel)
+	_submenus[menu_id] = panel
+
+## 从 SettingsManager 刷新所有子菜单按钮的显示状态
+func _refresh_submenu_states() -> void:
+	# 视觉特效
+	var shock = SettingsManager.get_bool("shockwave", true)
+	_set_toggle(_submenu_items["shockwave"], shock, "◉ 撞击冲击波", "○ 撞击冲击波")
+	var trail = SettingsManager.get_bool("trail_fx", true)
+	_set_toggle(_submenu_items["trail_fx"], trail, "◉ 粒子尾流", "○ 粒子尾流")
+	# 娱乐玩法
+	var stroll = SettingsManager.get_bool("stroll", true)
+	_set_toggle(_submenu_items["stroll"], stroll, "◉ 滚动散步", "○ 滚动散步")
+
+## 子菜单项被按下
+func _on_submenu_item_pressed(item: Dictionary) -> void:
+	var btn: Button = _submenu_items[item.id]
+	var on = _flip_toggle(btn, item.on, item.off)
+	SettingsManager.set_bool(item.key, on)
+	EventBus.setting_toggled.emit(item.key, on)
+
+## hover 触发按钮 → 延时弹出子菜单
+func _on_submenu_trigger_hover(menu_id: String) -> void:
+	_submenu_close_timer = -1.0  # 取消关闭倒计时
+	if _active_submenu == menu_id:
+		return  # 已经打开了
+	_submenu_pending_id = menu_id
+	_submenu_hover_timer = 0.15  # 150ms 延时
+
+## hover 离开触发按钮
+func _on_submenu_trigger_exit() -> void:
+	_submenu_hover_timer = -1.0  # 取消弹出倒计时
+	_submenu_close_timer = 0.3   # 300ms 后关闭 (给鼠标移入子菜单的时间)
+
+## 点击直接切换子菜单
+func _toggle_submenu(menu_id: String) -> void:
+	_submenu_hover_timer = -1.0
+	_submenu_close_timer = -1.0
+	if _active_submenu == menu_id:
+		_hide_all_submenus()
+	else:
+		_show_submenu(menu_id)
+
+## 鼠标进入子菜单面板
+func _on_submenu_panel_enter() -> void:
+	_submenu_close_timer = -1.0  # 取消关闭
+
+## 鼠标离开子菜单面板
+func _on_submenu_panel_exit() -> void:
+	_submenu_close_timer = 0.3   # 延时关闭
+
+## 显示指定子菜单 (带动画)
+func _show_submenu(menu_id: String) -> void:
+	_submenu_close_timer = -1.0  # 取消待关闭倒计时
+	# 先关闭其他子菜单
+	for id in _submenus:
+		if id != menu_id and _submenus[id].visible:
+			_submenus[id].hide()
+	
+	var panel: PanelContainer = _submenus[menu_id]
+	_active_submenu = menu_id
+	
+	# 定位到触发按钮右侧
+	_update_submenu_position(menu_id)
+	
+	panel.modulate.a = 0.0
+	panel.scale = Vector2(0.5, 0.8)
+	panel.show()
+	
+	# 等一帧算 size
+	await get_tree().process_frame
+	_update_submenu_position(menu_id)
+	panel.pivot_offset = Vector2(0, panel.size.y / 2.0)
+	
+	var tween = create_tween().set_parallel(true)
+	tween.tween_property(panel, "scale", Vector2.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_property(panel, "modulate:a", 1.0, 0.15)
+
+## 更新子菜单位置 (锚定到触发按钮右侧)
+func _update_submenu_position(menu_id: String) -> void:
+	var trigger_btn: Button
+	if menu_id == "effects":
+		trigger_btn = effects_btn
+	elif menu_id == "entertain":
+		trigger_btn = entertain_btn
+	else:
+		return
+	
+	var panel: PanelContainer = _submenus[menu_id]
+	var btn_pos = trigger_btn.global_position
+	var btn_size = trigger_btn.size
+	var vp_size = get_viewport().get_visible_rect().size
+	var panel_w = panel.size.x if panel.size.x > 0 else 160.0
+	
+	# 优先右侧弹出，空间不足时左侧
+	var x: float
+	var right_x = btn_pos.x + btn_size.x + 6
+	if right_x + panel_w > vp_size.x - 10:
+		x = btn_pos.x - panel_w - 6
+	else:
+		x = right_x
+	var y = btn_pos.y + btn_size.y / 2.0 - panel.size.y / 2.0
+	y = clampf(y, 8.0, vp_size.y - panel.size.y - 8.0)
+	panel.position = Vector2(x, y)
+
+## 带动画关闭所有子菜单
+func _hide_all_submenus() -> void:
+	for panel in _submenus.values():
+		if panel.visible:
+			var tween = create_tween().set_parallel(true)
+			tween.tween_property(panel, "modulate:a", 0.0, 0.1)
+			tween.tween_property(panel, "scale", Vector2(0.5, 0.8), 0.1)
+			tween.finished.connect(panel.hide)
+	_active_submenu = ""
+
+## 无动画立即关闭所有子菜单
+func _hide_all_submenus_instant() -> void:
+	for panel in _submenus.values():
+		panel.hide()
+	_active_submenu = ""
+	_submenu_hover_timer = -1.0
+	_submenu_close_timer = -1.0
+
+## 检测鼠标是否在子菜单区域内 (含触发按钮)
+func _is_mouse_in_submenu_area() -> bool:
+	# 检查触发按钮
+	for btn in [effects_btn, entertain_btn]:
+		var local = btn.get_local_mouse_position()
+		if Rect2(Vector2.ZERO, btn.size).has_point(local):
+			return true
+	# 检查子菜单面板
+	for panel in _submenus.values():
+		if panel.visible:
+			var local = panel.get_local_mouse_position()
+			if Rect2(Vector2.ZERO, panel.size).has_point(local):
+				return true
+	return false
+

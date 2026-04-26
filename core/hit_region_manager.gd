@@ -49,7 +49,10 @@ func setup(main: Node2D) -> void:
 		pass
 
 func _process(delta: float) -> void:
+	# 拖拽/菜单期间：强制保持可点击 (每帧自动修正，防止时序问题)
 	if is_dragging or is_menu_open:
+		if _transparent_mode and _is_click_through:
+			_set_click_through(false)
 		return
 	
 	_collect_timer += delta
@@ -255,6 +258,8 @@ func _on_context_menu_toggled(is_open: bool) -> void:
 		if is_open:
 			_set_click_through(false)
 		else:
+			# 菜单关闭：立即刷新命中区域和穿透状态
+			# 不延迟，否则 _process 中 is_menu_open 已 false 但 hit data 过时会导致全穿透
 			_collect_hit_regions()
 			_update_click_through()
 	else:

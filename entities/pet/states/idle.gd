@@ -68,11 +68,11 @@ func physics_process(delta: float) -> void:
 		if _dodge_cooldown <= 0.0:
 			var stroller = _find_approaching_stroller()
 			if stroller != null:
-				pet.apply_central_impulse(Vector2(0, -450.0))
-				pet.apply_torque_impulse(randf_range(-2000.0, 2000.0))
+				pet.apply_central_impulse(Vector2(0, -350.0))
+				pet.apply_torque_impulse(randf_range(-800.0, 800.0))
 				_dodge_cooldown = 0.5
 
-## 检测是否有漫步中的宠物正在靠近 (150px 范围)
+## 检测是否有漫步中的宠物正在靠近 (120px 范围)
 func _find_approaching_stroller() -> RigidBody2D:
 	var parent = pet.get_parent()
 	if not parent: return null
@@ -80,16 +80,15 @@ func _find_approaching_stroller() -> RigidBody2D:
 	for child in parent.get_children():
 		if child == pet or not (child is RigidBody2D): continue
 		if not is_instance_valid(child): continue
-		# 安全检查：确认是宠物节点 (有 is_strolling 属性)
 		if not ("is_strolling" in child): continue
 		if not child.is_strolling: continue
 		
 		var dist = absf(child.global_position.x - pet.global_position.x)
-		if dist > 150.0: continue
+		if dist > 140.0: continue
 		
 		# 确认对方正朝自己滚来
 		var vx = child.linear_velocity.x
-		var dx = pet.global_position.x - child.global_position.x  # 正=对方在左侧
+		var dx = pet.global_position.x - child.global_position.x
 		if (vx > 10.0 and dx > 0.0) or (vx < -10.0 and dx < 0.0):
 			return child
 	return null
