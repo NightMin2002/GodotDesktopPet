@@ -270,6 +270,10 @@ public partial class WindowsManager : Node
     [DllImport("user32.dll")]
     private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool bRedraw);
 
+    [DllImport("user32.dll")]
+    private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
+    private const uint LWA_ALPHA = 0x02;
+
     private const int RGN_OR = 2;
 
     /// <summary>
@@ -363,4 +367,56 @@ public partial class WindowsManager : Node
         IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
         SetWindowRgn(hwnd, IntPtr.Zero, true);
     }
+    // ══════════════════════════════════════════════════════════════
+    //  WS_EX_TRANSPARENT 完美穿透方案 (手动注入 WS_EX_LAYERED)
+    //  ── 不使用 SetWindowRgn，零视觉裁剪 ──
+    //  ── GDScript 端检测鼠标位置，仅在进出宠物区域时切换 ──
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 向 Godot 窗口注入 WS_EX_LAYERED 标志位。
+    /// Godot 4.x Compatibility/OpenGL 渲染器默认不设置此标志，
+    /// 但手动注入后配合 SetLayeredWindowAttributes(255) 不影响渲染，
+    /// 且使 WS_EX_TRANSPARENT 切换生效。
+    /// 返回 true = 注入成功，可以使用 SetClickThrough。
+    /// </summary>
+    public bool InjectLayeredStyle()
+    {
+        IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
+        int style = GetWindowLong(hwnd, GWL_EXSTYLE);
+
+        if ((style & WS_EX_LAYERED) == 0)
+        {
+            style |= WS_EX_LAYERED;
+            SetWindowLong(hwnd, GWL_EXSTYLE, style);
+            SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
+        }
+
+        // 同时清除残留的 SetWindowRgn 裁剪
+        SetWindowRgn(hwnd, IntPtr.Zero, true);
+
+        bool success = (GetWindowLong(hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) != 0;
+        if (success)
+            GD.Print("[DWM] WS_EX_LAYERED 注入成功 -> 启用 WS_EX_TRANSPARENT 穿透模式");
+        else
+            GD.Print("[DWM] WS_EX_LAYERED 注入失败 -> 回退 SetWindowRgn 模式");
+        return success;
+    }
+
+    /// <summary>
+    /// 切换窗口鼠标穿透状态 (需要 WS_EX_LAYERED 已注入)。
+    /// transparent=true:  添加 WS_EX_TRANSPARENT -> 鼠标穿透到桌面
+    /// transparent=false: 移除 WS_EX_TRANSPARENT -> 窗口接收鼠标事件
+    /// </summary>
+    public void SetClickThrough(bool transparent)
+    {
+        IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
+        int style = GetWindowLong(hwnd, GWL_EXSTYLE);
+        if (transparent)
+            style |= WS_EX_TRANSPARENT;
+        else
+            style &= ~WS_EX_TRANSPARENT;
+        SetWindowLong(hwnd, GWL_EXSTYLE, style);
+    }
 }
+
