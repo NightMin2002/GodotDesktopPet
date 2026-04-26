@@ -30,4 +30,6 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		trail_enabled = is_on
 	elif setting_id == "stroll":
 		stroll_enabled = is_on
+	elif setting_id == "anti_gravity":
+		_set_anti_gravity(is_on)
 	# hud_clock: 克隆体永远不显示，无需处理

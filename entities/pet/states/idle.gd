@@ -68,7 +68,7 @@ func physics_process(delta: float) -> void:
 		if _dodge_cooldown <= 0.0:
 			var stroller = _find_approaching_stroller()
 			if stroller != null:
-				pet.apply_central_impulse(Vector2(0, -350.0))
+				pet.apply_central_impulse(Vector2(0, -350.0 * pet.gravity_sign))
 				pet.apply_torque_impulse(randf_range(-800.0, 800.0))
 				_dodge_cooldown = 0.5
 

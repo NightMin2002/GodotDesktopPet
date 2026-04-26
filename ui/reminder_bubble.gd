@@ -52,7 +52,12 @@ func _process(_delta: float) -> void:
 	if not is_instance_valid(active_pet):
 		return
 	var pet_pos = active_pet.get_global_transform_with_canvas().get_origin()
-	var target_pos = pet_pos + Vector2(-bubble_panel.size.x / 2.0, -90)
+	var bubble_offset_y: float
+	if is_instance_valid(active_pet) and active_pet.anti_gravity:
+		bubble_offset_y = 50.0  # 宠物下方
+	else:
+		bubble_offset_y = -90.0  # 宠物上方
+	var target_pos = pet_pos + Vector2(-bubble_panel.size.x / 2.0, bubble_offset_y)
 	var vp = get_viewport().get_visible_rect().size
 	target_pos.x = clampf(target_pos.x, 8, vp.x - bubble_panel.size.x - 8)
 	target_pos.y = clampf(target_pos.y, 8, vp.y - bubble_panel.size.y - 8)
@@ -102,7 +107,8 @@ func _show_bubble(message: String) -> void:
 	var active_pet = _get_active_pet()
 	if is_instance_valid(active_pet):
 		var pet_pos = active_pet.get_global_transform_with_canvas().get_origin()
-		bubble_panel.position = pet_pos + Vector2(-80, -90)
+		var init_y = 50.0 if active_pet.anti_gravity else -90.0
+		bubble_panel.position = pet_pos + Vector2(-80, init_y)
 	
 	bubble_panel.modulate.a = 0.0
 	bubble_panel.scale = Vector2(0.5, 0.5)
@@ -121,7 +127,9 @@ func _show_bubble(message: String) -> void:
 		return
 	var fade = create_tween().set_parallel(true)
 	fade.tween_property(bubble_panel, "modulate:a", 0.0, 0.6)
-	fade.tween_property(bubble_panel, "position:y", bubble_panel.position.y - 40, 0.6)
+	var active_fade_pet = _get_active_pet()
+	var fade_dir = 40.0 if (is_instance_valid(active_fade_pet) and active_fade_pet.anti_gravity) else -40.0
+	fade.tween_property(bubble_panel, "position:y", bubble_panel.position.y + fade_dir, 0.6)
 	await fade.finished
 	if gen != _show_generation:
 		return  # 被 force_show_bubble 中断，安全退出旧协程

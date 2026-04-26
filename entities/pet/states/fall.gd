@@ -11,7 +11,7 @@ func enter() -> void:
 	settle_timer = 0.0
 	if pet:
 		pet.linear_damp = 0.5
-		pet.gravity_scale = 1.0
+		pet.gravity_scale = pet.gravity_sign  # 尊重反重力模式
 
 func exit() -> void:
 	pass

@@ -3,7 +3,8 @@
 # 使用 Geometry2D.merge_polygons (Clipper) 计算重叠窗口的精确外轮廓
 extends Node
 
-var _main: Node2D  # 主系统引用 (访问 win_manager/screen_rect/boundary_size/pet_instances)
+var _main: Node2D  # 主系统引用
+var _anti_gravity: bool = false  # 反重力状态
 
 # ── 对象池 ──
 var ghost_walls: Array[StaticBody2D] = []
@@ -25,6 +26,12 @@ func setup(main: Node2D) -> void:
 		print("[DesktopPet] 幽灵侦测雷达已启动")
 	
 	EventBus.window_mode_changed.connect(_on_window_mode_changed)
+	EventBus.setting_toggled.connect(_on_setting_toggled)
+	_anti_gravity = SettingsManager.get_bool("anti_gravity", false)
+
+func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
+	if setting_id == "anti_gravity":
+		_anti_gravity = is_on
 
 # ── 窗口模式切换回调 ──
 
@@ -105,8 +112,10 @@ func _apply_free_mode(local_rects: Array[Rect2], count: int) -> void:
 		var wall_cx = lr.position.x + lr.size.x / 2.0
 		var top_rel_y = -lr.size.y / 2.0 + floor_thickness / 2.0
 		var bot_rel_y = lr.size.y / 2.0 - floor_thickness / 2.0
-		_apply_platform_segments(wall, 0, top_segs, wall_cx, top_rel_y, floor_thickness, true)
-		_apply_platform_segments(wall, MAX_PLATFORM_SEGMENTS, bottom_segs, wall_cx, bot_rel_y, floor_thickness, true)
+		# 反重力时翻转踏板方向 (旋转180°让宠物能从下方“贴住”)
+		var plat_rot = PI if _anti_gravity else 0.0
+		_apply_platform_segments(wall, 0, top_segs, wall_cx, top_rel_y, floor_thickness, true, plat_rot)
+		_apply_platform_segments(wall, MAX_PLATFORM_SEGMENTS, bottom_segs, wall_cx, bot_rel_y, floor_thickness, true, plat_rot)
 		
 		_disable_side_walls(wall)
 

@@ -57,7 +57,7 @@ func _do_hop() -> void:
 	
 	var height = randf_range(300.0, 500.0)
 	var horizontal = randf_range(130.0, 260.0) * hop_dir
-	pet.apply_central_impulse(Vector2(horizontal, -height))
+	pet.apply_central_impulse(Vector2(horizontal, -height * pet.gravity_sign))
 	pet.apply_torque_impulse(hop_dir * randf_range(1000.0, 3000.0))
 
 func process(delta: float) -> void:
@@ -85,7 +85,7 @@ func physics_process(delta: float) -> void:
 		_nudge_pets_ahead()
 		
 		# 缓速扭矩驱动悠闲滚动
-		pet.apply_torque(_stroll_direction * 25000.0)
+		pet.apply_torque(_stroll_direction * 25000.0 * pet.gravity_sign)
 		pet.apply_central_force(Vector2(_stroll_direction * 15.0, 0))
 		
 		# 到达对面边缘 → 散步结束
@@ -126,13 +126,13 @@ func _nudge_pets_ahead() -> void:
 		# 1% 概率：轻推彩蛋 (温和版)
 		if randf() < 0.01:
 			var launch_dir = _stroll_direction
-			child.apply_central_impulse(Vector2(launch_dir * 600.0, -200.0))
+			child.apply_central_impulse(Vector2(launch_dir * 600.0, -200.0 * pet.gravity_sign))
 			child.apply_torque_impulse(launch_dir * 15000.0)
 			if child.has_method("trigger_shockwave"):
 				child.trigger_shockwave()
 		else:
 			# 轻轻跳开让路 (原地小跳，不飞走)
-			child.apply_central_impulse(Vector2(0, -280.0))
+			child.apply_central_impulse(Vector2(0, -280.0 * pet.gravity_sign))
 			child.apply_torque_impulse(randf_range(-800.0, 800.0))
 		_nudged_pets[cid] = true
 

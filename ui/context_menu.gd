@@ -464,6 +464,8 @@ func _build_submenus() -> void:
 	_create_submenu("entertain", [
 		{"id": "stroll", "on": "◉ 滚动散步", "off": "○ 滚动散步",
 		 "key": "stroll", "default": true},
+		{"id": "anti_gravity", "on": "◉ 反重力", "off": "○ 反重力",
+		 "key": "anti_gravity", "default": false},
 	])
 
 ## 创建单个子菜单面板
@@ -516,6 +518,8 @@ func _refresh_submenu_states() -> void:
 	# 娱乐玩法
 	var stroll = SettingsManager.get_bool("stroll", true)
 	_set_toggle(_submenu_items["stroll"], stroll, "◉ 滚动散步", "○ 滚动散步")
+	var ag = SettingsManager.get_bool("anti_gravity", false)
+	_set_toggle(_submenu_items["anti_gravity"], ag, "◉ 反重力", "○ 反重力")
 
 ## 子菜单项被按下
 func _on_submenu_item_pressed(item: Dictionary) -> void:

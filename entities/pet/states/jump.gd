@@ -19,7 +19,7 @@ func enter() -> void:
 		elif x > w - 100.0:
 			hop_dir = -1.0
 		
-		var burst_dir = Vector2(hop_dir * randf_range(0.6, 1.4), -randf_range(2.0, 3.0)).normalized()
+		var burst_dir = Vector2(hop_dir * randf_range(0.6, 1.4), -randf_range(2.0, 3.0) * pet.gravity_sign).normalized()
 		var force = randf_range(900.0, 1500.0)
 		pet.apply_central_impulse(burst_dir * force)
 		

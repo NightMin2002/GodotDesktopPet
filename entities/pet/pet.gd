@@ -20,6 +20,8 @@ var speed: float = 200.0            # 移动速度基数
 var shockwave_enabled: bool = true   # 撞击冲击波特效开关
 var trail_enabled: bool = true       # 粒子尾流特效开关
 var stroll_enabled: bool = true      # 滚动散步开关
+var anti_gravity: bool = false       # 反重力模式
+var gravity_sign: float = 1.0        # 重力方向符号 (1.0=正常, -1.0=反转)
 var hue_time: float = 0.0           # 供虹彩渐变使用的时间戳
 
 # ── 克隆系统 ──
@@ -112,6 +114,8 @@ func _ready() -> void:
 	shockwave_enabled = SettingsManager.get_bool("shockwave", true)
 	trail_enabled = SettingsManager.get_bool("trail_fx", true)
 	stroll_enabled = SettingsManager.get_bool("stroll", true)
+	var ag = SettingsManager.get_bool("anti_gravity", false)
+	_set_anti_gravity(ag)
 	
 	# 监听运行时设置变更
 	EventBus.setting_toggled.connect(_on_setting_toggled)
@@ -126,6 +130,8 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		trail_enabled = is_on
 	elif setting_id == "stroll":
 		stroll_enabled = is_on
+	elif setting_id == "anti_gravity":
+		_set_anti_gravity(is_on)
 	elif setting_id == "hud_clock":
 		if is_clone:
 			return  # 克隆体永远不显示时钟
@@ -208,7 +214,8 @@ func show_local_bubble(message: String) -> void:
 	
 	# 弹入动画
 	var pet_pos = get_global_transform_with_canvas().get_origin()
-	panel.position = pet_pos + Vector2(-80, -90)
+	var init_bubble_y = 50.0 if anti_gravity else -90.0
+	panel.position = pet_pos + Vector2(-80, init_bubble_y)
 	panel.modulate.a = 0.0
 	panel.scale = Vector2(0.5, 0.5)
 	panel.show()
@@ -228,7 +235,8 @@ func _schedule_bubble_removal(panel: PanelContainer) -> void:
 	
 	var fade = create_tween().set_parallel(true)
 	fade.tween_property(panel, "modulate:a", 0.0, 0.6)
-	fade.tween_property(panel, "position:y", panel.position.y - 30, 0.6)
+	var fade_y = 30.0 if anti_gravity else -30.0
+	fade.tween_property(panel, "position:y", panel.position.y + fade_y, 0.6)
 	await fade.finished
 	if not is_instance_valid(panel): return
 	_local_bubbles.erase(panel)
@@ -252,6 +260,14 @@ func is_mouse_on_pet() -> bool:
 
 func is_settled() -> bool:
 	return linear_velocity.length() < 20.0 and abs(linear_velocity.y) < 10.0
+
+## 切换反重力模式
+func _set_anti_gravity(on: bool) -> void:
+	anti_gravity = on
+	gravity_sign = -1.0 if on else 1.0
+	gravity_scale = -1.0 if on else 1.0
+	# 给一个初始推力让宠物快速飞向目标 (开启→向天花板, 关闭→向地板)
+	apply_central_impulse(Vector2(0, gravity_sign * 300.0))
 
 
 # ── 戳一戳交互系统 ──
@@ -421,7 +437,12 @@ func _process(delta: float) -> void:
 		# 加入类似 AR 投影悬浮抖动的垂直缓动数学波
 		var float_y = sin(hud_bounce_time) * 4.0
 		var text_size = hud_clock_label.get_minimum_size()
-		var center_p = global_position + Vector2(-text_size.x / 2.0, -PET_RADIUS - 28.0 + float_y)
+		var clock_offset_y: float
+		if anti_gravity:
+			clock_offset_y = PET_RADIUS + 14.0 + float_y
+		else:
+			clock_offset_y = -PET_RADIUS - 28.0 + float_y
+		var center_p = global_position + Vector2(-text_size.x / 2.0, clock_offset_y)
 		hud_clock_label.global_position = center_p
 		
 		# 当气泡出现（全局或本地）时自动避让隐藏时钟，防字体重叠
@@ -453,7 +474,12 @@ func _process(delta: float) -> void:
 		for i in range(_local_bubbles.size() - 1, -1, -1):
 			var panel = _local_bubbles[i]
 			var min_size = panel.get_combined_minimum_size()
-			var target_pos = pet_pos + Vector2(-min_size.x / 2.0, -90 - stack_y)
+			var bubble_y: float
+			if anti_gravity:
+				bubble_y = 50 + stack_y  # 宠物下方向下堆叠
+			else:
+				bubble_y = -90 - stack_y  # 宠物上方向上堆叠
+			var target_pos = pet_pos + Vector2(-min_size.x / 2.0, bubble_y)
 			target_pos.x = clampf(target_pos.x, 8, vp.x - min_size.x - 8)
 			target_pos.y = clampf(target_pos.y, 8, vp.y - min_size.y - 8)
 			panel.position = panel.position.lerp(target_pos, delta * 10.0)
