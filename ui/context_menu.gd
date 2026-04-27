@@ -378,10 +378,10 @@ func _build_mode_tooltip() -> void:
 	style.border_color = Color(0.1, 0.8, 1.0, 0.6)
 	style.set_border_width_all(1)
 	style.set_corner_radius_all(10)
-	style.content_margin_left = 12
-	style.content_margin_right = 12
-	style.content_margin_top = 8
-	style.content_margin_bottom = 8
+	style.content_margin_left = 16
+	style.content_margin_right = 16
+	style.content_margin_top = 10
+	style.content_margin_bottom = 10
 	_tooltip_panel.add_theme_stylebox_override("panel", style)
 	
 	_tooltip_label = Label.new()
@@ -402,10 +402,11 @@ func _update_tooltip_position() -> void:
 	var y_pos = btn_pos.y + btn_size.y / 2.0 - tip_h / 2.0
 	
 	# 优先右侧，空间不足时改左侧
-	var right_x = btn_pos.x + btn_size.x + 10
+	var gap := 16.0
+	var right_x = btn_pos.x + btn_size.x + gap
 	if right_x + tip_w > vp_size.x - 10:
 		# 左侧弹出
-		_tooltip_panel.position = Vector2(btn_pos.x - tip_w - 10, y_pos)
+		_tooltip_panel.position = Vector2(btn_pos.x - tip_w - gap, y_pos)
 		_tooltip_panel.pivot_offset = Vector2(tip_w, tip_h / 2.0)
 	else:
 		# 右侧弹出
