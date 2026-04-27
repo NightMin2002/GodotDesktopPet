@@ -7,7 +7,8 @@ extends RefCounted
 var pet: RigidBody2D  # 宿主宠物引用
 
 # ── 全息时钟 HUD ──
-var clock_label: Label
+var clock_panel: PanelContainer  # 时钟背景面板 (外部访问用)
+var clock_label: Label           # 时钟文字标签 (兼容旧引用)
 var clock_enabled: bool = false
 var _bounce_time: float = 0.0
 var _is_clock_hidden: bool = false
@@ -19,15 +20,35 @@ var _local_bubbles: Array[PanelContainer] = []
 # ── 初始化 ──
 
 func init_clock() -> void:
+	# 外层背景面板: 半透明深蓝 + 金色细边框
+	clock_panel = PanelContainer.new()
+	clock_panel.top_level = true  # 脱离刚体物理旋转限定，保持悬浮
+	clock_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.04, 0.08, 0.18, 0.85)  # 深邃暗蓝背景
+	var border_hue = fmod(0.13 + pet.clone_hue_shift, 1.0)  # 金色基底 + 克隆色偏
+	style.border_color = Color.from_hsv(border_hue, 0.6, 0.9, 0.7)  # 柔和金色边框
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(8)
+	style.content_margin_left = 8
+	style.content_margin_right = 8
+	style.content_margin_top = 3
+	style.content_margin_bottom = 3
+	clock_panel.add_theme_stylebox_override("panel", style)
+	
+	# 内层文字标签: 亮色高对比
 	clock_label = Label.new()
-	clock_label.top_level = true # 脱离刚体物理旋转限定，保持悬浮
-	# 极简高对比机能风：纯黑字核 + 闪亮的白金光晕边框
-	clock_label.add_theme_font_size_override("font_size", 16)
-	clock_label.add_theme_color_override("font_color", Color(0.02, 0.02, 0.02, 0.9)) # 核心深邃黑
-	clock_label.add_theme_color_override("font_outline_color", Color(0.9, 0.95, 1.0, 0.9)) # 强力抗白光抗锯齿泛白边
-	clock_label.add_theme_constant_override("outline_size", 6)
-	clock_label.visible = clock_enabled
-	pet.add_child(clock_label)
+	clock_label.add_theme_font_size_override("font_size", 15)
+	clock_label.add_theme_color_override("font_color", Color(0.85, 0.92, 1.0, 0.95))  # 冰蓝白
+	clock_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.5))
+	clock_label.add_theme_constant_override("outline_size", 2)
+	clock_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	clock_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	clock_panel.add_child(clock_label)
+	
+	clock_panel.visible = clock_enabled
+	pet.add_child(clock_panel)
 
 # ── 主更新 (由 pet._process 调用) ──
 
@@ -38,7 +59,7 @@ func update(delta: float) -> void:
 # ── 全息时钟 ──
 
 func _update_clock(delta: float) -> void:
-	if not clock_enabled or not is_instance_valid(clock_label):
+	if not clock_enabled or not is_instance_valid(clock_panel):
 		return
 	
 	_bounce_time += delta * 2.0
@@ -47,14 +68,14 @@ func _update_clock(delta: float) -> void:
 	
 	# 加入类似 AR 投影悬浮抖动的垂直缓动数学波
 	var float_y = sin(_bounce_time) * 4.0
-	var text_size = clock_label.get_minimum_size()
+	var panel_size = clock_panel.get_combined_minimum_size()
 	var clock_offset_y: float
 	if pet.anti_gravity:
 		clock_offset_y = pet.PET_RADIUS + 14.0 + float_y
 	else:
-		clock_offset_y = -pet.PET_RADIUS - 28.0 + float_y
-	var center_p = pet.global_position + Vector2(-text_size.x / 2.0, clock_offset_y)
-	clock_label.global_position = center_p
+		clock_offset_y = -pet.PET_RADIUS - panel_size.y - 10.0 + float_y
+	var center_p = pet.global_position + Vector2(-panel_size.x / 2.0, clock_offset_y)
+	clock_panel.global_position = center_p
 	
 	# 当气泡出现（全局或本地）时自动避让隐藏时钟，防字体重叠
 	var should_hide = (pet.overlay_rect.size != Vector2.ZERO) or _local_bubbles.size() > 0
@@ -62,9 +83,9 @@ func _update_clock(delta: float) -> void:
 		_is_clock_hidden = should_hide
 		var tw = pet.create_tween()
 		if should_hide:
-			tw.tween_property(clock_label, "modulate:a", 0.0, 0.2)
+			tw.tween_property(clock_panel, "modulate:a", 0.0, 0.2)
 		else:
-			tw.tween_property(clock_label, "modulate:a", 1.0, 0.3)
+			tw.tween_property(clock_panel, "modulate:a", 1.0, 0.3)
 
 # ── 本地气泡系统 ──
 

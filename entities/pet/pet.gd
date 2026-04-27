@@ -123,7 +123,7 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		if is_clone:
 			return  # 克隆体永远不显示时钟
 		pet_hud.clock_enabled = is_on
-		pet_hud.clock_label.visible = is_on
+		pet_hud.clock_panel.visible = is_on
 
 func _on_behavior_mode_changed(mode: int) -> void:
 	behavior_mode = mode

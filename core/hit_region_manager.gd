@@ -1,4 +1,4 @@
-# hit_region_manager.gd — DWM 鼠标穿透管理器 (从 main.gd 拆分)
+﻿# hit_region_manager.gd — DWM 鼠标穿透管理器 (从 main.gd 拆分)
 # 双模式架构:
 #   模式A (完美): WS_EX_LAYERED 注入成功 → 本地命中检测 + WS_EX_TRANSPARENT 切换 → 零裁剪
 #   模式B (回退): 注入失败 → SetWindowRgn AABB 矩形区域 → 特效区域有裁剪
@@ -81,9 +81,9 @@ func _collect_hit_regions() -> void:
 		circles.append(pet_r)
 		
 		# 全息时钟 HUD: 矩形
-		if p.pet_hud.clock_enabled and is_instance_valid(p.pet_hud.clock_label) and p.pet_hud.clock_label.visible:
-			var clock_pos = p.pet_hud.clock_label.global_position
-			var clock_size = p.pet_hud.clock_label.get_minimum_size()
+		if p.pet_hud.clock_enabled and is_instance_valid(p.pet_hud.clock_panel) and p.pet_hud.clock_panel.visible:
+			var clock_pos = p.pet_hud.clock_panel.global_position
+			var clock_size = p.pet_hud.clock_panel.get_minimum_size()
 			rects.append(clock_pos.x - 5)
 			rects.append(clock_pos.y - 5)
 			rects.append(clock_size.x + 10)
@@ -202,9 +202,9 @@ func _update_hit_regions_fallback() -> void:
 				rects.append(_q(sr * 2.0))
 		
 		# HUD/气泡
-		if p.pet_hud.clock_enabled and is_instance_valid(p.pet_hud.clock_label) and p.pet_hud.clock_label.visible:
-			var clock_pos = p.pet_hud.clock_label.global_position
-			var clock_size = p.pet_hud.clock_label.get_minimum_size()
+		if p.pet_hud.clock_enabled and is_instance_valid(p.pet_hud.clock_panel) and p.pet_hud.clock_panel.visible:
+			var clock_pos = p.pet_hud.clock_panel.global_position
+			var clock_size = p.pet_hud.clock_panel.get_minimum_size()
 			rects.append(_q(clock_pos.x - 5))
 			rects.append(_q(clock_pos.y - 5))
 			rects.append(_q(clock_size.x + 10))
