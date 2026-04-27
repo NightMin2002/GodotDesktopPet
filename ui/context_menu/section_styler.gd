@@ -61,10 +61,11 @@ func style_headers(hud: PanelContainer, submenus: Dictionary) -> void:
 			badge_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			badge.add_child(badge_label)
 			
-			# 替换原 Label
+			# 替换原 Label (同步删除，确保 VBox 立即重算大小)
 			vbox.add_child(badge)
 			vbox.move_child(badge, idx)
-			label.queue_free()
+			vbox.remove_child(label)
+			label.free()
 		elif child is Button:
 			# 记录每个按钮所属区块的颜色
 			_btn_section_colors[child] = current_section_color
@@ -75,7 +76,7 @@ func style_headers(hud: PanelContainer, submenus: Dictionary) -> void:
 ## 根据触发按钮所属区块色自动设置子菜单边框色
 func color_submenus(submenus: Dictionary) -> void:
 	for menu_id in submenus:
-		var trigger = _menu._get_submenu_trigger(menu_id)
+		var trigger = _menu._submenu.get_trigger(menu_id)
 		if trigger and trigger in _btn_section_colors:
 			var color: Color = _btn_section_colors[trigger]
 			var panel: PanelContainer = submenus[menu_id]
