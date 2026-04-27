@@ -70,8 +70,8 @@ func _check_reminders() -> void:
 			_fired_keys[key] = true
 			EventBus.show_reminder_bubble.emit(r.get("msg", "⏰ 时间到了！"))
 			# 记为待确认提醒 (用户戳宠物时再次传达)
-			if is_instance_valid(_pet) and "_pending_reminders" in _pet:
-				_pet._pending_reminders.append({"time": r.get("time", ""), "msg": r.get("msg", "⏰ 时间到了！")})
+			if is_instance_valid(_pet) and _pet.has_method("handle_poke"):
+				_pet.poke_system.pending_reminders.append({"time": r.get("time", ""), "msg": r.get("msg", "⏰ 时间到了！")})
 			# 一次性提醒：触发后标记删除
 			if r.get("once", false):
 				to_remove.append(i)
