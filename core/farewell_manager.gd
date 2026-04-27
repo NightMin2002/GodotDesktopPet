@@ -72,7 +72,7 @@ func _on_dismiss_clones_requested() -> void:
 			await get_tree().create_timer(0.35).timeout
 	
 	SettingsManager.set_int("clone_count", 0)
-	EventBus.show_reminder_bubble.emit("分身们，辛苦了！下次再见~")
+	EventBus.force_show_bubble.emit("分身们，辛苦了！下次再见~")
 	# 通知 clone_manager 重新排队
 	_main.clone_manager.reorganize_quiet_queue()
 

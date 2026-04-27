@@ -57,7 +57,7 @@ func _clone_pet(source: Node2D, with_bubble: bool) -> void:
 	
 	if with_bubble:
 		var greetings = ["分身术！召唤成功", "又多了一个伙伴！", "一起热闹热闹~", "家族壮大啦！", "我给你叫了个帮手！"]
-		EventBus.show_reminder_bubble.emit(greetings[clone_count % greetings.size()])
+		EventBus.force_show_bubble.emit(greetings[clone_count % greetings.size()])
 	
 	print("[DesktopPet] 克隆体 #", clone_count + 1, " 已生成 (hue_shift=", clone.clone_hue_shift, ")")
 	reorganize_quiet_queue()
