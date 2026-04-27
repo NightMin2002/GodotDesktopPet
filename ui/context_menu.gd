@@ -1,9 +1,11 @@
-# context_menu.gd — 右键全息追踪面板
+﻿# context_menu.gd — 右键全息追踪面板
 # 管理: 设置开关 (持久化) + 开机自启动 + 提醒管理入口
 extends CanvasLayer
 
 const InfoSidebar = preload("res://ui/context_menu/info_sidebar.gd")
 const SysinfoBubble = preload("res://ui/context_menu/sysinfo_bubble.gd")
+const MenuTooltip = preload("res://ui/context_menu/menu_tooltip.gd")
+const SectionStyler = preload("res://ui/context_menu/section_styler.gd")
 
 @onready var hud: PanelContainer = $HUDPanel
 @onready var track_btn: Button = $HUDPanel/Margin/VBox/EyeTrackBtn
@@ -28,15 +30,13 @@ var _active_submenu: String = ""
 var _submenu_hover_timer: float = -1.0
 var _submenu_pending_id: String = ""
 var _submenu_close_timer: float = -1.0
-var _btn_section_colors: Dictionary = {}  # Button -> Color (按钮所属区块颜色)
 
 # 信息侧栏
 var _sidebar: InfoSidebar
 var _sysinfo_bubble: SysinfoBubble
 
-var _tooltip_panel: PanelContainer
-var _tooltip_label: Label
-var _tooltip_tween: Tween
+var _tooltip: MenuTooltip
+var _styler: SectionStyler
 
 var target: Node2D = null
 
@@ -45,9 +45,11 @@ func _ready() -> void:
 	_sidebar = InfoSidebar.new(self)
 	_sidebar.build()
 	_sysinfo_bubble = SysinfoBubble.new(self)
-	_build_mode_tooltip()
+	_tooltip = MenuTooltip.new(self)
+	_tooltip.build()
 	_build_submenus()
-	_style_section_headers()
+	_styler = SectionStyler.new(self)
+	_styler.style_headers(hud, _submenus)
 	
 	# 从持久化存储恢复上次的设置状态
 	_load_saved_settings()
@@ -154,8 +156,8 @@ func _process(delta: float) -> void:
 			_update_submenu_position(_active_submenu)
 	_sysinfo_bubble.process_tick()
 	# tooltip 跟随按钮位置
-	if _tooltip_panel.visible:
-		_update_tooltip_position()
+	if _tooltip.panel.visible:
+		_tooltip.update_position()
 	# 子菜单 hover 延时弹出
 	if _submenu_hover_timer >= 0:
 		_submenu_hover_timer -= delta
@@ -237,7 +239,7 @@ func _on_show_context_menu(target_node: Node2D) -> void:
 	tween.tween_property(_sidebar.panel, "modulate:a", 1.0, 0.25)
 
 func _close_hud() -> void:
-	_tooltip_panel.hide()
+	_tooltip.panel.hide()
 	_hide_all_submenus_instant()
 	if is_instance_valid(target):
 		hud.pivot_offset = target.get_global_transform_with_canvas().get_origin() - hud.position
@@ -282,7 +284,7 @@ func _update_chatter_label(mode: int) -> void:
 	chatter_btn.text = CHATTER_MODE_LABELS[mode]
 
 func _on_reminder_btn_pressed() -> void:
-	_tooltip_panel.hide()
+	_tooltip.panel.hide()
 	if is_instance_valid(target):
 		hud.pivot_offset = target.get_global_transform_with_canvas().get_origin() - hud.position
 	var tween = create_tween().set_parallel(true)
@@ -316,7 +318,7 @@ func _update_clone_label() -> void:
 # ── 退出按钮 ──
 
 func _on_quit_btn_pressed() -> void:
-	_tooltip_panel.hide()
+	_tooltip.panel.hide()
 	if is_instance_valid(target):
 		hud.pivot_offset = target.get_global_transform_with_canvas().get_origin() - hud.position
 	var tween = create_tween().set_parallel(true)
@@ -364,82 +366,6 @@ func _update_behavior_mode_label(mode: int) -> void:
 func _on_behavior_mode_synced(mode: int) -> void:
 	_update_behavior_mode_label(mode)
 	_refresh_radio_submenu("behavior_mode", mode)
-
-# ── 自定义浮动 Tooltip ──
-
-var _active_tooltip_btn: Button  # 当前 tooltip 关联的按钮
-
-func _build_mode_tooltip() -> void:
-	_tooltip_panel = PanelContainer.new()
-	_tooltip_panel.visible = false
-	
-	var style = StyleBoxFlat.new()
-	style.bg_color = Color(0.04, 0.08, 0.16, 0.92)
-	style.border_color = Color(0.1, 0.8, 1.0, 0.6)
-	style.set_border_width_all(1)
-	style.set_corner_radius_all(10)
-	style.content_margin_left = 16
-	style.content_margin_right = 16
-	style.content_margin_top = 10
-	style.content_margin_bottom = 10
-	_tooltip_panel.add_theme_stylebox_override("panel", style)
-	
-	_tooltip_label = Label.new()
-	_tooltip_label.add_theme_font_size_override("font_size", 15)
-	_tooltip_label.add_theme_color_override("font_color", Color(0.55, 0.75, 0.95, 0.95))
-	_tooltip_panel.add_child(_tooltip_label)
-	
-	add_child(_tooltip_panel)
-
-func _update_tooltip_position() -> void:
-	if not is_instance_valid(_active_tooltip_btn):
-		return
-	var btn_pos = _active_tooltip_btn.global_position
-	var btn_size = _active_tooltip_btn.size
-	var vp_size = get_viewport().get_visible_rect().size
-	var tip_w = _tooltip_panel.size.x
-	var tip_h = _tooltip_panel.size.y
-	var y_pos = btn_pos.y + btn_size.y / 2.0 - tip_h / 2.0
-	
-	# 优先右侧，空间不足时改左侧
-	var gap := 16.0
-	var right_x = btn_pos.x + btn_size.x + gap
-	if right_x + tip_w > vp_size.x - 10:
-		# 左侧弹出
-		_tooltip_panel.position = Vector2(btn_pos.x - tip_w - gap, y_pos)
-		_tooltip_panel.pivot_offset = Vector2(tip_w, tip_h / 2.0)
-	else:
-		# 右侧弹出
-		_tooltip_panel.position = Vector2(right_x, y_pos)
-		_tooltip_panel.pivot_offset = Vector2(0, tip_h / 2.0)
-
-func _show_tooltip_for(btn: Button, text: String, show: bool) -> void:
-	if _tooltip_tween and _tooltip_tween.is_running():
-		_tooltip_tween.kill()
-	if show:
-		_active_tooltip_btn = btn
-		_tooltip_label.text = text
-		_tooltip_panel.modulate.a = 0.0
-		_tooltip_panel.scale = Vector2(0.7, 0.7)
-		_tooltip_panel.show()
-		# 等一帧计算 size 后定位
-		await get_tree().process_frame
-		_tooltip_panel.pivot_offset = Vector2(0, _tooltip_panel.size.y / 2.0)
-		_update_tooltip_position()
-		_tooltip_tween = create_tween().set_parallel(true)
-		_tooltip_tween.tween_property(_tooltip_panel, "modulate:a", 1.0, 0.15)
-		_tooltip_tween.tween_property(_tooltip_panel, "scale", Vector2.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	else:
-		_tooltip_tween = create_tween().set_parallel(true)
-		_tooltip_tween.tween_property(_tooltip_panel, "modulate:a", 0.0, 0.1)
-		_tooltip_tween.tween_property(_tooltip_panel, "scale", Vector2(0.7, 0.7), 0.1)
-		_tooltip_tween.finished.connect(func(): _tooltip_panel.hide())
-
-func _show_mode_desc(_show: bool) -> void:
-	pass  # 已迁移至子菜单
-
-func _show_behavior_desc(_show: bool) -> void:
-	pass  # 已迁移至子菜单
 
 # ── 工具函数 ──
 
@@ -756,8 +682,8 @@ func _create_radio_submenu(menu_id: String, items: Array, callback: Callable) ->
 		if item.has("desc"):
 			var desc_text = item.desc
 			var b = btn
-			btn.mouse_entered.connect(func(): _show_tooltip_for(b, desc_text, true))
-			btn.mouse_exited.connect(func(): _show_tooltip_for(b, desc_text, false))
+			btn.mouse_entered.connect(func(): _tooltip.show_for(b, desc_text, true))
+			btn.mouse_exited.connect(func(): _tooltip.show_for(b, desc_text, false))
 		vbox.add_child(btn)
 		group_items.append({"btn": btn, "value": item.value, "label": item.label})
 	
@@ -783,82 +709,6 @@ func _refresh_radio_submenu(menu_id: String, current_value: int) -> void:
 			btn.text = "● " + item.label
 		else:
 			btn.text = "○ " + item.label
-
-# ── 分区标题样式化 ──
-
-## 将 ▌ 标题 Label 替换为徽章(彩色左边框面板) + 延伸细线
-func _style_section_headers() -> void:
-	var vbox = hud.get_node("Margin/VBox")
-	var is_first_section := true
-	var children_snapshot = vbox.get_children().duplicate()
-	var current_section_color := Color.WHITE
-	
-	for child in children_snapshot:
-		if child is Label and child.text.begins_with("\u258c"):
-			var label: Label = child
-			current_section_color = label.get_theme_color("font_color")
-			var section_text: String = label.text.replace("\u258c", "")
-			var idx = label.get_index()
-			
-			# 上方间距
-			if not is_first_section:
-				var spacer = Control.new()
-				spacer.custom_minimum_size.y = 4
-				spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-				vbox.add_child(spacer)
-				vbox.move_child(spacer, idx)
-				idx += 1
-			is_first_section = false
-			
-			# 全宽徽章: 彩色左边框 + 深背景横幅
-			var badge = PanelContainer.new()
-			badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			badge.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			var style = StyleBoxFlat.new()
-			style.bg_color = Color(current_section_color.r * 0.2, current_section_color.g * 0.2, current_section_color.b * 0.2, 0.7)
-			style.border_color = current_section_color
-			style.border_width_left = 3
-			style.border_width_top = 0
-			style.border_width_right = 0
-			style.border_width_bottom = 0
-			style.corner_radius_top_right = 4
-			style.corner_radius_bottom_right = 4
-			style.corner_radius_top_left = 0
-			style.corner_radius_bottom_left = 0
-			style.content_margin_left = 8
-			style.content_margin_right = 10
-			style.content_margin_top = 2
-			style.content_margin_bottom = 2
-			badge.add_theme_stylebox_override("panel", style)
-			
-			var badge_label = Label.new()
-			badge_label.text = section_text
-			badge_label.add_theme_font_size_override("font_size", 13)
-			badge_label.add_theme_color_override("font_color", Color(current_section_color.r, current_section_color.g, current_section_color.b, 0.9))
-			badge_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			badge.add_child(badge_label)
-			
-			# 替换原 Label
-			vbox.add_child(badge)
-			vbox.move_child(badge, idx)
-			label.queue_free()
-		elif child is Button:
-			# 记录每个按钮所属区块的颜色
-			_btn_section_colors[child] = current_section_color
-	
-	# 自动给子菜单上色
-	_color_submenus()
-
-## 根据触发按钮所属区块色自动设置子菜单边框色
-func _color_submenus() -> void:
-	for menu_id in _submenus:
-		var trigger = _get_submenu_trigger(menu_id)
-		if trigger and trigger in _btn_section_colors:
-			var color: Color = _btn_section_colors[trigger]
-			var panel: PanelContainer = _submenus[menu_id]
-			var style = panel.get_theme_stylebox("panel").duplicate() as StyleBoxFlat
-			style.border_color = Color(color.r, color.g, color.b, 0.8)
-			panel.add_theme_stylebox_override("panel", style)
 
 func _on_sysinfo_btn_pressed() -> void:
 	_close_hud()
