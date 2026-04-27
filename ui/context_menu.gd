@@ -15,6 +15,7 @@ extends CanvasLayer
 @onready var reminder_btn: Button = $HUDPanel/Margin/VBox/ReminderBtn
 @onready var clone_btn: Button = $HUDPanel/Margin/VBox/CloneBtn
 @onready var dismiss_btn: Button = $HUDPanel/Margin/VBox/DismissBtn
+@onready var sysinfo_btn: Button = $HUDPanel/Margin/VBox/SysInfoBtn
 @onready var quit_btn: Button = $HUDPanel/Margin/VBox/QuitBtn
 
 # ── 级联子菜单系统 ──
@@ -34,6 +35,16 @@ var _info_wifi_label: Label
 var _info_wifi_dot: Label
 var _info_wifi_pending: String = ""
 var _info_wifi_has_pending: bool = false
+var _info_rows: Dictionary = {}
+var _sysinfo_pending: Dictionary = {}
+var _sysinfo_has_pending: bool = false
+var _boot_timestamp: float = 0.0
+# 系统信息气泡
+var _hw_info_pending: String = ""
+var _hw_info_has_pending: bool = false
+var _hw_bubble: PanelContainer = null
+var _hw_bubble_label: Label = null
+var _hw_bubble_confirm: Button = null
 
 var _tooltip_panel: PanelContainer
 var _tooltip_label: Label
@@ -80,6 +91,7 @@ func _ready() -> void:
 	reminder_btn.pressed.connect(_on_reminder_btn_pressed)
 	clone_btn.pressed.connect(_on_clone_btn_pressed)
 	dismiss_btn.pressed.connect(_on_dismiss_btn_pressed)
+	sysinfo_btn.pressed.connect(_on_sysinfo_btn_pressed)
 	autostart_btn.pressed.connect(_on_autostart_btn_pressed)
 	quit_btn.pressed.connect(_on_quit_btn_pressed)
 	
@@ -143,16 +155,25 @@ func _process(delta: float) -> void:
 		# 信息栏跟随主菜单 + 实时时钟
 		_update_info_panel_position()
 		_update_info_time()
-		# WiFi 异步结果
-		if _info_wifi_has_pending:
-			_info_wifi_has_pending = false
-			_info_wifi_label.text = _info_wifi_pending
-			var connected = _info_wifi_pending != "未连接"
-			_info_wifi_dot.add_theme_color_override("font_color",
-				Color(0.3, 0.8, 0.4, 0.9) if connected else Color(0.7, 0.4, 0.3, 0.7))
+		_update_info_uptime()
+		# 侧栏异步结果
+		if _sysinfo_has_pending:
+			_apply_sysinfo_results()
 		# 子菜单跟随主菜单
 		if _active_submenu != "":
 			_update_submenu_position(_active_submenu)
+	# 硬件信息异步结果
+	if _hw_info_has_pending:
+		_hw_info_has_pending = false
+		_show_hw_bubble(_hw_info_pending, true)
+	# 硬件气泡跟随宠物
+	if _hw_bubble != null and _hw_bubble.visible:
+		var pet = _find_pet()
+		if is_instance_valid(pet):
+			var pos = pet.get_global_transform_with_canvas().get_origin()
+			var tp = pos + Vector2(-_hw_bubble.size.x * 0.5, -_hw_bubble.size.y - 30)
+			_hw_bubble.position = _hw_bubble.position.lerp(tp, 0.15)
+			pet.overlay_rect = Rect2(_hw_bubble.position, _hw_bubble.size).grow(10)
 	# tooltip 跟随按钮位置
 	if _tooltip_panel.visible:
 		_update_tooltip_position()
@@ -222,7 +243,7 @@ func _on_show_context_menu(target_node: Node2D) -> void:
 	_info_panel.show()
 	_update_info_panel_position()
 	# 异步查询 WiFi
-	_query_wifi_for_info()
+	_query_sysinfo()
 	# 等待一帧让布局计算出 size，再设缩放锚点
 	await get_tree().process_frame
 	# 缩放锚点设在宠物相对于面板的位置 → 面板从宠物处绽放展开
@@ -866,7 +887,6 @@ func _build_info_panel() -> void:
 	_info_panel = PanelContainer.new()
 	_info_panel.visible = false
 	_info_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	
 	var style = StyleBoxFlat.new()
 	style.bg_color = Color(0.035, 0.05, 0.1, 0.92)
 	style.border_color = Color(0.1, 0.8, 1.0, 0.5)
@@ -874,118 +894,237 @@ func _build_info_panel() -> void:
 	style.set_corner_radius_all(12)
 	_info_panel.add_theme_stylebox_override("panel", style)
 	add_child(_info_panel)
-	
 	var margin = MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 12)
 	margin.add_theme_constant_override("margin_right", 14)
 	margin.add_theme_constant_override("margin_top", 12)
 	margin.add_theme_constant_override("margin_bottom", 12)
 	_info_panel.add_child(margin)
-	
 	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 6)
+	vbox.add_theme_constant_override("separation", 5)
 	margin.add_child(vbox)
-	
-	# ── 日期 ──
 	_info_date_label = Label.new()
 	_info_date_label.add_theme_font_size_override("font_size", 14)
 	_info_date_label.add_theme_color_override("font_color", Color(0.5, 0.75, 0.95, 0.7))
 	_info_date_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_info_date_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(_info_date_label)
-	
-	# ── 时钟 (大号) ──
 	_info_time_label = Label.new()
 	_info_time_label.add_theme_font_size_override("font_size", 28)
 	_info_time_label.add_theme_color_override("font_color", Color(0.85, 0.92, 1.0, 0.95))
 	_info_time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_info_time_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(_info_time_label)
-	
-	# ── 分隔线 ──
+	vbox.add_child(_make_info_sep())
+	_add_info_row(vbox, "wifi", "●", "WiFi", Color(0.3, 0.8, 0.4))
+	_add_info_row(vbox, "battery", "■", "电池", Color(0.4, 0.85, 0.3))
+	_add_info_row(vbox, "uptime", "▲", "开机", Color(0.6, 0.7, 0.85))
+
+func _add_info_row(parent: VBoxContainer, key: String, icon: String, tag: String, color: Color) -> void:
+	var row = HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(row)
+	var dot = Label.new()
+	dot.text = icon
+	dot.add_theme_font_size_override("font_size", 9)
+	dot.add_theme_color_override("font_color", Color(color.r, color.g, color.b, 0.8))
+	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(dot)
+	var tag_lbl = Label.new()
+	tag_lbl.text = tag
+	tag_lbl.add_theme_font_size_override("font_size", 11)
+	tag_lbl.add_theme_color_override("font_color", Color(0.5, 0.65, 0.85, 0.55))
+	tag_lbl.custom_minimum_size.x = 32
+	tag_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(tag_lbl)
+	var val_lbl = Label.new()
+	val_lbl.text = "..."
+	val_lbl.add_theme_font_size_override("font_size", 13)
+	val_lbl.add_theme_color_override("font_color", Color(0.7, 0.82, 0.95, 0.85))
+	val_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(val_lbl)
+	_info_rows[key] = val_lbl
+
+func _make_info_sep() -> HSeparator:
 	var sep = HSeparator.new()
 	sep.add_theme_constant_override("separation", 4)
-	sep.add_theme_stylebox_override("separator", _make_info_sep_style())
-	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(sep)
-	
-	# ── WiFi 行 ──
-	var wifi_row = HBoxContainer.new()
-	wifi_row.add_theme_constant_override("separation", 6)
-	wifi_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(wifi_row)
-	
-	_info_wifi_dot = Label.new()
-	_info_wifi_dot.text = "\u25cf"
-	_info_wifi_dot.add_theme_font_size_override("font_size", 10)
-	_info_wifi_dot.add_theme_color_override("font_color", Color(0.3, 0.8, 0.4, 0.9))
-	_info_wifi_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	wifi_row.add_child(_info_wifi_dot)
-	
-	var wifi_tag = Label.new()
-	wifi_tag.text = "WiFi"
-	wifi_tag.add_theme_font_size_override("font_size", 11)
-	wifi_tag.add_theme_color_override("font_color", Color(0.5, 0.65, 0.85, 0.6))
-	wifi_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	wifi_row.add_child(wifi_tag)
-	
-	_info_wifi_label = Label.new()
-	_info_wifi_label.text = "..."
-	_info_wifi_label.add_theme_font_size_override("font_size", 13)
-	_info_wifi_label.add_theme_color_override("font_color", Color(0.7, 0.82, 0.95, 0.85))
-	_info_wifi_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	wifi_row.add_child(_info_wifi_label)
-
-func _make_info_sep_style() -> StyleBoxFlat:
 	var s = StyleBoxFlat.new()
 	s.bg_color = Color(0.1, 0.8, 1.0, 0.15)
 	s.set_content_margin_all(0)
-	return s
+	sep.add_theme_stylebox_override("separator", s)
+	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return sep
 
-## 刷新信息栏内容 (日期+时钟)
 func _refresh_info_panel() -> void:
 	var d = Time.get_date_dict_from_system()
 	var weekdays = ["日", "一", "二", "三", "四", "五", "六"]
 	var wd = weekdays[d.weekday % 7]
 	_info_date_label.text = "%d年%02d月%02d日 周%s" % [d.year, d.month, d.day, wd]
 	_update_info_time()
+	_update_info_uptime()
 
-## 更新实时时钟
 func _update_info_time() -> void:
 	var t = Time.get_time_dict_from_system()
 	_info_time_label.text = "%02d:%02d:%02d" % [t.hour, t.minute, t.second]
 
-## 信息栏定位: 紧贴主菜单左侧
+func _update_info_uptime() -> void:
+	if _boot_timestamp <= 0.0:
+		return
+	var now = Time.get_unix_time_from_system()
+	var elapsed = int(now - _boot_timestamp)
+	var hours = elapsed / 3600
+	var minutes = (elapsed % 3600) / 60
+	if "uptime" in _info_rows:
+		_info_rows["uptime"].text = "%dh %dm" % [hours, minutes]
+
 func _update_info_panel_position() -> void:
 	if not _info_panel.visible:
 		return
 	var info_w = _info_panel.size.x if _info_panel.size.x > 0 else 120.0
 	var gap := 4.0
-	# 默认在主菜单左侧
 	var x = hud.position.x - info_w - gap
-	# 如果左侧空间不足，放到右侧
 	if x < 4.0:
 		x = hud.position.x + hud.size.x + gap
 	_info_panel.position = Vector2(x, hud.position.y)
 
-## WiFi 异步查询
-func _query_wifi_for_info() -> void:
-	_info_wifi_label.text = "..."
-	_info_wifi_dot.add_theme_color_override("font_color", Color(0.6, 0.6, 0.4, 0.7))
-	WorkerThreadPool.add_task(_wifi_info_task)
+func _query_sysinfo() -> void:
+	for key in ["wifi", "battery"]:
+		if key in _info_rows: _info_rows[key].text = "..."
+	if _boot_timestamp <= 0.0 and "uptime" in _info_rows:
+		_info_rows["uptime"].text = "..."
+	WorkerThreadPool.add_task(_sysinfo_task)
 
-func _wifi_info_task() -> void:
-	var output: Array = []
-	var exit = OS.execute("powershell", ["-NoProfile", "-Command",
-		"(Get-NetConnectionProfile | Where-Object {$_.InterfaceAlias -match 'Wi-Fi|WLAN|Wireless'} | Select-Object -First 1).Name"], output, true, false)
-	var ssid = ""
-	if exit == 0 and output.size() > 0:
-		# 取第一行 (可能有多个 WiFi 适配器)
-		var lines = output[0].strip_edges().split("\n")
-		if lines.size() > 0:
-			ssid = lines[0].strip_edges()
-	if ssid == "":
-		ssid = "未连接"
-	_info_wifi_pending = ssid
-	_info_wifi_has_pending = true
+const _PS_SIDEBAR := "$w=(Get-NetConnectionProfile|Where-Object{$_.InterfaceAlias -match 'Wi-Fi|WLAN|Wireless'}|Select-Object -First 1).Name;if(!$w){$w='N/A'};$b=Get-CimInstance Win32_Battery;if($b){$bp=$b.EstimatedChargeRemaining.ToString()+'%';if($b.BatteryStatus-eq 2){$bp+=' ⚡'}}else{$bp='无电池'};Write-Host wifi=$w;Write-Host battery=$bp"
+const _PS_BOOT_TIME := "[int](([DateTimeOffset](Get-CimInstance Win32_OperatingSystem).LastBootUpTime).ToUnixTimeSeconds())"
 
+func _sysinfo_task() -> void:
+	var out: Array = []
+	OS.execute("powershell", ["-NoProfile", "-Command", _PS_SIDEBAR], out, true, false)
+	var result: Dictionary = {}
+	if out.size() > 0:
+		for line in out[0].strip_edges().split("\n"):
+			line = line.strip_edges()
+			var eq = line.find("=")
+			if eq > 0:
+				result[line.substr(0, eq)] = line.substr(eq + 1)
+	if _boot_timestamp <= 0.0:
+		out = []
+		OS.execute("powershell", ["-NoProfile", "-Command", _PS_BOOT_TIME], out, true, false)
+		if out.size() > 0:
+			var ts = out[0].strip_edges()
+			if ts.is_valid_int():
+				result["_boot_ts"] = ts
+	_sysinfo_pending = result
+	_sysinfo_has_pending = true
+
+func _apply_sysinfo_results() -> void:
+	_sysinfo_has_pending = false
+	for key in _sysinfo_pending:
+		if key == "_boot_ts":
+			_boot_timestamp = float(_sysinfo_pending[key])
+		elif key in _info_rows:
+			_info_rows[key].text = _sysinfo_pending[key]
+	_update_info_uptime()
+
+# ── 系统信息 (按需气泡) ──
+
+func _on_sysinfo_btn_pressed() -> void:
+	_close_hud()
+	_show_hw_bubble("正在检索主人的电脑...", false)
+	WorkerThreadPool.add_task(_hw_info_task)
+
+func _show_hw_bubble(text: String, show_confirm: bool = false) -> void:
+	if _hw_bubble == null:
+		_build_hw_bubble()
+	_hw_bubble_label.text = text
+	_hw_bubble_confirm.visible = show_confirm
+	# 重置尺寸 (避免继承上次大小)
+	_hw_bubble.reset_size()
+	var pet = _find_pet()
+	if is_instance_valid(pet):
+		var pos = pet.get_global_transform_with_canvas().get_origin()
+		_hw_bubble.position = pos + Vector2(-100, -120)
+	if not _hw_bubble.visible:
+		_hw_bubble.modulate.a = 0.0
+		_hw_bubble.scale = Vector2(0.5, 0.5)
+		_hw_bubble.show()
+		# 等一帧让布局计算完成再设锚点
+		await get_tree().process_frame
+		_hw_bubble.pivot_offset = _hw_bubble.size * 0.5
+		var tween = create_tween().set_parallel(true)
+		tween.tween_property(_hw_bubble, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
+		tween.tween_property(_hw_bubble, "modulate:a", 1.0, 0.2)
+	else:
+		# 已显示 (内容更新), 刷新锚点
+		await get_tree().process_frame
+		_hw_bubble.pivot_offset = _hw_bubble.size * 0.5
+
+func _build_hw_bubble() -> void:
+	_hw_bubble = PanelContainer.new()
+	_hw_bubble.visible = false
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.04, 0.08, 0.16, 0.95)
+	style.border_color = Color(0.1, 0.8, 1.0, 0.7)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(14)
+	style.set_content_margin_all(16)
+	_hw_bubble.add_theme_stylebox_override("panel", style)
+	add_child(_hw_bubble)
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
+	_hw_bubble.add_child(vbox)
+	_hw_bubble_label = Label.new()
+	_hw_bubble_label.add_theme_font_size_override("font_size", 14)
+	_hw_bubble_label.add_theme_color_override("font_color", Color(0.75, 0.88, 1.0, 0.95))
+	vbox.add_child(_hw_bubble_label)
+	_hw_bubble_confirm = Button.new()
+	_hw_bubble_confirm.text = "确认"
+	_hw_bubble_confirm.add_theme_font_size_override("font_size", 14)
+	_hw_bubble_confirm.flat = true
+	_hw_bubble_confirm.add_theme_color_override("font_color", Color(0.3, 0.85, 0.5, 0.9))
+	_hw_bubble_confirm.add_theme_color_override("font_hover_color", Color(0.4, 1.0, 0.6, 1.0))
+	_hw_bubble_confirm.pressed.connect(_on_hw_bubble_confirm)
+	_hw_bubble_confirm.visible = false
+	vbox.add_child(_hw_bubble_confirm)
+
+func _on_hw_bubble_confirm() -> void:
+	if _hw_bubble == null:
+		return
+	_hw_bubble.pivot_offset = _hw_bubble.size * 0.5
+	var tween = create_tween().set_parallel(true)
+	tween.tween_property(_hw_bubble, "modulate:a", 0.0, 0.3)
+	tween.tween_property(_hw_bubble, "scale", Vector2(0.8, 0.8), 0.3)
+	await tween.finished
+	_hw_bubble.hide()
+	_hw_bubble.scale = Vector2.ONE
+	var pet = _find_pet()
+	if is_instance_valid(pet):
+		pet.overlay_rect = Rect2()
+
+func _find_pet() -> Node2D:
+	var main = get_tree().root.get_node_or_null("Main")
+	if main and "pet_instance" in main and is_instance_valid(main.pet_instance):
+		return main.pet_instance
+	return null
+
+const _PS_HW_SCRIPT := "$g=Get-CimInstance Win32_VideoController|Where-Object{$_.Name -notmatch 'Virtual|MuMu|GameViewer'};$nv=$g|Where-Object{$_.Name -match 'NVIDIA|GeForce|RTX|GTX'};$gpu=if($nv){($nv|Select-Object -First 1).Name}else{($g|Select-Object -First 1).Name};$cpu=(Get-CimInstance Win32_Processor|Select-Object -First 1).Name;$o=Get-CimInstance Win32_OperatingSystem;$used=[math]::Round(($o.TotalVisibleMemorySize-$o.FreePhysicalMemory)/1MB,1);$total=[math]::Round($o.TotalVisibleMemorySize/1MB,1);$disks=Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3'|ForEach-Object{$_.DeviceID+' '+[math]::Round($_.FreeSpace/1GB).ToString()+'/'+[math]::Round($_.Size/1GB).ToString()+'GB'};Write-Host cpu=$cpu;Write-Host gpu=$gpu;Write-Host ram=$used/$total;Write-Host disk=($disks -join ' | ')"
+
+func _hw_info_task() -> void:
+	var out: Array = []
+	OS.execute("powershell", ["-NoProfile", "-Command", _PS_HW_SCRIPT], out, true, false)
+	if out.size() > 0:
+		var result: Dictionary = {}
+		for line in out[0].strip_edges().split("\n"):
+			line = line.strip_edges()
+			var eq = line.find("=")
+			if eq > 0:
+				result[line.substr(0, eq)] = line.substr(eq + 1)
+		var cpu = result.get("cpu", "?").replace(" with Radeon Graphics", "")
+		var gpu = result.get("gpu", "?")
+		var ram = result.get("ram", "?")
+		var disk = result.get("disk", "?")
+		_hw_info_pending = "CPU  %s\nGPU  %s\nRAM  %s GB\nDisk  %s" % [cpu, gpu, ram, disk]
+	else:
+		_hw_info_pending = "查询失败"
+	_hw_info_has_pending = true
