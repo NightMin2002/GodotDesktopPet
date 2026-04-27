@@ -3,7 +3,6 @@
 extends CanvasLayer
 
 @onready var hud: PanelContainer = $HUDPanel
-@onready var date_label: Label = $HUDPanel/Margin/VBox/DateLabel
 @onready var track_btn: Button = $HUDPanel/Margin/VBox/EyeTrackBtn
 @onready var hud_btn: Button = $HUDPanel/Margin/VBox/HudBtn
 @onready var autostart_btn: Button = $HUDPanel/Margin/VBox/AutoStartBtn
@@ -27,6 +26,15 @@ var _submenu_pending_id: String = ""
 var _submenu_close_timer: float = -1.0
 var _btn_section_colors: Dictionary = {}  # Button -> Color (按钮所属区块颜色)
 
+# 信息侧栏
+var _info_panel: PanelContainer
+var _info_date_label: Label
+var _info_time_label: Label
+var _info_wifi_label: Label
+var _info_wifi_dot: Label
+var _info_wifi_pending: String = ""
+var _info_wifi_has_pending: bool = false
+
 var _tooltip_panel: PanelContainer
 var _tooltip_label: Label
 var _tooltip_tween: Tween
@@ -35,6 +43,7 @@ var target: Node2D = null
 
 func _ready() -> void:
 	hud.hide()
+	_build_info_panel()
 	_build_mode_tooltip()
 	_build_submenus()
 	_style_section_headers()
@@ -131,6 +140,16 @@ func _process(delta: float) -> void:
 	if hud.visible and is_instance_valid(target):
 		var target_pos = _calc_menu_pos(target.get_global_transform_with_canvas().get_origin())
 		hud.position = hud.position.lerp(target_pos, delta * 15.0)
+		# 信息栏跟随主菜单 + 实时时钟
+		_update_info_panel_position()
+		_update_info_time()
+		# WiFi 异步结果
+		if _info_wifi_has_pending:
+			_info_wifi_has_pending = false
+			_info_wifi_label.text = _info_wifi_pending
+			var connected = _info_wifi_pending != "未连接"
+			_info_wifi_dot.add_theme_color_override("font_color",
+				Color(0.3, 0.8, 0.4, 0.9) if connected else Color(0.7, 0.4, 0.3, 0.7))
 		# 子菜单跟随主菜单
 		if _active_submenu != "":
 			_update_submenu_position(_active_submenu)
@@ -191,35 +210,45 @@ func _on_show_context_menu(target_node: Node2D) -> void:
 		_close_hud()
 		return
 	EventBus.context_menu_toggled.emit(true)
-	_update_clone_label()  # 每次开菜单时刷新克隆计数
-	_update_date_label()   # 刷新日期显示
+	_update_clone_label()
 	var pet_pos = target.get_global_transform_with_canvas().get_origin()
 	var panel_pos = _calc_menu_pos(pet_pos)
 	hud.position = panel_pos
 	hud.modulate.a = 0.0
 	hud.show()
+	# 信息栏同步展开
+	_refresh_info_panel()
+	_info_panel.modulate.a = 0.0
+	_info_panel.show()
+	_update_info_panel_position()
+	# 异步查询 WiFi
+	_query_wifi_for_info()
 	# 等待一帧让布局计算出 size，再设缩放锚点
 	await get_tree().process_frame
 	# 缩放锚点设在宠物相对于面板的位置 → 面板从宠物处绽放展开
 	hud.pivot_offset = pet_pos - hud.position
 	hud.scale = Vector2(0.3, 0.3)
+	_info_panel.pivot_offset = Vector2(_info_panel.size.x, _info_panel.size.y * 0.5)
+	_info_panel.scale = Vector2(0.3, 0.3)
 	var tween = create_tween().set_parallel(true)
 	tween.tween_property(hud, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
 	tween.tween_property(hud, "modulate:a", 1.0, 0.2)
+	tween.tween_property(_info_panel, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
+	tween.tween_property(_info_panel, "modulate:a", 1.0, 0.25)
 
 func _close_hud() -> void:
-	# 关闭时确保 tooltip 和子菜单也消失
 	_tooltip_panel.hide()
 	_hide_all_submenus_instant()
-	# 收缩回宠物位置：更新锚点到当前宠物坐标
 	if is_instance_valid(target):
 		hud.pivot_offset = target.get_global_transform_with_canvas().get_origin() - hud.position
-	# 穿透恢复延迟到动画结束，防止淡出中途被 DWM 裁剪
 	var tween = create_tween().set_parallel(true)
 	tween.tween_property(hud, "scale", Vector2(0.3, 0.3), 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
 	tween.tween_property(hud, "modulate:a", 0.0, 0.15)
+	tween.tween_property(_info_panel, "scale", Vector2(0.3, 0.3), 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	tween.tween_property(_info_panel, "modulate:a", 0.0, 0.15)
 	tween.finished.connect(func():
 		hud.hide()
+		_info_panel.hide()
 		EventBus.context_menu_toggled.emit(false)
 	)
 	target = null
@@ -283,24 +312,21 @@ func _update_clone_label() -> void:
 		var max_c: int = main_node.clone_mgr.MAX_CLONES if main_node.clone_mgr else 5
 		clone_btn.text = "召唤分身 (" + str(count) + "/" + str(max_c) + ")"
 
-func _update_date_label() -> void:
-	var d = Time.get_date_dict_from_system()
-	var weekdays = ["日", "一", "二", "三", "四", "五", "六"]
-	var wd = weekdays[d.weekday % 7]
-	date_label.text = "%d年%02d月%02d日 (周%s)" % [d.year, d.month, d.day, wd]
 
 # ── 退出按钮 ──
 
 func _on_quit_btn_pressed() -> void:
-	# 关闭菜单
 	_tooltip_panel.hide()
 	if is_instance_valid(target):
 		hud.pivot_offset = target.get_global_transform_with_canvas().get_origin() - hud.position
 	var tween = create_tween().set_parallel(true)
 	tween.tween_property(hud, "scale", Vector2(0.3, 0.3), 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
 	tween.tween_property(hud, "modulate:a", 0.0, 0.15)
+	tween.tween_property(_info_panel, "scale", Vector2(0.3, 0.3), 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	tween.tween_property(_info_panel, "modulate:a", 0.0, 0.15)
 	tween.finished.connect(func():
 		hud.hide()
+		_info_panel.hide()
 		EventBus.context_menu_toggled.emit(false)
 	)
 	target = null
@@ -832,3 +858,133 @@ func _color_submenus() -> void:
 			var style = panel.get_theme_stylebox("panel").duplicate() as StyleBoxFlat
 			style.border_color = Color(color.r, color.g, color.b, 0.8)
 			panel.add_theme_stylebox_override("panel", style)
+
+# ── 信息侧栏 ──
+
+func _build_info_panel() -> void:
+	_info_panel = PanelContainer.new()
+	_info_panel.visible = false
+	_info_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.035, 0.05, 0.1, 0.92)
+	style.border_color = Color(0.1, 0.8, 1.0, 0.5)
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(12)
+	_info_panel.add_theme_stylebox_override("panel", style)
+	add_child(_info_panel)
+	
+	var margin = MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 14)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	_info_panel.add_child(margin)
+	
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 6)
+	margin.add_child(vbox)
+	
+	# ── 日期 ──
+	_info_date_label = Label.new()
+	_info_date_label.add_theme_font_size_override("font_size", 14)
+	_info_date_label.add_theme_color_override("font_color", Color(0.5, 0.75, 0.95, 0.7))
+	_info_date_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_info_date_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_info_date_label)
+	
+	# ── 时钟 (大号) ──
+	_info_time_label = Label.new()
+	_info_time_label.add_theme_font_size_override("font_size", 28)
+	_info_time_label.add_theme_color_override("font_color", Color(0.85, 0.92, 1.0, 0.95))
+	_info_time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_info_time_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_info_time_label)
+	
+	# ── 分隔线 ──
+	var sep = HSeparator.new()
+	sep.add_theme_constant_override("separation", 4)
+	sep.add_theme_stylebox_override("separator", _make_info_sep_style())
+	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(sep)
+	
+	# ── WiFi 行 ──
+	var wifi_row = HBoxContainer.new()
+	wifi_row.add_theme_constant_override("separation", 6)
+	wifi_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(wifi_row)
+	
+	_info_wifi_dot = Label.new()
+	_info_wifi_dot.text = "\u25cf"
+	_info_wifi_dot.add_theme_font_size_override("font_size", 10)
+	_info_wifi_dot.add_theme_color_override("font_color", Color(0.3, 0.8, 0.4, 0.9))
+	_info_wifi_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	wifi_row.add_child(_info_wifi_dot)
+	
+	var wifi_tag = Label.new()
+	wifi_tag.text = "WiFi"
+	wifi_tag.add_theme_font_size_override("font_size", 11)
+	wifi_tag.add_theme_color_override("font_color", Color(0.5, 0.65, 0.85, 0.6))
+	wifi_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	wifi_row.add_child(wifi_tag)
+	
+	_info_wifi_label = Label.new()
+	_info_wifi_label.text = "..."
+	_info_wifi_label.add_theme_font_size_override("font_size", 13)
+	_info_wifi_label.add_theme_color_override("font_color", Color(0.7, 0.82, 0.95, 0.85))
+	_info_wifi_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	wifi_row.add_child(_info_wifi_label)
+
+func _make_info_sep_style() -> StyleBoxFlat:
+	var s = StyleBoxFlat.new()
+	s.bg_color = Color(0.1, 0.8, 1.0, 0.15)
+	s.set_content_margin_all(0)
+	return s
+
+## 刷新信息栏内容 (日期+时钟)
+func _refresh_info_panel() -> void:
+	var d = Time.get_date_dict_from_system()
+	var weekdays = ["日", "一", "二", "三", "四", "五", "六"]
+	var wd = weekdays[d.weekday % 7]
+	_info_date_label.text = "%d年%02d月%02d日 周%s" % [d.year, d.month, d.day, wd]
+	_update_info_time()
+
+## 更新实时时钟
+func _update_info_time() -> void:
+	var t = Time.get_time_dict_from_system()
+	_info_time_label.text = "%02d:%02d:%02d" % [t.hour, t.minute, t.second]
+
+## 信息栏定位: 紧贴主菜单左侧
+func _update_info_panel_position() -> void:
+	if not _info_panel.visible:
+		return
+	var info_w = _info_panel.size.x if _info_panel.size.x > 0 else 120.0
+	var gap := 4.0
+	# 默认在主菜单左侧
+	var x = hud.position.x - info_w - gap
+	# 如果左侧空间不足，放到右侧
+	if x < 4.0:
+		x = hud.position.x + hud.size.x + gap
+	_info_panel.position = Vector2(x, hud.position.y)
+
+## WiFi 异步查询
+func _query_wifi_for_info() -> void:
+	_info_wifi_label.text = "..."
+	_info_wifi_dot.add_theme_color_override("font_color", Color(0.6, 0.6, 0.4, 0.7))
+	WorkerThreadPool.add_task(_wifi_info_task)
+
+func _wifi_info_task() -> void:
+	var output: Array = []
+	var exit = OS.execute("powershell", ["-NoProfile", "-Command",
+		"(Get-NetConnectionProfile | Where-Object {$_.InterfaceAlias -match 'Wi-Fi|WLAN|Wireless'} | Select-Object -First 1).Name"], output, true, false)
+	var ssid = ""
+	if exit == 0 and output.size() > 0:
+		# 取第一行 (可能有多个 WiFi 适配器)
+		var lines = output[0].strip_edges().split("\n")
+		if lines.size() > 0:
+			ssid = lines[0].strip_edges()
+	if ssid == "":
+		ssid = "未连接"
+	_info_wifi_pending = ssid
+	_info_wifi_has_pending = true
+
