@@ -81,9 +81,9 @@ func _collect_hit_regions() -> void:
 		circles.append(pet_r)
 		
 		# 全息时钟 HUD: 矩形
-		if p.hud_clock_enabled and is_instance_valid(p.hud_clock_label) and p.hud_clock_label.visible:
-			var clock_pos = p.hud_clock_label.global_position
-			var clock_size = p.hud_clock_label.get_minimum_size()
+		if p.pet_hud.clock_enabled and is_instance_valid(p.pet_hud.clock_label) and p.pet_hud.clock_label.visible:
+			var clock_pos = p.pet_hud.clock_label.global_position
+			var clock_size = p.pet_hud.clock_label.get_minimum_size()
 			rects.append(clock_pos.x - 5)
 			rects.append(clock_pos.y - 5)
 			rects.append(clock_size.x + 10)
@@ -176,12 +176,12 @@ func _update_hit_regions_fallback() -> void:
 		circles.append(_q(pet_r))
 		
 		# 拖影 AABB
-		if p.trail_enabled and p.trail_history.size() > 0:
+		if p.pet_effects.trail_enabled and p.pet_effects.trail_history.size() > 0:
 			var min_x: float = pet_pos.x
 			var min_y: float = pet_pos.y
 			var max_x: float = pet_pos.x
 			var max_y: float = pet_pos.y
-			for trail_pos in p.trail_history:
+			for trail_pos in p.pet_effects.trail_history:
 				min_x = minf(min_x, trail_pos.x - p.PET_RADIUS)
 				min_y = minf(min_y, trail_pos.y - p.PET_RADIUS)
 				max_x = maxf(max_x, trail_pos.x + p.PET_RADIUS)
@@ -192,7 +192,7 @@ func _update_hit_regions_fallback() -> void:
 			rects.append(_q(max_y - min_y + 10))
 		
 		# 冲击波 AABB
-		for shock in p.shockwaves:
+		for shock in p.pet_effects.shockwaves:
 			if shock["alpha"] > 0.1:
 				var s_pos = pet_pos + shock["local_pos"]
 				var sr: float = shock["radius"] + 10.0
@@ -202,9 +202,9 @@ func _update_hit_regions_fallback() -> void:
 				rects.append(_q(sr * 2.0))
 		
 		# HUD/气泡
-		if p.hud_clock_enabled and is_instance_valid(p.hud_clock_label) and p.hud_clock_label.visible:
-			var clock_pos = p.hud_clock_label.global_position
-			var clock_size = p.hud_clock_label.get_minimum_size()
+		if p.pet_hud.clock_enabled and is_instance_valid(p.pet_hud.clock_label) and p.pet_hud.clock_label.visible:
+			var clock_pos = p.pet_hud.clock_label.global_position
+			var clock_size = p.pet_hud.clock_label.get_minimum_size()
 			rects.append(_q(clock_pos.x - 5))
 			rects.append(_q(clock_pos.y - 5))
 			rects.append(_q(clock_size.x + 10))

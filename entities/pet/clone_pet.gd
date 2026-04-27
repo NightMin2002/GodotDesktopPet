@@ -14,20 +14,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		current_state.input(event)
 	# 不响应右键菜单 (菜单仅限原体)
 
-func _init_hud_clock() -> void:
-	# 克隆体不需要 HUD 时钟，创建隐藏占位避免其他代码 null 引用
-	hud_clock_label = Label.new()
-	hud_clock_label.visible = false
-	add_child(hud_clock_label)
-
 func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 	# 只响应通用视觉设置，忽略时钟等原体专属功能
 	if setting_id == "eye_track":
 		eye_behavior.tracking_enabled = is_on
 	elif setting_id == "shockwave":
-		shockwave_enabled = is_on
+		pet_effects.shockwave_enabled = is_on
 	elif setting_id == "trail_fx":
-		trail_enabled = is_on
+		pet_effects.trail_enabled = is_on
 	elif setting_id == "stroll":
 		stroll_enabled = is_on
 	elif setting_id == "anti_gravity":
