@@ -1,4 +1,4 @@
-﻿# hit_region_manager.gd — DWM 鼠标穿透管理器 (从 main.gd 拆分)
+# hit_region_manager.gd — DWM 鼠标穿透管理器 (从 main.gd 拆分)
 # 双模式架构:
 #   模式A (完美): WS_EX_LAYERED 注入成功 → 本地命中检测 + WS_EX_TRANSPARENT 切换 → 零裁剪
 #   模式B (回退): 注入失败 → SetWindowRgn AABB 矩形区域 → 特效区域有裁剪
@@ -80,15 +80,6 @@ func _collect_hit_regions() -> void:
 		circles.append(pet_pos.y)
 		circles.append(pet_r)
 		
-		# 全息时钟 HUD: 矩形
-		if p.pet_hud.clock_enabled and is_instance_valid(p.pet_hud.clock_panel) and p.pet_hud.clock_panel.visible:
-			var clock_pos = p.pet_hud.clock_panel.global_position
-			var clock_size = p.pet_hud.clock_panel.get_minimum_size()
-			rects.append(clock_pos.x - 5)
-			rects.append(clock_pos.y - 5)
-			rects.append(clock_size.x + 10)
-			rects.append(clock_size.y + 10)
-		
 		# 全局气泡覆盖层: 矩形
 		if p.overlay_rect.size != Vector2.ZERO:
 			var ov = p.overlay_rect
@@ -104,6 +95,15 @@ func _collect_hit_regions() -> void:
 				rects.append(br.position.y)
 				rects.append(br.size.x)
 				rects.append(br.size.y)
+		
+		# HUD 监控面板: 矩形
+		if p.hud_panel:
+			var hud_r = p.hud_panel.get_panel_rect()
+			if hud_r.size != Vector2.ZERO:
+				rects.append(hud_r.position.x)
+				rects.append(hud_r.position.y)
+				rects.append(hud_r.size.x)
+				rects.append(hud_r.size.y)
 	
 	_hit_circles = circles
 	_hit_rects = rects
@@ -201,15 +201,7 @@ func _update_hit_regions_fallback() -> void:
 				rects.append(_q(sr * 2.0))
 				rects.append(_q(sr * 2.0))
 		
-		# HUD/气泡
-		if p.pet_hud.clock_enabled and is_instance_valid(p.pet_hud.clock_panel) and p.pet_hud.clock_panel.visible:
-			var clock_pos = p.pet_hud.clock_panel.global_position
-			var clock_size = p.pet_hud.clock_panel.get_minimum_size()
-			rects.append(_q(clock_pos.x - 5))
-			rects.append(_q(clock_pos.y - 5))
-			rects.append(_q(clock_size.x + 10))
-			rects.append(_q(clock_size.y + 10))
-		
+		# 全局气泡
 		if p.overlay_rect.size != Vector2.ZERO:
 			var ov = p.overlay_rect
 			rects.append(_q(ov.position.x))
@@ -223,6 +215,15 @@ func _update_hit_regions_fallback() -> void:
 				rects.append(_q(br.position.y))
 				rects.append(_q(br.size.x))
 				rects.append(_q(br.size.y))
+		
+		# HUD 监控面板
+		if p.hud_panel:
+			var hud_r = p.hud_panel.get_panel_rect()
+			if hud_r.size != Vector2.ZERO:
+				rects.append(_q(hud_r.position.x))
+				rects.append(_q(hud_r.position.y))
+				rects.append(_q(hud_r.size.x))
+				rects.append(_q(hud_r.size.y))
 	
 	# 变化检测
 	if circles == _last_circles and rects == _last_rects:

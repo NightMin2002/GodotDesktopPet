@@ -5,7 +5,7 @@ extends CanvasLayer
 @onready var hud: PanelContainer = $HUDPanel
 @onready var date_label: Label = $HUDPanel/Margin/VBox/DateLabel
 @onready var track_btn: Button = $HUDPanel/Margin/VBox/EyeTrackBtn
-@onready var hud_clock_btn: Button = $HUDPanel/Margin/VBox/HUDClockBtn
+@onready var hud_btn: Button = $HUDPanel/Margin/VBox/HudBtn
 @onready var autostart_btn: Button = $HUDPanel/Margin/VBox/AutoStartBtn
 @onready var window_mode_btn: Button = $HUDPanel/Margin/VBox/WindowModeBtn
 @onready var behavior_mode_btn: Button = $HUDPanel/Margin/VBox/BehaviorModeBtn
@@ -42,7 +42,9 @@ func _ready() -> void:
 	
 	EventBus.show_context_menu.connect(_on_show_context_menu)
 	track_btn.pressed.connect(_on_track_btn_pressed)
-	hud_clock_btn.pressed.connect(_on_hud_clock_btn_pressed)
+	hud_btn.mouse_entered.connect(func(): _on_submenu_trigger_hover("hud"))
+	hud_btn.mouse_exited.connect(func(): _on_submenu_trigger_exit())
+	hud_btn.pressed.connect(func(): _toggle_submenu("hud"))
 	chatter_btn.pressed.connect(_on_chatter_btn_pressed)
 	chatter_btn.mouse_entered.connect(func(): _show_chatter_desc(true))
 	chatter_btn.mouse_exited.connect(func(): _show_chatter_desc(false))
@@ -81,7 +83,6 @@ func _load_saved_settings() -> void:
 	
 	# 应用到本地按钮显示 (pet 自己从 SettingsManager 读取，不依赖信号)
 	_set_toggle(track_btn, eye, "◉ 眼球追踪鼠标", "○ 眼球追踪鼠标")
-	_set_toggle(hud_clock_btn, clock, "◉ 赛博全息时钟", "○ 赛博全息时钟")
 	
 	# 子菜单按钮状态初始化
 	_refresh_submenu_states()
@@ -125,8 +126,7 @@ func _check_autostart_deferred(delta: float) -> void:
 func _process(delta: float) -> void:
 	_check_autostart_deferred(delta)
 	if hud.visible and is_instance_valid(target):
-		var target_pos = target.get_global_transform_with_canvas().get_origin() + Vector2(45, -65)
-		target_pos = _clamp_to_viewport(target_pos)
+		var target_pos = _calc_menu_pos(target.get_global_transform_with_canvas().get_origin())
 		hud.position = hud.position.lerp(target_pos, delta * 15.0)
 		# 子菜单跟随主菜单
 		if _active_submenu != "":
@@ -155,6 +155,31 @@ func _clamp_to_viewport(pos: Vector2) -> Vector2:
 	pos.y = clampf(pos.y, 4.0, vp.y - hs.y - 4.0)
 	return pos
 
+## 智能菜单定位: 根据宠物屏幕位置选择弹出方向
+func _calc_menu_pos(pet_pos: Vector2) -> Vector2:
+	var vp = get_viewport().get_visible_rect().size
+	var hs = hud.size if hud.size.x > 0 else Vector2(200, 400)
+	var gap := 45.0  # 宠物与面板间距
+	
+	# 水平: 宠物在右半屏 → 面板弹到左边
+	var x: float
+	if pet_pos.x > vp.x * 0.5:
+		x = pet_pos.x - hs.x - gap
+	else:
+		x = pet_pos.x + gap
+	
+	# 垂直: 宠物在下半屏 → 面板弹到上方，否则下方
+	var y: float
+	if pet_pos.y > vp.y * 0.5:
+		y = pet_pos.y - hs.y + 20.0  # 上方，底部对齐宠物附近
+	else:
+		y = pet_pos.y - 20.0  # 下方，顶部对齐宠物附近
+	
+	# 边界钳制
+	x = clampf(x, 4.0, vp.x - hs.x - 4.0)
+	y = clampf(y, 4.0, vp.y - hs.y - 4.0)
+	return Vector2(x, y)
+
 # ── 菜单开关 ──
 
 func _on_show_context_menu(target_node: Node2D) -> void:
@@ -166,7 +191,7 @@ func _on_show_context_menu(target_node: Node2D) -> void:
 	_update_clone_label()  # 每次开菜单时刷新克隆计数
 	_update_date_label()   # 刷新日期显示
 	var pet_pos = target.get_global_transform_with_canvas().get_origin()
-	var panel_pos = _clamp_to_viewport(pet_pos + Vector2(45, -65))
+	var panel_pos = _calc_menu_pos(pet_pos)
 	hud.position = panel_pos
 	hud.modulate.a = 0.0
 	hud.show()
@@ -203,10 +228,6 @@ func _on_track_btn_pressed() -> void:
 	SettingsManager.set_bool("eye_track", on)
 	EventBus.setting_toggled.emit("eye_track", on)
 
-func _on_hud_clock_btn_pressed() -> void:
-	var on = _flip_toggle(hud_clock_btn, "◉ 赛博全息时钟", "○ 赛博全息时钟")
-	SettingsManager.set_bool("hud_clock", on)
-	EventBus.setting_toggled.emit("hud_clock", on)
 
 func _on_autostart_btn_pressed() -> void:
 	var win_mgr = _get_win_manager()
@@ -475,6 +496,13 @@ func _build_submenus() -> void:
 		{"id": "anti_gravity", "on": "◉ 反重力", "off": "○ 反重力",
 		 "key": "anti_gravity", "default": false},
 	])
+	# HUD 子菜单 (开关，控制悬浮面板中的各组件)
+	_create_submenu("hud", [
+		{"id": "hud_clock", "on": "◉ 系统时钟", "off": "○ 系统时钟",
+		 "key": "hud_clock", "default": false},
+		{"id": "hud_wifi", "on": "◉ WiFi 信息", "off": "○ WiFi 信息",
+		 "key": "hud_wifi", "default": false},
+	])
 
 ## 创建单个子菜单面板
 func _create_submenu(menu_id: String, items: Array) -> void:
@@ -529,6 +557,11 @@ func _refresh_submenu_states() -> void:
 	# 模式
 	var ag = SettingsManager.get_bool("anti_gravity", false)
 	_set_toggle(_submenu_items["anti_gravity"], ag, "◉ 反重力", "○ 反重力")
+	# HUD
+	var hc = SettingsManager.get_bool("hud_clock", false)
+	_set_toggle(_submenu_items["hud_clock"], hc, "◉ 系统时钟", "○ 系统时钟")
+	var hw = SettingsManager.get_bool("hud_wifi", false)
+	_set_toggle(_submenu_items["hud_wifi"], hw, "◉ WiFi 信息", "○ WiFi 信息")
 
 ## 子菜单项被按下
 func _on_submenu_item_pressed(item: Dictionary) -> void:
@@ -638,7 +671,7 @@ func _hide_all_submenus_instant() -> void:
 ## 检测鼠标是否在子菜单区域内 (含触发按钮)
 func _is_mouse_in_submenu_area() -> bool:
 	# 检查触发按钮
-	for btn in [window_mode_btn, behavior_mode_btn, effects_btn, entertain_btn, mode_btn]:
+	for btn in [window_mode_btn, behavior_mode_btn, effects_btn, entertain_btn, mode_btn, hud_btn]:
 		var local = btn.get_local_mouse_position()
 		if Rect2(Vector2.ZERO, btn.size).has_point(local):
 			return true
@@ -658,6 +691,7 @@ func _get_submenu_trigger(menu_id: String) -> Button:
 		"effects": return effects_btn
 		"entertain": return entertain_btn
 		"mode": return mode_btn
+		"hud": return hud_btn
 	return null
 
 ## 创建单选子菜单 (窗口模式/行为指令)

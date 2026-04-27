@@ -27,6 +27,7 @@ var clone_hue_shift: float = 0.0    # 克隆体色调偏移 (0~1 HSV hue offset)
 
 # ── HUD + 气泡系统 (委托给 PetHUD) ──
 var pet_hud: PetHUD
+var hud_panel: HudPanel
 
 # ── 眼球行为控制器 ──
 var eye_behavior: EyeBehavior
@@ -91,11 +92,12 @@ func _ready() -> void:
 	# 初始化 HUD + 气泡系统
 	pet_hud = PetHUD.new()
 	pet_hud.pet = self
-	if not is_clone:
-		pet_hud.clock_enabled = SettingsManager.get_bool("hud_clock", false)
-	else:
-		pet_hud.clock_enabled = false  # 克隆体不显示时钟
-	pet_hud.init_clock()
+	pet_hud.init_bubbles()
+	
+	# 初始化统一 HUD 面板 (时钟+WiFi+未来组件)
+	hud_panel = HudPanel.new()
+	hud_panel.init(self)
+	
 	# 从持久化存储恢复设置 (不依赖信号时序)
 	eye_behavior.tracking_enabled = SettingsManager.get_bool("eye_track", true)
 	pet_effects.shockwave_enabled = SettingsManager.get_bool("shockwave", true)
@@ -103,6 +105,14 @@ func _ready() -> void:
 	stroll_enabled = SettingsManager.get_bool("stroll", true)
 	var ag = SettingsManager.get_bool("anti_gravity", false)
 	_set_anti_gravity(ag)
+	# HUD 组件状态恢复 (仅原体)
+	if not is_clone:
+		var hud_clock = SettingsManager.get_bool("hud_clock", false)
+		var hud_wifi = SettingsManager.get_bool("hud_wifi", false)
+		if hud_clock:
+			hud_panel.set_clock(true)
+		if hud_wifi:
+			hud_panel.set_wifi(true)
 	
 	# 监听运行时设置变更
 	EventBus.setting_toggled.connect(_on_setting_toggled)
@@ -121,9 +131,12 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		_set_anti_gravity(is_on)
 	elif setting_id == "hud_clock":
 		if is_clone:
-			return  # 克隆体永远不显示时钟
-		pet_hud.clock_enabled = is_on
-		pet_hud.clock_panel.visible = is_on
+			return
+		hud_panel.set_clock(is_on)
+	elif setting_id == "hud_wifi":
+		if is_clone:
+			return
+		hud_panel.set_wifi(is_on)
 
 func _on_behavior_mode_changed(mode: int) -> void:
 	behavior_mode = mode
@@ -201,6 +214,7 @@ func _process(delta: float) -> void:
 	
 	# 更新子系统
 	pet_hud.update(delta)
+	hud_panel.update(delta)
 	eye_behavior.update(delta)
 	var has_visual_change = pet_effects.update(delta)
 	
