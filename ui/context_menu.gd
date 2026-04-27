@@ -47,9 +47,9 @@ func _ready() -> void:
 	hud_btn.mouse_entered.connect(func(): _on_submenu_trigger_hover("hud"))
 	hud_btn.mouse_exited.connect(func(): _on_submenu_trigger_exit())
 	hud_btn.pressed.connect(func(): _toggle_submenu("hud"))
-	chatter_btn.pressed.connect(_on_chatter_btn_pressed)
-	chatter_btn.mouse_entered.connect(func(): _show_chatter_desc(true))
-	chatter_btn.mouse_exited.connect(func(): _show_chatter_desc(false))
+	chatter_btn.mouse_entered.connect(func(): _on_submenu_trigger_hover("chatter"))
+	chatter_btn.mouse_exited.connect(func(): _on_submenu_trigger_exit())
+	chatter_btn.pressed.connect(func(): _toggle_submenu("chatter"))
 	# 模式子菜单触发器
 	window_mode_btn.mouse_entered.connect(func(): _on_submenu_trigger_hover("window_mode"))
 	window_mode_btn.mouse_exited.connect(func(): _on_submenu_trigger_exit())
@@ -102,6 +102,7 @@ func _load_saved_settings() -> void:
 	# 宠物碎碎念模式
 	var chatter_mode = SettingsManager.get_int("pet_chatter_mode", 1)
 	_update_chatter_label(chatter_mode)
+	_refresh_radio_submenu("chatter", chatter_mode)
 	
 	# 自启动状态延迟检测 (等 C# 节点就绪)
 	_autostart_check_pending = true
@@ -240,31 +241,16 @@ func _on_autostart_btn_pressed() -> void:
 	win_mgr.call("SetAutoStart", new_val)
 	_set_toggle(autostart_btn, new_val, "◉ 开机自启动", "○ 开机自启动")
 
-# ── 碎碎念模式切换 ──
+const CHATTER_MODE_LABELS := ["碎碎念 · 已关闭 ▸", "碎碎念 · 每30分钟 ▸", "碎碎念 · 每60分钟 ▸"]
 
-const CHATTER_MODE_LABELS := ["○ 宠物碎碎念", "◉ 碎碎念·30分钟", "◉ 碎碎念·60分钟"]
-const CHATTER_MODE_DESCS := [
-	"已关闭，宠物不会主动说话",
-	"每到整点和半点，宠物会冒泡说点什么",
-	"每到整点，宠物会冒泡说点什么",
-]
-
-func _on_chatter_btn_pressed() -> void:
-	var current = SettingsManager.get_int("pet_chatter_mode", 1)
-	var next_mode = (current + 1) % 3
-	_update_chatter_label(next_mode)
-	SettingsManager.set_int("pet_chatter_mode", next_mode)
-	EventBus.setting_toggled.emit("pet_chatter_mode", next_mode > 0)
-	# 如果 tooltip 正在显示则即时更新
-	if _tooltip_panel.visible and _active_tooltip_btn == chatter_btn:
-		_tooltip_label.text = CHATTER_MODE_DESCS[next_mode]
+func _on_radio_chatter_mode(value: int) -> void:
+	_update_chatter_label(value)
+	SettingsManager.set_int("pet_chatter_mode", value)
+	EventBus.setting_toggled.emit("pet_chatter_mode", value > 0)
+	_refresh_radio_submenu("chatter", value)
 
 func _update_chatter_label(mode: int) -> void:
 	chatter_btn.text = CHATTER_MODE_LABELS[mode]
-
-func _show_chatter_desc(show: bool) -> void:
-	var mode = SettingsManager.get_int("pet_chatter_mode", 1)
-	_show_tooltip_for(chatter_btn, CHATTER_MODE_DESCS[mode], show)
 
 func _on_reminder_btn_pressed() -> void:
 	_tooltip_panel.hide()
@@ -481,6 +467,12 @@ func _build_submenus() -> void:
 		{"value": 0, "label": "自由行动", "desc": "活力满满，随意滚动跳跃"},
 		{"value": 1, "label": "安静待命", "desc": "安安静静，乖乖不动"},
 	], func(v): _on_radio_behavior_mode(v))
+	# 碎碎念子菜单 (单选)
+	_create_radio_submenu("chatter", [
+		{"value": 0, "label": "关闭", "desc": "宠物不会主动说话"},
+		{"value": 1, "label": "每30分钟", "desc": "每到整点和半点，冒泡说点什么"},
+		{"value": 2, "label": "每60分钟", "desc": "每到整点，冒泡说点什么"},
+	], func(v): _on_radio_chatter_mode(v))
 	# 视觉特效子菜单 (开关)
 	_create_submenu("effects", [
 		{"id": "shockwave", "on": "◉ 撞击冲击波", "off": "○ 撞击冲击波",
@@ -694,6 +686,7 @@ func _get_submenu_trigger(menu_id: String) -> Button:
 		"entertain": return entertain_btn
 		"mode": return mode_btn
 		"hud": return hud_btn
+		"chatter": return chatter_btn
 	return null
 
 ## 创建单选子菜单 (窗口模式/行为指令)
