@@ -3,7 +3,7 @@
 [ext_resource type="Script" path="res://ui/context_menu.gd" id="1_cm"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hud"]
-bg_color = Color(0.04, 0.08, 0.16, 0.88)
+bg_color = Color(0.035, 0.05, 0.1, 0.92)
 border_width_left = 2
 border_width_top = 2
 border_width_right = 2
@@ -35,7 +35,7 @@ theme_override_constants/margin_bottom = 14
 
 [node name="VBox" type="VBoxContainer" parent="HUDPanel/Margin"]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="DateLabel" type="Label" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
@@ -44,21 +44,18 @@ theme_override_font_sizes/font_size = 15
 text = "2026年01月01日 (周四)"
 horizontal_alignment = 1
 
+[node name="SecPet" type="Label" parent="HUDPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.2, 0.75, 0.9, 0.8)
+theme_override_font_sizes/font_size = 14
+text = "▌宠物"
+
 [node name="EyeTrackBtn" type="Button" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.1, 1, 0.9, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "◉ 眼球追踪鼠标"
-flat = true
-alignment = 0
-
-[node name="HudBtn" type="Button" parent="HUDPanel/Margin/VBox"]
-layout_mode = 2
-theme_override_colors/font_hover_color = Color(0.1, 1, 0.9, 1)
-theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
-theme_override_font_sizes/font_size = 20
-text = "HUD ▸"
+text = "◉ 眼球追踪"
 flat = true
 alignment = 0
 
@@ -67,97 +64,120 @@ layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.1, 1, 0.9, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "◉ 宠物碎碎念"
+text = "◉ 碎碎念"
 flat = true
 alignment = 0
 
-[node name="Sep" type="HSeparator" parent="HUDPanel/Margin/VBox"]
+[node name="SecDisplay" type="Label" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
-theme_override_colors/separator_color = Color(0.1, 0.8, 1, 0.3)
+theme_override_colors/font_color = Color(0.2, 0.75, 0.9, 0.8)
+theme_override_font_sizes/font_size = 14
+text = "▌显示"
+
+[node name="HudBtn" type="Button" parent="HUDPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_hover_color = Color(0.1, 1, 0.9, 1)
+theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 20
+text = "HUD 面板 ▸"
+flat = true
+alignment = 0
+
+[node name="SecBehavior" type="Label" parent="HUDPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.4, 0.6, 1.0, 0.8)
+theme_override_font_sizes/font_size = 14
+text = "▌行为"
 
 [node name="WindowModeBtn" type="Button" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
-theme_override_colors/font_hover_color = Color(0.3, 1, 0.5, 1)
+theme_override_colors/font_hover_color = Color(0.4, 0.7, 1.0, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "🌍 窗口 · 自由漫游 ▸"
+text = "窗口 · 自由漫游 ▸"
 flat = true
 alignment = 0
 
 [node name="BehaviorModeBtn" type="Button" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
-theme_override_colors/font_hover_color = Color(0.3, 0.8, 1, 1)
+theme_override_colors/font_hover_color = Color(0.4, 0.7, 1.0, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "🏃 指令 · 自由行动 ▸"
+text = "指令 · 自由行动 ▸"
 flat = true
 alignment = 0
 
 [node name="ModeBtn" type="Button" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
-theme_override_colors/font_hover_color = Color(0.8, 0.5, 1.0, 1)
+theme_override_colors/font_hover_color = Color(0.4, 0.7, 1.0, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "🔮 模式 ▸"
+text = "模式 ▸"
 flat = true
 alignment = 0
 
-[node name="Sep2" type="HSeparator" parent="HUDPanel/Margin/VBox"]
+[node name="SecVisual" type="Label" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
-theme_override_colors/separator_color = Color(0.1, 0.8, 1, 0.3)
+theme_override_colors/font_color = Color(0.85, 0.7, 0.25, 0.8)
+theme_override_font_sizes/font_size = 14
+text = "▌视觉"
 
 [node name="EffectsBtn" type="Button" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
 theme_override_colors/font_hover_color = Color(1.0, 0.85, 0.3, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "✨ 视觉特效 ▸"
+text = "特效 ▸"
 flat = true
 alignment = 0
+
+[node name="SecPlay" type="Label" parent="HUDPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.3, 0.85, 0.55, 0.8)
+theme_override_font_sizes/font_size = 14
+text = "▌玩法"
 
 [node name="EntertainBtn" type="Button" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.3, 1.0, 0.7, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "🎮 娱乐玩法 ▸"
+text = "娱乐 ▸"
 flat = true
 alignment = 0
 
 [node name="ReminderBtn" type="Button" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
-theme_override_colors/font_hover_color = Color(1, 0.85, 0.3, 1)
+theme_override_colors/font_hover_color = Color(0.3, 1.0, 0.7, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "⏰ 提醒管理..."
+text = "提醒管理..."
 flat = true
 alignment = 0
 
-[node name="Sep3" type="HSeparator" parent="HUDPanel/Margin/VBox"]
-layout_mode = 2
-theme_override_colors/separator_color = Color(0.1, 0.8, 1, 0.3)
-
 [node name="CloneBtn" type="Button" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
-theme_override_colors/font_hover_color = Color(0.7, 0.4, 1.0, 1)
+theme_override_colors/font_hover_color = Color(0.3, 1.0, 0.7, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "🧬 召唤分身 (0/5)"
+text = "召唤分身 (0/5)"
 flat = true
 alignment = 0
 
 [node name="DismissBtn" type="Button" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
-theme_override_colors/font_hover_color = Color(1.0, 0.6, 0.3, 1)
-theme_override_colors/font_color = Color(0.65, 0.5, 0.5, 0.85)
+theme_override_colors/font_hover_color = Color(0.5, 1.0, 0.6, 1)
+theme_override_colors/font_color = Color(0.45, 0.6, 0.45, 0.7)
 theme_override_font_sizes/font_size = 20
-text = "💨 遣散所有分身"
+text = "遣散所有分身"
 flat = true
 alignment = 0
 
-[node name="Sep4" type="HSeparator" parent="HUDPanel/Margin/VBox"]
+[node name="SecSystem" type="Label" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
-theme_override_colors/separator_color = Color(0.1, 0.8, 1, 0.3)
+theme_override_colors/font_color = Color(0.6, 0.45, 0.45, 0.8)
+theme_override_font_sizes/font_size = 14
+text = "▌系统"
 
 [node name="AutoStartBtn" type="Button" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
@@ -173,6 +193,6 @@ layout_mode = 2
 theme_override_colors/font_hover_color = Color(1.0, 0.45, 0.35, 1)
 theme_override_colors/font_color = Color(0.65, 0.5, 0.5, 0.85)
 theme_override_font_sizes/font_size = 20
-text = "💤 让宠物休息"
+text = "让宠物休息"
 flat = true
 alignment = 0

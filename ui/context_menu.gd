@@ -25,6 +25,7 @@ var _active_submenu: String = ""
 var _submenu_hover_timer: float = -1.0
 var _submenu_pending_id: String = ""
 var _submenu_close_timer: float = -1.0
+var _btn_section_colors: Dictionary = {}  # Button -> Color (按钮所属区块颜色)
 
 var _tooltip_panel: PanelContainer
 var _tooltip_label: Label
@@ -36,6 +37,7 @@ func _ready() -> void:
 	hud.hide()
 	_build_mode_tooltip()
 	_build_submenus()
+	_style_section_headers()
 	
 	# 从持久化存储恢复上次的设置状态
 	_load_saved_settings()
@@ -82,7 +84,7 @@ func _load_saved_settings() -> void:
 	var clock = SettingsManager.get_bool("hud_clock", false)
 	
 	# 应用到本地按钮显示 (pet 自己从 SettingsManager 读取，不依赖信号)
-	_set_toggle(track_btn, eye, "◉ 眼球追踪鼠标", "○ 眼球追踪鼠标")
+	_set_toggle(track_btn, eye, "◉ 眼球追踪", "○ 眼球追踪")
 	
 	# 子菜单按钮状态初始化
 	_refresh_submenu_states()
@@ -224,7 +226,7 @@ func _close_hud() -> void:
 # ── 按钮回调 ──
 
 func _on_track_btn_pressed() -> void:
-	var on = _flip_toggle(track_btn, "◉ 眼球追踪鼠标", "○ 眼球追踪鼠标")
+	var on = _flip_toggle(track_btn, "◉ 眼球追踪", "○ 眼球追踪")
 	SettingsManager.set_bool("eye_track", on)
 	EventBus.setting_toggled.emit("eye_track", on)
 
@@ -293,7 +295,7 @@ func _update_clone_label() -> void:
 	if main_node and "pet_instances" in main_node:
 		var count: int = (main_node.pet_instances as Array).size() - 1
 		var max_c: int = main_node.clone_mgr.MAX_CLONES if main_node.clone_mgr else 5
-		clone_btn.text = "🧬 召唤分身 (" + str(count) + "/" + str(max_c) + ")"
+		clone_btn.text = "召唤分身 (" + str(count) + "/" + str(max_c) + ")"
 
 func _update_date_label() -> void:
 	var d = Time.get_date_dict_from_system()
@@ -325,7 +327,7 @@ func _on_quit_btn_pressed() -> void:
 
 # ── 窗口模式 (子菜单单选回调) ──
 
-const WINDOW_MODE_LABELS := ["🌍 窗口 · 自由漫游 ▸", "🔒 窗口 · 窗口封闭 ▸", "🚫 窗口 · 窗口排斥 ▸"]
+const WINDOW_MODE_LABELS := ["窗口 · 自由漫游 ▸", "窗口 · 窗口封闭 ▸", "窗口 · 窗口排斥 ▸"]
 
 func _on_radio_window_mode(value: int) -> void:
 	_update_window_mode_label(value)
@@ -337,7 +339,7 @@ func _update_window_mode_label(mode: int) -> void:
 
 # ── 行为指令 (子菜单单选回调) ──
 
-const BEHAVIOR_MODE_LABELS := ["🏃 指令 · 自由行动 ▸", "🧘 指令 · 安静待命 ▸"]
+const BEHAVIOR_MODE_LABELS := ["指令 · 自由行动 ▸", "指令 · 安静待命 ▸"]
 
 func _on_radio_behavior_mode(value: int) -> void:
 	_update_behavior_mode_label(value)
@@ -470,14 +472,14 @@ func _unhandled_input(event: InputEvent) -> void:
 func _build_submenus() -> void:
 	# 窗口模式子菜单 (单选)
 	_create_radio_submenu("window_mode", [
-		{"value": 0, "label": "🌍 自由漫游", "desc": "在窗口间自由行走"},
-		{"value": 1, "label": "🔒 窗口封闭", "desc": "被困在当前窗口内"},
-		{"value": 2, "label": "🚫 窗口排斥", "desc": "无法进入任何窗口"},
+		{"value": 0, "label": "自由漫游", "desc": "在窗口间自由行走"},
+		{"value": 1, "label": "窗口封闭", "desc": "被困在当前窗口内"},
+		{"value": 2, "label": "窗口排斥", "desc": "无法进入任何窗口"},
 	], func(v): _on_radio_window_mode(v))
 	# 行为指令子菜单 (单选)
 	_create_radio_submenu("behavior_mode", [
-		{"value": 0, "label": "🏃 自由行动", "desc": "活力满满，随意滚动跳跃"},
-		{"value": 1, "label": "🧘 安静待命", "desc": "安安静静，乖乖不动"},
+		{"value": 0, "label": "自由行动", "desc": "活力满满，随意滚动跳跃"},
+		{"value": 1, "label": "安静待命", "desc": "安安静静，乖乖不动"},
 	], func(v): _on_radio_behavior_mode(v))
 	# 视觉特效子菜单 (开关)
 	_create_submenu("effects", [
@@ -762,3 +764,78 @@ func _refresh_radio_submenu(menu_id: String, current_value: int) -> void:
 		else:
 			btn.text = "○ " + item.label
 
+# ── 分区标题样式化 ──
+
+## 将 ▌ 标题 Label 替换为徽章(彩色左边框面板) + 延伸细线
+func _style_section_headers() -> void:
+	var vbox = hud.get_node("Margin/VBox")
+	var is_first_section := true
+	var children_snapshot = vbox.get_children().duplicate()
+	var current_section_color := Color.WHITE
+	
+	for child in children_snapshot:
+		if child is Label and child.text.begins_with("\u258c"):
+			var label: Label = child
+			current_section_color = label.get_theme_color("font_color")
+			var section_text: String = label.text.replace("\u258c", "")
+			var idx = label.get_index()
+			
+			# 上方间距
+			if not is_first_section:
+				var spacer = Control.new()
+				spacer.custom_minimum_size.y = 4
+				spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				vbox.add_child(spacer)
+				vbox.move_child(spacer, idx)
+				idx += 1
+			is_first_section = false
+			
+			# 全宽徽章: 彩色左边框 + 深背景横幅
+			var badge = PanelContainer.new()
+			badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			badge.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			var style = StyleBoxFlat.new()
+			style.bg_color = Color(current_section_color.r * 0.2, current_section_color.g * 0.2, current_section_color.b * 0.2, 0.7)
+			style.border_color = current_section_color
+			style.border_width_left = 3
+			style.border_width_top = 0
+			style.border_width_right = 0
+			style.border_width_bottom = 0
+			style.corner_radius_top_right = 4
+			style.corner_radius_bottom_right = 4
+			style.corner_radius_top_left = 0
+			style.corner_radius_bottom_left = 0
+			style.content_margin_left = 8
+			style.content_margin_right = 10
+			style.content_margin_top = 2
+			style.content_margin_bottom = 2
+			badge.add_theme_stylebox_override("panel", style)
+			
+			var badge_label = Label.new()
+			badge_label.text = section_text
+			badge_label.add_theme_font_size_override("font_size", 13)
+			badge_label.add_theme_color_override("font_color", Color(current_section_color.r, current_section_color.g, current_section_color.b, 0.9))
+			badge_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			badge.add_child(badge_label)
+			
+			# 替换原 Label
+			vbox.add_child(badge)
+			vbox.move_child(badge, idx)
+			label.queue_free()
+		elif child is Button:
+			# 记录每个按钮所属区块的颜色
+			_btn_section_colors[child] = current_section_color
+	
+	# 自动给子菜单上色
+	_color_submenus()
+
+## 根据触发按钮所属区块色自动设置子菜单边框色
+func _color_submenus() -> void:
+	for menu_id in _submenus:
+		var trigger = _get_submenu_trigger(menu_id)
+		if trigger and trigger in _btn_section_colors:
+			var color: Color = _btn_section_colors[trigger]
+			var panel: PanelContainer = _submenus[menu_id]
+			var style = panel.get_theme_stylebox("panel").duplicate() as StyleBoxFlat
+			style.border_color = Color(color.r, color.g, color.b, 0.8)
+			panel.add_theme_stylebox_override("panel", style)
