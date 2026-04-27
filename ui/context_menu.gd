@@ -11,6 +11,7 @@ extends CanvasLayer
 @onready var behavior_mode_btn: Button = $HUDPanel/Margin/VBox/BehaviorModeBtn
 @onready var effects_btn: Button = $HUDPanel/Margin/VBox/EffectsBtn
 @onready var entertain_btn: Button = $HUDPanel/Margin/VBox/EntertainBtn
+@onready var mode_btn: Button = $HUDPanel/Margin/VBox/ModeBtn
 @onready var chatter_btn: Button = $HUDPanel/Margin/VBox/ChatterBtn
 @onready var reminder_btn: Button = $HUDPanel/Margin/VBox/ReminderBtn
 @onready var clone_btn: Button = $HUDPanel/Margin/VBox/CloneBtn
@@ -59,6 +60,10 @@ func _ready() -> void:
 	entertain_btn.mouse_entered.connect(func(): _on_submenu_trigger_hover("entertain"))
 	entertain_btn.mouse_exited.connect(func(): _on_submenu_trigger_exit())
 	entertain_btn.pressed.connect(func(): _toggle_submenu("entertain"))
+	# 模式子菜单触发器
+	mode_btn.mouse_entered.connect(func(): _on_submenu_trigger_hover("mode"))
+	mode_btn.mouse_exited.connect(func(): _on_submenu_trigger_exit())
+	mode_btn.pressed.connect(func(): _toggle_submenu("mode"))
 	reminder_btn.pressed.connect(_on_reminder_btn_pressed)
 	clone_btn.pressed.connect(_on_clone_btn_pressed)
 	dismiss_btn.pressed.connect(_on_dismiss_btn_pressed)
@@ -464,6 +469,9 @@ func _build_submenus() -> void:
 	_create_submenu("entertain", [
 		{"id": "stroll", "on": "◉ 滚动散步", "off": "○ 滚动散步",
 		 "key": "stroll", "default": true},
+	])
+	# 模式子菜单 (开关，未来可继续扩展更多全局模式)
+	_create_submenu("mode", [
 		{"id": "anti_gravity", "on": "◉ 反重力", "off": "○ 反重力",
 		 "key": "anti_gravity", "default": false},
 	])
@@ -518,6 +526,7 @@ func _refresh_submenu_states() -> void:
 	# 娱乐玩法
 	var stroll = SettingsManager.get_bool("stroll", true)
 	_set_toggle(_submenu_items["stroll"], stroll, "◉ 滚动散步", "○ 滚动散步")
+	# 模式
 	var ag = SettingsManager.get_bool("anti_gravity", false)
 	_set_toggle(_submenu_items["anti_gravity"], ag, "◉ 反重力", "○ 反重力")
 
@@ -629,7 +638,7 @@ func _hide_all_submenus_instant() -> void:
 ## 检测鼠标是否在子菜单区域内 (含触发按钮)
 func _is_mouse_in_submenu_area() -> bool:
 	# 检查触发按钮
-	for btn in [window_mode_btn, behavior_mode_btn, effects_btn, entertain_btn]:
+	for btn in [window_mode_btn, behavior_mode_btn, effects_btn, entertain_btn, mode_btn]:
 		var local = btn.get_local_mouse_position()
 		if Rect2(Vector2.ZERO, btn.size).has_point(local):
 			return true
@@ -648,6 +657,7 @@ func _get_submenu_trigger(menu_id: String) -> Button:
 		"behavior_mode": return behavior_mode_btn
 		"effects": return effects_btn
 		"entertain": return entertain_btn
+		"mode": return mode_btn
 	return null
 
 ## 创建单选子菜单 (窗口模式/行为指令)

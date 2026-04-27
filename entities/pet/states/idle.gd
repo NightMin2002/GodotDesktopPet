@@ -100,12 +100,17 @@ func input(event: InputEvent) -> void:
 				pet.get_viewport().set_input_as_handled()
 				pet.transition_to("drag")
 
-## 精确判定是否已停靠在分配的队列槽位上 (替代旧的模糊边缘检测)
+## 精确判定是否已停靠在分配的队列槽位上 (X + Y 双轴验证)
 func _is_at_slot() -> bool:
 	if not pet: return false
 	if pet.has_meta("retreat_target_x"):
 		var target_x: float = pet.get_meta("retreat_target_x")
-		return absf(pet.global_position.x - target_x) < 25.0
+		var x_ok := absf(pet.global_position.x - target_x) < 25.0
+		# Y 轴验证: 确保宠物确实在目标表面 (地面/天花板) 附近
+		if pet.has_meta("retreat_target_y"):
+			var target_y: float = pet.get_meta("retreat_target_y")
+			return x_ok and absf(pet.global_position.y - target_y) < 50.0
+		return x_ok
 	# 没有分配过槽位时回退到边缘检测
 	var x = pet.global_position.x
 	var w = pet.boundary_size.x

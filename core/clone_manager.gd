@@ -17,6 +17,7 @@ func setup(main: Node2D) -> void:
 	EventBus.clone_pet.connect(_on_clone_pet_requested)
 	EventBus.dismiss_clones.connect(_on_dismiss_clones_requested)
 	EventBus.behavior_mode_changed.connect(_on_behavior_mode_changed)
+	EventBus.setting_toggled.connect(_on_setting_toggled)
 
 ## 启动时从持久化恢复克隆体
 func restore_clones() -> void:
@@ -128,9 +129,18 @@ func _on_behavior_mode_changed(mode: int) -> void:
 	if mode == 1:
 		reorganize_quiet_queue()
 
+func _on_setting_toggled(setting_id: String, _is_on: bool) -> void:
+	# 反重力切换时，安静排队的 Y 轴目标需要重新计算
+	if setting_id == "anti_gravity":
+		reorganize_quiet_queue()
+
 ## 动态重新评估所有克隆体在屏幕上的水平位置，重新分配车位
 func reorganize_quiet_queue() -> void:
 	if _main.behavior_mode != 1: return
+	
+	# 反重力: 目标 Y 在天花板附近；正常: 目标 Y 在地面附近
+	var ag = SettingsManager.get_bool("anti_gravity", false)
+	var target_y: float = 35.0 if ag else _main.boundary_size.y - 35.0
 	
 	var left_q: Array[RigidBody2D] = []
 	var right_q: Array[RigidBody2D] = []
@@ -149,15 +159,16 @@ func reorganize_quiet_queue() -> void:
 	var gap := 10.0
 	var spacing := pet_diameter + gap
 	var edge_margin := 35.0
-	_apply_queue_targets(left_q, edge_margin, spacing, 1.0)
-	_apply_queue_targets(right_q, _main.boundary_size.x - edge_margin, spacing, -1.0)
+	_apply_queue_targets(left_q, edge_margin, spacing, 1.0, target_y)
+	_apply_queue_targets(right_q, _main.boundary_size.x - edge_margin, spacing, -1.0, target_y)
 
-func _apply_queue_targets(q: Array[RigidBody2D], base_x: float, spacing: float, dir: float) -> void:
+func _apply_queue_targets(q: Array[RigidBody2D], base_x: float, spacing: float, dir: float, target_y: float) -> void:
 	for i in range(q.size()):
 		var p = q[i]
 		var old_tgt = p.get_meta("retreat_target_x", -9999.0)
 		var new_tgt = base_x + i * spacing * dir
 		p.set_meta("retreat_target_x", new_tgt)
+		p.set_meta("retreat_target_y", target_y)
 		
 		if absf(old_tgt - new_tgt) > 5.0 and p.current_state_name == "idle":
 			if absf(p.global_position.x - new_tgt) > 20.0:

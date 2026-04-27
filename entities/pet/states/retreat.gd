@@ -75,15 +75,15 @@ func physics_process(_delta: float) -> void:
 	if not pet:
 		return
 	# 短暂腾空时不转 fall，继续施力 (避免 retreat→fall→retreat 死循环)
-	# 只有真正的高空坠落才转 fall
-	if not pet.is_settled() and pet.linear_velocity.y < -200:
+	# 反重力时“坠落”方向反转: gravity_sign=1 时 vy<-200 (向上飞), gravity_sign=-1 时 vy>200 (向下掉)
+	if not pet.is_settled() and pet.linear_velocity.y * pet.gravity_sign < -200:
 		pet.transition_to("fall")
 		return
 	# 接近目标时减速，防止冲过头被弹飞
 	var dist = absf(pet.global_position.x - target_x)
 	var force_scale = clampf(dist / SLOWDOWN_DIST, 0.15, 1.0)
-	# ── 真正的滚动物理 (与 walk 保持一致) ──
-	pet.apply_torque(direction * 80000.0 * force_scale)
+	# ── 真正的滚动物理 (与 walk 保持一致，乘 gravity_sign 适配反重力) ──
+	pet.apply_torque(direction * 80000.0 * force_scale * pet.gravity_sign)
 	pet.apply_central_force(Vector2(direction * retreat_force * 0.1 * force_scale, 0))
 
 func input(event: InputEvent) -> void:
