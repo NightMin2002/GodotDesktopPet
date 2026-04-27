@@ -703,6 +703,7 @@ func _build_submenus() -> void:
 		{"id": "anti_gravity", "on": "◉ 反重力", "off": "○ 反重力", "key": "anti_gravity", "default": false},
 	])
 	_submenu.create_toggle("hud", [
+		{"id": "hud_pin", "on": "◉ 常驻显示", "off": "○ 常驻显示", "key": "hud_pin", "default": false},
 		{"id": "hud_clock", "on": "◉ 系统时钟", "off": "○ 系统时钟", "key": "hud_clock", "default": false},
 		{"id": "hud_wifi", "on": "◉ WiFi 信息", "off": "○ WiFi 信息", "key": "hud_wifi", "default": false},
 	])
@@ -713,6 +714,7 @@ func _refresh_submenu_states() -> void:
 	_submenu.refresh_toggle("trail_fx", SettingsManager.get_bool("trail_fx", true), "◉ 粒子尾流", "○ 粒子尾流")
 	_submenu.refresh_toggle("stroll", SettingsManager.get_bool("stroll", true), "◉ 滚动散步", "○ 滚动散步")
 	_submenu.refresh_toggle("anti_gravity", SettingsManager.get_bool("anti_gravity", false), "◉ 反重力", "○ 反重力")
+	_submenu.refresh_toggle("hud_pin", SettingsManager.get_bool("hud_pin", false), "◉ 常驻显示", "○ 常驻显示")
 	_submenu.refresh_toggle("hud_clock", SettingsManager.get_bool("hud_clock", false), "◉ 系统时钟", "○ 系统时钟")
 	_submenu.refresh_toggle("hud_wifi", SettingsManager.get_bool("hud_wifi", false), "◉ WiFi 信息", "○ WiFi 信息")
 

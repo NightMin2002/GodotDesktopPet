@@ -109,6 +109,8 @@ func _ready() -> void:
 	if not is_clone:
 		var hud_clock = SettingsManager.get_bool("hud_clock", false)
 		var hud_wifi = SettingsManager.get_bool("hud_wifi", false)
+		var hud_pin_val = SettingsManager.get_bool("hud_pin", false)
+		hud_panel.set_pin(hud_pin_val)
 		if hud_clock:
 			hud_panel.set_clock(true)
 		if hud_wifi:
@@ -137,6 +139,10 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		if is_clone:
 			return
 		hud_panel.set_wifi(is_on)
+	elif setting_id == "hud_pin":
+		if is_clone:
+			return
+		hud_panel.set_pin(is_on)
 
 func _on_behavior_mode_changed(mode: int) -> void:
 	behavior_mode = mode
@@ -214,6 +220,9 @@ func _process(delta: float) -> void:
 	
 	# 更新子系统
 	pet_hud.update(delta)
+	# HUD 面板: 悬浮模式下转发鼠标状态
+	if not is_clone:
+		hud_panel.set_hover(is_mouse_on_pet())
 	hud_panel.update(delta)
 	eye_behavior.update(delta)
 	var has_visual_change = pet_effects.update(delta)
