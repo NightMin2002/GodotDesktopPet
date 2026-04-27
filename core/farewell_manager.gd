@@ -74,7 +74,7 @@ func _on_dismiss_clones_requested() -> void:
 	SettingsManager.set_int("clone_count", 0)
 	EventBus.force_show_bubble.emit("分身们，辛苦了！下次再见~")
 	# 通知 clone_manager 重新排队
-	_main.clone_manager.reorganize_quiet_queue()
+	_main.clone_mgr.reorganize_quiet_queue()
 
 # ── 告别退出 ──
 
