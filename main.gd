@@ -1,6 +1,6 @@
-# main.gd — 启动场景主脚本 (精简后的调度器)
+﻿# main.gd — 启动场景主脚本 (精简后的调度器)
 # 职责: 窗口初始化、屏幕边界、宠物实例化、子系统编排
-# 实际逻辑已委托给: ghost_wall_manager / hit_region_manager / clone_manager
+# 实际逻辑已委托给: ghost_wall_manager / hit_region_manager / clone_manager / farewell_manager
 extends Node2D
 
 var pet_scene := preload("res://entities/pet/pet.tscn")
@@ -21,6 +21,7 @@ var behavior_mode: int = 0  # 0=FREE, 1=QUIET
 var ghost_wall_mgr: Node
 var hit_region_mgr: Node
 var clone_mgr: Node
+var farewell_mgr: Node
 
 
 func _ready() -> void:
@@ -97,6 +98,11 @@ func _setup_managers() -> void:
 	clone_mgr = CloneManager.new()
 	add_child(clone_mgr)
 	clone_mgr.setup(self)
+	
+	var FarewellManager = load("res://core/farewell_manager.gd")
+	farewell_mgr = FarewellManager.new()
+	add_child(farewell_mgr)
+	farewell_mgr.setup(self)
 
 # ── 系统托盘 ──
 
@@ -264,11 +270,11 @@ func _guard_taskbar_style() -> void:
 		if fixed:
 			print("[DesktopPet] 任务栏样式守护：已自动修复 ToolWindow 标记")
 
-# ── 告别退出 (委托给 clone_manager) ──
+# ── 告别退出 (委托给 farewell_manager) ──
 
 func quit_with_farewell() -> void:
-	if clone_mgr:
-		clone_mgr.quit_with_farewell()
+	if farewell_mgr:
+		farewell_mgr.quit_with_farewell()
 	else:
 		get_tree().quit()
 
