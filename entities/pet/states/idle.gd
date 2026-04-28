@@ -68,8 +68,9 @@ func physics_process(delta: float) -> void:
 		pet.transition_to("fall")
 		return
 	
-	# ── 跳绳让路：近距离检测到漫步中的同伴 → 跳起让路 ──
-	if pet.behavior_mode == 0:
+	# ── 跳绳让路：近距离检测到滚动中的同伴 → 跳起让路 ──
+	# 纯滚动模式不跳跃 (对方的 _has_pet_ahead 会让它主动停下)
+	if pet.behavior_mode == 0 and pet.move_style != 1:
 		_dodge_cooldown -= delta
 		if _dodge_cooldown <= 0.0:
 			var stroller = _find_approaching_stroller()

@@ -17,6 +17,8 @@ func enter() -> void:
 	if not pet: return
 	_has_landed = false
 	_land_pause = 0.0
+	_is_rolling = false
+	_is_cruise = false
 	
 	# 1) 优先检查自主巡航事件 (独立于步态，8% 概率长距滚到对面)
 	var do_roll := false
@@ -35,7 +37,7 @@ func enter() -> void:
 				if randf() < 0.50:
 					do_roll = true
 	
-	if not _is_rolling and do_roll:
+	if do_roll:
 		_is_rolling = true
 		_is_cruise = cruise
 		pet.is_strolling = true
@@ -56,8 +58,6 @@ func enter() -> void:
 		pet.angular_damp = 0.8 if not cruise else 0.5
 	else:
 		# 普通蹦跳
-		_is_rolling = false
-		_is_cruise = false
 		pet.is_strolling = false
 		pet.linear_damp = 0.3
 		pet.angular_damp = 0.5
@@ -184,6 +184,11 @@ func _end_roll() -> void:
 	_is_rolling = false
 	_nudged_pets.clear()
 	pet.is_strolling = false
+	# 刹车: 清除残余速度，防止进入 idle 后因残余角速度触发 fall
+	pet.linear_velocity = Vector2(0, pet.linear_velocity.y)  # 保留垂直速度(重力)
+	pet.angular_velocity *= 0.1  # 大幅衰减旋转
+	pet.linear_damp = 3.0
+	pet.angular_damp = 5.0
 	pet.transition_to("idle")
 
 func input(event: InputEvent) -> void:
