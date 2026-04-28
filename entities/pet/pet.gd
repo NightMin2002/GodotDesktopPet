@@ -77,16 +77,16 @@ func _ready() -> void:
 	max_contacts_reported = 4
 	body_entered.connect(_on_body_entered)
 	
+	# 初始化眼球行为控制器 (必须在状态机之前，fall.enter() 会访问 eye_behavior)
+	eye_behavior = EyeBehavior.new()
+	eye_behavior.pet = self
+	
 	# 初始化状态机
 	_init_states()
-	
-	# 初始化眼球行为控制器
-	eye_behavior = EyeBehavior.new()
 	
 	# 初始化戳一戳交互系统
 	poke_system = PokeSystem.new()
 	poke_system.pet = self
-	eye_behavior.pet = self
 	
 	# 初始化特效系统
 	pet_effects = PetEffects.new()

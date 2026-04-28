@@ -84,6 +84,11 @@ func _ready() -> void:
 
 	_styler.style_headers(hud, _submenu.panels)
 
+	# 胶囊按钮样式: 面板入口 + 危险操作
+	_apply_capsule_style(theme_btn, Color(0.12, 0.22, 0.42, 0.7), Color(0.4, 0.6, 0.9, 0.5))
+	_apply_capsule_style(reminder_btn, Color(0.12, 0.22, 0.42, 0.7), Color(0.4, 0.6, 0.9, 0.5))
+	_apply_capsule_style(quit_btn, Color(0.35, 0.1, 0.1, 0.65), Color(0.8, 0.3, 0.3, 0.5))
+
 	# 从持久化存储恢复上次的设置状态
 
 	_load_saved_settings()
@@ -185,7 +190,7 @@ func _load_saved_settings() -> void:
 
 	# 应用到本地按钮显示 (pet 自己从 SettingsManager 读取，不依赖信号)
 
-	_set_toggle(track_btn, eye, "◉ 眼球追踪", "○ 眼球追踪")
+	_set_toggle(track_btn, eye, "眼球追踪 [●]", "眼球追踪 [○]")
 
 	# 子菜单按钮状态初始化
 
@@ -251,11 +256,11 @@ func _check_autostart_deferred(delta: float) -> void:
 
 		var on: bool = win_mgr.call("IsAutoStartEnabled")
 
-		_set_toggle(autostart_btn, on, "◉ 开机自启动", "○ 开机自启动")
+		_set_toggle(autostart_btn, on, "开机自启动 [●]", "开机自启动 [○]")
 
 	else:
 
-		autostart_btn.text = "○ 开机自启动"
+		autostart_btn.text = "开机自启动 [○]"
 
 # ── 弹性追踪 (含边界钳制) ──
 
@@ -459,7 +464,7 @@ func _close_hud() -> void:
 
 func _on_track_btn_pressed() -> void:
 
-	var on = _flip_toggle(track_btn, "◉ 眼球追踪", "○ 眼球追踪")
+	var on = _flip_toggle(track_btn, "眼球追踪 [●]", "眼球追踪 [○]")
 
 	SettingsManager.set_bool("eye_track", on)
 
@@ -479,9 +484,9 @@ func _on_autostart_btn_pressed() -> void:
 
 	win_mgr.call("SetAutoStart", new_val)
 
-	_set_toggle(autostart_btn, new_val, "◉ 开机自启动", "○ 开机自启动")
+	_set_toggle(autostart_btn, new_val, "开机自启动 [●]", "开机自启动 [○]")
 
-const CHATTER_MODE_LABELS := ["碎碎念 · 已关闭 ▸", "碎碎念 · 每30分钟 ▸", "碎碎念 · 每60分钟 ▸"]
+const CHATTER_MODE_LABELS := ["碎碎念 · 已关闭 [+]", "碎碎念 · 每30分钟 [+]", "碎碎念 · 每60分钟 [+]"]
 
 func _on_radio_chatter_mode(value: int) -> void:
 
@@ -587,7 +592,7 @@ func _on_quit_btn_pressed() -> void:
 
 # ── 窗口模式 (子菜单单选回调) ──
 
-const WINDOW_MODE_LABELS := ["窗口 · 自由漫游 ▸", "窗口 · 窗口封闭 ▸", "窗口 · 窗口排斥 ▸"]
+const WINDOW_MODE_LABELS := ["窗口 · 自由漫游 [+]", "窗口 · 窗口封闭 [+]", "窗口 · 窗口排斥 [+]"]
 
 func _on_radio_window_mode(value: int) -> void:
 
@@ -603,7 +608,7 @@ func _update_window_mode_label(mode: int) -> void:
 
 # ── 行为指令 (子菜单单选回调) ──
 
-const BEHAVIOR_MODE_LABELS := ["指令 · 自由行动 ▸", "指令 · 安静待命 ▸"]
+const BEHAVIOR_MODE_LABELS := ["指令 · 自由行动 [+]", "指令 · 安静待命 [+]"]
 
 func _on_radio_behavior_mode(value: int) -> void:
 
@@ -625,7 +630,7 @@ func _on_behavior_mode_synced(mode: int) -> void:
 
 # ── 步态 (子菜单单选回调) ──
 
-const GAIT_LABELS := ["步态 · 蹦跳为主 ▸", "步态 · 滚动为主 ▸", "步态 · 混合平衡 ▸"]
+const GAIT_LABELS := ["步态 · 蹦跳为主 [+]", "步态 · 滚动为主 [+]", "步态 · 混合平衡 [+]"]
 
 func _on_radio_gait(value: int) -> void:
 
@@ -680,7 +685,7 @@ func _append_effect_color_radio() -> void:
 		btn.add_theme_font_size_override("font_size", 19)
 		btn.add_theme_color_override("font_color", Color(0.8, 0.9, 1, 1))
 		btn.add_theme_color_override("font_hover_color", Color(0.1, 1, 0.9, 1))
-		btn.text = ("● " if i == saved else "○ ") + labels[i]
+		btn.text = labels[i] + (" [●]" if i == saved else " [○]")
 		var val = i
 		btn.pressed.connect(func(): _on_radio_effect_color(val))
 		vbox.add_child(btn)
@@ -692,22 +697,44 @@ func _on_radio_effect_color(value: int) -> void:
 	# 刷新单选按钮显示
 	var labels = ["虹彩模式", "跟随体色"]
 	for i in range(_effect_color_btns.size()):
-		_effect_color_btns[i].text = ("● " if i == value else "○ ") + labels[i]
+		_effect_color_btns[i].text = labels[i] + (" [●]" if i == value else " [○]")
 
 # ── 工具函数 ──
+
+## 胶囊按钮样式: 半透明背景 + 细边框 + 圆角, 用于面板入口和危险操作
+func _apply_capsule_style(btn: Button, bg_color: Color, border_color: Color) -> void:
+	var style_normal = StyleBoxFlat.new()
+	style_normal.bg_color = bg_color
+	style_normal.border_color = border_color
+	style_normal.set_border_width_all(1)
+	style_normal.set_corner_radius_all(8)
+	style_normal.content_margin_left = 12
+	style_normal.content_margin_right = 12
+	style_normal.content_margin_top = 4
+	style_normal.content_margin_bottom = 4
+	btn.add_theme_stylebox_override("normal", style_normal)
+	# hover 态: 略微提亮
+	var style_hover = style_normal.duplicate()
+	style_hover.bg_color = Color(bg_color.r + 0.06, bg_color.g + 0.06, bg_color.b + 0.06, bg_color.a + 0.15)
+	style_hover.border_color = Color(border_color.r, border_color.g, border_color.b, border_color.a + 0.3)
+	btn.add_theme_stylebox_override("hover", style_hover)
+	# pressed 态
+	var style_pressed = style_normal.duplicate()
+	style_pressed.bg_color = Color(bg_color.r + 0.03, bg_color.g + 0.03, bg_color.b + 0.03, bg_color.a + 0.1)
+	btn.add_theme_stylebox_override("pressed", style_pressed)
+	# 文字居中
+	btn.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 必须关闭 flat, 否则 Godot 不绘制 normal 态 StyleBox 背景
+	btn.flat = false
 
 func _set_toggle(btn: Button, is_on: bool, on_text: String, off_text: String) -> void:
 
 	btn.text = on_text if is_on else off_text
 
 func _flip_toggle(btn: Button, on_text: String, off_text: String) -> bool:
-
-	var is_on = btn.text.begins_with("◉")
-
+	var is_on = btn.text.ends_with("[●]")
 	var new_val = not is_on
-
 	_set_toggle(btn, new_val, on_text, off_text)
-
 	return new_val
 
 func _get_win_manager() -> Node:
@@ -793,34 +820,34 @@ func _build_submenus() -> void:
 	], _on_radio_chatter_mode)
 	# 开关子菜单
 	_submenu.create_toggle("effects", [
-		{"id": "shockwave", "on": "◉ 撞击冲击波", "off": "○ 撞击冲击波", "key": "shockwave", "default": true},
-		{"id": "trail_fx", "on": "◉ 粒子尾流", "off": "○ 粒子尾流", "key": "trail_fx", "default": true},
-		{"id": "arc_fx", "on": "◉ 能量共鸣弧", "off": "○ 能量共鸣弧", "key": "arc_fx", "default": true},
+		{"id": "shockwave", "on": "撞击冲击波 [●]", "off": "撞击冲击波 [○]", "key": "shockwave", "default": true},
+		{"id": "trail_fx", "on": "粒子尾流 [●]", "off": "粒子尾流 [○]", "key": "trail_fx", "default": true},
+		{"id": "arc_fx", "on": "能量共鸣弧 [●]", "off": "能量共鸣弧 [○]", "key": "arc_fx", "default": true},
 	])
 	# 在 effects 面板中追加特效配色单选 (共用同一面板)
 	_append_effect_color_radio()
 	_submenu.create_toggle("entertain", [
-		{"id": "stroll", "on": "◉ 自主巡航", "off": "○ 自主巡航", "key": "stroll", "default": true},
+		{"id": "stroll", "on": "自主巡航 [●]", "off": "自主巡航 [○]", "key": "stroll", "default": true},
 	])
 	_submenu.create_toggle("mode", [
-		{"id": "anti_gravity", "on": "◉ 反重力", "off": "○ 反重力", "key": "anti_gravity", "default": false},
+		{"id": "anti_gravity", "on": "反重力 [●]", "off": "反重力 [○]", "key": "anti_gravity", "default": false},
 	])
 	_submenu.create_toggle("hud", [
-		{"id": "hud_pin", "on": "◉ 常驻显示", "off": "○ 常驻显示", "key": "hud_pin", "default": false},
-		{"id": "hud_clock", "on": "◉ 系统时钟", "off": "○ 系统时钟", "key": "hud_clock", "default": false},
-		{"id": "hud_wifi", "on": "◉ WiFi 信息", "off": "○ WiFi 信息", "key": "hud_wifi", "default": false},
+		{"id": "hud_pin", "on": "常驻显示 [●]", "off": "常驻显示 [○]", "key": "hud_pin", "default": false},
+		{"id": "hud_clock", "on": "系统时钟 [●]", "off": "系统时钟 [○]", "key": "hud_clock", "default": false},
+		{"id": "hud_wifi", "on": "WiFi 信息 [●]", "off": "WiFi 信息 [○]", "key": "hud_wifi", "default": false},
 	])
 
 ## 从 SettingsManager 刷新子菜单状态
 func _refresh_submenu_states() -> void:
-	_submenu.refresh_toggle("shockwave", SettingsManager.get_bool("shockwave", true), "◉ 撞击冲击波", "○ 撞击冲击波")
-	_submenu.refresh_toggle("trail_fx", SettingsManager.get_bool("trail_fx", true), "◉ 粒子尾流", "○ 粒子尾流")
-	_submenu.refresh_toggle("arc_fx", SettingsManager.get_bool("arc_fx", true), "◉ 能量共鸣弧", "○ 能量共鸣弧")
-	_submenu.refresh_toggle("stroll", SettingsManager.get_bool("stroll", true), "◉ 自主巡航", "○ 自主巡航")
-	_submenu.refresh_toggle("anti_gravity", SettingsManager.get_bool("anti_gravity", false), "◉ 反重力", "○ 反重力")
-	_submenu.refresh_toggle("hud_pin", SettingsManager.get_bool("hud_pin", false), "◉ 常驻显示", "○ 常驻显示")
-	_submenu.refresh_toggle("hud_clock", SettingsManager.get_bool("hud_clock", false), "◉ 系统时钟", "○ 系统时钟")
-	_submenu.refresh_toggle("hud_wifi", SettingsManager.get_bool("hud_wifi", false), "◉ WiFi 信息", "○ WiFi 信息")
+	_submenu.refresh_toggle("shockwave", SettingsManager.get_bool("shockwave", true), "撞击冲击波 [●]", "撞击冲击波 [○]")
+	_submenu.refresh_toggle("trail_fx", SettingsManager.get_bool("trail_fx", true), "粒子尾流 [●]", "粒子尾流 [○]")
+	_submenu.refresh_toggle("arc_fx", SettingsManager.get_bool("arc_fx", true), "能量共鸣弧 [●]", "能量共鸣弧 [○]")
+	_submenu.refresh_toggle("stroll", SettingsManager.get_bool("stroll", true), "自主巡航 [●]", "自主巡航 [○]")
+	_submenu.refresh_toggle("anti_gravity", SettingsManager.get_bool("anti_gravity", false), "反重力 [●]", "反重力 [○]")
+	_submenu.refresh_toggle("hud_pin", SettingsManager.get_bool("hud_pin", false), "常驻显示 [●]", "常驻显示 [○]")
+	_submenu.refresh_toggle("hud_clock", SettingsManager.get_bool("hud_clock", false), "系统时钟 [●]", "系统时钟 [○]")
+	_submenu.refresh_toggle("hud_wifi", SettingsManager.get_bool("hud_wifi", false), "WiFi 信息 [●]", "WiFi 信息 [○]")
 
 func _on_sysinfo_btn_pressed() -> void:
 

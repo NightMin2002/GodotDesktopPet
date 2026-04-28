@@ -49,7 +49,7 @@ layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.1, 1, 0.9, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "◉ 眼球追踪"
+text = "眼球追踪 [●]"
 flat = true
 alignment = 0
 
@@ -58,7 +58,7 @@ layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.1, 1, 0.9, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "碎碎念 · 每30分钟 ▸"
+text = "碎碎念 · 每30分钟 [+]"
 flat = true
 alignment = 0
 
@@ -73,7 +73,7 @@ layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.1, 1, 0.9, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "HUD 面板 ▸"
+text = "HUD 面板 [+]"
 flat = true
 alignment = 0
 
@@ -88,7 +88,7 @@ layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.4, 0.7, 1.0, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "窗口 · 自由漫游 ▸"
+text = "窗口 · 自由漫游 [+]"
 flat = true
 alignment = 0
 
@@ -97,7 +97,7 @@ layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.4, 0.7, 1.0, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "指令 · 自由行动 ▸"
+text = "指令 · 自由行动 [+]"
 flat = true
 alignment = 0
 
@@ -106,7 +106,7 @@ layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.4, 0.7, 1.0, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "步态 · 蹦跳为主 ▸"
+text = "步态 · 蹦跳为主 [+]"
 flat = true
 alignment = 0
 
@@ -115,7 +115,7 @@ layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.4, 0.7, 1.0, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "模式 ▸"
+text = "模式 [+]"
 flat = true
 alignment = 0
 
@@ -130,7 +130,7 @@ layout_mode = 2
 theme_override_colors/font_hover_color = Color(1.0, 0.85, 0.3, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "特效 ▸"
+text = "特效 [+]"
 flat = true
 alignment = 0
 
@@ -139,7 +139,7 @@ layout_mode = 2
 theme_override_colors/font_hover_color = Color(1.0, 0.85, 0.3, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "外观主题..."
+text = "外观主题"
 flat = true
 alignment = 0
 
@@ -154,7 +154,7 @@ layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.3, 1.0, 0.7, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "娱乐 ▸"
+text = "娱乐 [+]"
 flat = true
 alignment = 0
 
@@ -163,7 +163,7 @@ layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.3, 1.0, 0.7, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "提醒管理..."
+text = "提醒管理"
 flat = true
 alignment = 0
 
@@ -205,7 +205,7 @@ layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.1, 1, 0.9, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "○ 开机自启动"
+text = "开机自启动 [○]"
 flat = true
 alignment = 0
 

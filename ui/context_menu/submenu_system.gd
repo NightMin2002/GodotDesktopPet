@@ -63,7 +63,7 @@ func create_radio(menu_id: String, radio_items: Array, callback: Callable) -> vo
 		btn.add_theme_font_size_override("font_size", 19)
 		btn.add_theme_color_override("font_color", Color(0.8, 0.9, 1, 1))
 		btn.add_theme_color_override("font_hover_color", Color(0.1, 1, 0.9, 1))
-		btn.text = "○ " + item.label
+		btn.text = item.label + " [○]"
 		var v = item.value
 		var mid = menu_id
 		btn.pressed.connect(func(): _on_radio_pressed(mid, v))
@@ -92,9 +92,9 @@ func refresh_radio(menu_id: String, current_value: int) -> void:
 	for item in _radio_buttons[menu_id]:
 		var btn: Button = item.btn
 		if item.value == current_value:
-			btn.text = "● " + item.label
+			btn.text = item.label + " [●]"
 		else:
-			btn.text = "○ " + item.label
+			btn.text = item.label + " [○]"
 
 # ── 显示/隐藏 ──
 
@@ -226,7 +226,7 @@ func _make_panel() -> PanelContainer:
 
 func _on_toggle_pressed(item: Dictionary) -> void:
 	var btn: Button = items[item.id]
-	var is_on = btn.text.begins_with("◉")
+	var is_on = btn.text.ends_with("[●]")
 	var new_val = not is_on
 	btn.text = item.on if new_val else item.off
 	SettingsManager.set_bool(item.key, new_val)
