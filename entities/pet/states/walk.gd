@@ -17,19 +17,24 @@ func enter() -> void:
 	_has_landed = false
 	_land_pause = 0.0
 	
-	# 决定本次移动方式
+	# 1) 优先检查滚动散步特殊事件 (独立于步态，8% 概率长距滚到对面)
 	var do_roll := false
 	var long := false
-	match pet.move_style:
-		0:  # 蹦跳为主: 纯蹦跳, 不滚动
-			pass
-		1:  # 滚动为主: 100% 短距滚动
-			do_roll = true
-			long = false
-		2:  # 混合平衡: 50% 短距滚动
-			if randf() < 0.50:
+	if pet.stroll_enabled and randf() < 0.08:
+		do_roll = true
+		long = true
+	else:
+		# 2) 未触发散步 → 按步态风格决定常规移动
+		match pet.move_style:
+			0:  # 蹦跳为主: 纯蹦跳, 不滚动
+				pass
+			1:  # 滚动为主: 100% 短距滚动
 				do_roll = true
 				long = false
+			2:  # 混合平衡: 50% 短距滚动
+				if randf() < 0.50:
+					do_roll = true
+					long = false
 	
 	if not _is_stroll and do_roll:
 		_is_stroll = true
@@ -102,9 +107,15 @@ func physics_process(delta: float) -> void:
 			_stroll_stuck_timer = 0.0
 			_stroll_last_x = pet.global_position.x
 		
-		# 通知前方同伴跳开让路 (仅长距散步)
+		# 前方同伴处理
 		if _is_long_stroll:
+			# 长距散步: 通知前方同伴跳开让路
 			_nudge_pets_ahead()
+		else:
+			# 短距滚动: 发现前方同伴就提前结束，避免碰撞
+			if _has_pet_ahead(80.0):
+				_end_stroll()
+				return
 		
 		# 缓速扭矩驱动滚动 (短距滚动更慢更从容)
 		var torque_strength := 15000.0 if not _is_long_stroll else 25000.0
@@ -165,6 +176,22 @@ func _nudge_pets_ahead() -> void:
 			child.apply_central_impulse(Vector2(0, -280.0 * pet.gravity_sign))
 			child.apply_torque_impulse(randf_range(-800.0, 800.0))
 		_nudged_pets[cid] = true
+
+## 检测前方指定距离内是否有同伴 (短距滚动避让用)
+func _has_pet_ahead(dist: float) -> bool:
+	var parent = pet.get_parent()
+	if not parent: return false
+	for child in parent.get_children():
+		if child == pet or not (child is RigidBody2D): continue
+		if not is_instance_valid(child): continue
+		if not child.has_method("is_mouse_on_pet"): continue
+		var dx = child.global_position.x - pet.global_position.x
+		# 只看前方
+		if _stroll_direction > 0 and dx < 0: continue
+		if _stroll_direction < 0 and dx > 0: continue
+		if absf(dx) < dist:
+			return true
+	return false
 
 func _end_stroll() -> void:
 	_is_stroll = false

@@ -130,8 +130,11 @@ func _ready() -> void:
 
 	effects_btn.pressed.connect(func(): _submenu.toggle("effects"))
 
-	# 娱乐子菜单 (当前无项目, 暂时隐藏按钮)
-	entertain_btn.hide()
+	entertain_btn.mouse_entered.connect(func(): _submenu.on_trigger_hover("entertain"))
+
+	entertain_btn.mouse_exited.connect(func(): _submenu.on_trigger_exit())
+
+	entertain_btn.pressed.connect(func(): _submenu.toggle("entertain"))
 
 	# 模式子菜单触发器
 
@@ -481,7 +484,12 @@ func _update_chatter_label(mode: int) -> void:
 
 func _on_reminder_btn_pressed() -> void:
 
-	_close_hud()
+	# 立即隐藏菜单 (不发 context_menu_toggled，由提醒面板接管)
+	_tooltip.panel.hide()
+	_submenu.hide_all_instant()
+	hud.hide()
+	_sidebar.panel.hide()
+	target = null
 
 	EventBus.show_reminder_panel.emit()
 
@@ -689,6 +697,7 @@ func _build_submenus() -> void:
 	_submenu.register_trigger("window_mode", window_mode_btn)
 	_submenu.register_trigger("behavior_mode", behavior_mode_btn)
 	_submenu.register_trigger("effects", effects_btn)
+	_submenu.register_trigger("entertain", entertain_btn)
 	_submenu.register_trigger("mode", mode_btn)
 	_submenu.register_trigger("gait", gait_btn)
 	_submenu.register_trigger("hud", hud_btn)
@@ -718,6 +727,9 @@ func _build_submenus() -> void:
 		{"id": "shockwave", "on": "◉ 撞击冲击波", "off": "○ 撞击冲击波", "key": "shockwave", "default": true},
 		{"id": "trail_fx", "on": "◉ 粒子尾流", "off": "○ 粒子尾流", "key": "trail_fx", "default": true},
 	])
+	_submenu.create_toggle("entertain", [
+		{"id": "stroll", "on": "◉ 滚动散步", "off": "○ 滚动散步", "key": "stroll", "default": true},
+	])
 	_submenu.create_toggle("mode", [
 		{"id": "anti_gravity", "on": "◉ 反重力", "off": "○ 反重力", "key": "anti_gravity", "default": false},
 	])
@@ -731,6 +743,7 @@ func _build_submenus() -> void:
 func _refresh_submenu_states() -> void:
 	_submenu.refresh_toggle("shockwave", SettingsManager.get_bool("shockwave", true), "◉ 撞击冲击波", "○ 撞击冲击波")
 	_submenu.refresh_toggle("trail_fx", SettingsManager.get_bool("trail_fx", true), "◉ 粒子尾流", "○ 粒子尾流")
+	_submenu.refresh_toggle("stroll", SettingsManager.get_bool("stroll", true), "◉ 滚动散步", "○ 滚动散步")
 	_submenu.refresh_toggle("anti_gravity", SettingsManager.get_bool("anti_gravity", false), "◉ 反重力", "○ 反重力")
 	_submenu.refresh_toggle("hud_pin", SettingsManager.get_bool("hud_pin", false), "◉ 常驻显示", "○ 常驻显示")
 	_submenu.refresh_toggle("hud_clock", SettingsManager.get_bool("hud_clock", false), "◉ 系统时钟", "○ 系统时钟")
