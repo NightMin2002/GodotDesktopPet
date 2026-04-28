@@ -253,6 +253,10 @@ func _show_panel_animated() -> void:
 	_snap_position()
 	var tw = pet.create_tween()
 	tw.tween_property(panel, "modulate:a", 1.0, 0.2)
+	# 面板重新显示时立即刷新 WiFi (悬浮模式下 timer 长期冻结，数据可能过旧)
+	if wifi_enabled and not _wifi_has_pending:
+		_wifi_refresh_timer = 0.0
+		_refresh_wifi_async()
 
 func _fade_out_panel() -> void:
 	if not panel.visible:
@@ -271,6 +275,16 @@ func update(delta: float) -> void:
 			_hover_visible = false
 			_fade_out_panel()
 	
+	# WiFi 后台结果消费: 不受面板可见性限制，避免 pending 数据被卡住
+	if wifi_enabled and _wifi_has_pending:
+		_wifi_has_pending = false
+		var old_text = _wifi_label.text
+		_wifi_label.text = _wifi_pending
+		if old_text != _wifi_pending and panel.visible:
+			panel.reset_size()
+		var color = Color(0.3, 0.8, 0.4, 0.9) if _wifi_pending_connected else Color(0.8, 0.3, 0.3, 0.9)
+		_wifi_dot.add_theme_color_override("font_color", color)
+	
 	if not panel.visible:
 		return
 	
@@ -278,16 +292,7 @@ func update(delta: float) -> void:
 		_update_clock(delta)
 	
 	if wifi_enabled:
-		# 检查后台线程结果
-		if _wifi_has_pending:
-			_wifi_has_pending = false
-			var old_text = _wifi_label.text
-			_wifi_label.text = _wifi_pending
-			if old_text != _wifi_pending:
-				panel.reset_size()  # SSID 长度变化时重新适配面板宽度
-			var color = Color(0.3, 0.8, 0.4, 0.9) if _wifi_pending_connected else Color(0.8, 0.3, 0.3, 0.9)
-			_wifi_dot.add_theme_color_override("font_color", color)
-		# 定时刷新
+		# 定时刷新 (仅面板可见时递增，避免后台频繁查询)
 		_wifi_refresh_timer += delta
 		if _wifi_refresh_timer >= WIFI_REFRESH_INTERVAL:
 			_wifi_refresh_timer = 0.0
