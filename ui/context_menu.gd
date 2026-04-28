@@ -130,11 +130,8 @@ func _ready() -> void:
 
 	effects_btn.pressed.connect(func(): _submenu.toggle("effects"))
 
-	entertain_btn.mouse_entered.connect(func(): _submenu.on_trigger_hover("entertain"))
-
-	entertain_btn.mouse_exited.connect(func(): _submenu.on_trigger_exit())
-
-	entertain_btn.pressed.connect(func(): _submenu.toggle("entertain"))
+	# 娱乐子菜单 (当前无项目, 暂时隐藏按钮)
+	entertain_btn.hide()
 
 	# 模式子菜单触发器
 
@@ -484,21 +481,7 @@ func _update_chatter_label(mode: int) -> void:
 
 func _on_reminder_btn_pressed() -> void:
 
-	_tooltip.panel.hide()
-
-	if is_instance_valid(target):
-
-		hud.pivot_offset = target.get_global_transform_with_canvas().get_origin() - hud.position
-
-	var tween = create_tween().set_parallel(true)
-
-	tween.tween_property(hud, "scale", Vector2(0.3, 0.3), 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
-
-	tween.tween_property(hud, "modulate:a", 0.0, 0.15)
-
-	tween.finished.connect(func(): hud.hide())
-
-	target = null
+	_close_hud()
 
 	EventBus.show_reminder_panel.emit()
 
@@ -706,7 +689,6 @@ func _build_submenus() -> void:
 	_submenu.register_trigger("window_mode", window_mode_btn)
 	_submenu.register_trigger("behavior_mode", behavior_mode_btn)
 	_submenu.register_trigger("effects", effects_btn)
-	_submenu.register_trigger("entertain", entertain_btn)
 	_submenu.register_trigger("mode", mode_btn)
 	_submenu.register_trigger("gait", gait_btn)
 	_submenu.register_trigger("hud", hud_btn)
@@ -735,8 +717,6 @@ func _build_submenus() -> void:
 	_submenu.create_toggle("effects", [
 		{"id": "shockwave", "on": "◉ 撞击冲击波", "off": "○ 撞击冲击波", "key": "shockwave", "default": true},
 		{"id": "trail_fx", "on": "◉ 粒子尾流", "off": "○ 粒子尾流", "key": "trail_fx", "default": true},
-	])
-	_submenu.create_toggle("entertain", [
 	])
 	_submenu.create_toggle("mode", [
 		{"id": "anti_gravity", "on": "◉ 反重力", "off": "○ 反重力", "key": "anti_gravity", "default": false},
