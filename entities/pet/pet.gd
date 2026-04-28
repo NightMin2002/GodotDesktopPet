@@ -17,7 +17,7 @@ var states: Dictionary = {}
 var current_state: PetState
 var current_state_name: String = ""
 var speed: float = 200.0            # 移动速度基数
-var stroll_enabled: bool = true      # 滚动散步开关
+var move_style: int = 0              # 步态风格: 0=蹦跳为主, 1=滚动为主, 2=混合平衡
 var anti_gravity: bool = false       # 反重力模式
 var gravity_sign: float = 1.0        # 重力方向符号 (1.0=正常, -1.0=反转)
 
@@ -102,7 +102,7 @@ func _ready() -> void:
 	eye_behavior.tracking_enabled = SettingsManager.get_bool("eye_track", true)
 	pet_effects.shockwave_enabled = SettingsManager.get_bool("shockwave", true)
 	pet_effects.trail_enabled = SettingsManager.get_bool("trail_fx", true)
-	stroll_enabled = SettingsManager.get_bool("stroll", true)
+	move_style = SettingsManager.get_int("move_style", 0)
 	var ag = SettingsManager.get_bool("anti_gravity", false)
 	_set_anti_gravity(ag)
 	# HUD 组件状态恢复 (仅原体)
@@ -127,8 +127,8 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		pet_effects.shockwave_enabled = is_on
 	elif setting_id == "trail_fx":
 		pet_effects.trail_enabled = is_on
-	elif setting_id == "stroll":
-		stroll_enabled = is_on
+	elif setting_id == "move_style":
+		move_style = SettingsManager.get_int("move_style", 0)
 	elif setting_id == "anti_gravity":
 		_set_anti_gravity(is_on)
 	elif setting_id == "hud_clock":

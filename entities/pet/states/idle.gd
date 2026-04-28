@@ -48,8 +48,14 @@ func process(delta: float) -> void:
 			idle_timer = 0.0
 			idle_duration = randf_range(1.5, 3.0)
 			return
-		# 随机多巴胺路由选择 (85% 小蹦跳, 15% 大跳)
-		if randf() > 0.15:
+		# 根据步态风格调整 walk/jump 概率
+		var jump_chance: float
+		match pet.move_style:
+			0: jump_chance = 0.15   # 蹦跳为主: 15% 大跳
+			1: jump_chance = 0.0    # 滚动为主: 不跳
+			2: jump_chance = 0.10   # 混合平衡: 10% 大跳
+			_: jump_chance = 0.15
+		if randf() > jump_chance:
 			pet.transition_to("walk")
 		else:
 			pet.transition_to("jump")

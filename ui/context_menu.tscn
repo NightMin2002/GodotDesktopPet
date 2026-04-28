@@ -101,6 +101,15 @@ text = "指令 · 自由行动 ▸"
 flat = true
 alignment = 0
 
+[node name="GaitBtn" type="Button" parent="HUDPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_hover_color = Color(0.4, 0.7, 1.0, 1)
+theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 20
+text = "步态 · 蹦跳为主 ▸"
+flat = true
+alignment = 0
+
 [node name="ModeBtn" type="Button" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.4, 0.7, 1.0, 1)

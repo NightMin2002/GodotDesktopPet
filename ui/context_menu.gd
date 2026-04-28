@@ -26,6 +26,8 @@ const SubmenuSystem = preload("res://ui/context_menu/submenu_system.gd")
 
 @onready var behavior_mode_btn: Button = $HUDPanel/Margin/VBox/BehaviorModeBtn
 
+@onready var gait_btn: Button = $HUDPanel/Margin/VBox/GaitBtn
+
 @onready var effects_btn: Button = $HUDPanel/Margin/VBox/EffectsBtn
 
 @onready var entertain_btn: Button = $HUDPanel/Margin/VBox/EntertainBtn
@@ -114,6 +116,12 @@ func _ready() -> void:
 
 	behavior_mode_btn.pressed.connect(func(): _submenu.toggle("behavior_mode"))
 
+	gait_btn.mouse_entered.connect(func(): _submenu.on_trigger_hover("gait"))
+
+	gait_btn.mouse_exited.connect(func(): _submenu.on_trigger_exit())
+
+	gait_btn.pressed.connect(func(): _submenu.toggle("gait"))
+
 	# 功能子菜单触发器
 
 	effects_btn.mouse_entered.connect(func(): _submenu.on_trigger_hover("effects"))
@@ -183,6 +191,14 @@ func _load_saved_settings() -> void:
 	_update_behavior_mode_label(bm)
 
 	_submenu.refresh_radio("behavior_mode", bm)
+
+	# 步态状态
+
+	var gm = SettingsManager.get_int("move_style", 0)
+
+	_update_gait_label(gm)
+
+	_submenu.refresh_radio("gait", gm)
 
 	# 宠物碎碎念模式
 
@@ -600,6 +616,24 @@ func _on_behavior_mode_synced(mode: int) -> void:
 
 	_submenu.refresh_radio("behavior_mode", mode)
 
+# ── 步态 (子菜单单选回调) ──
+
+const GAIT_LABELS := ["步态 · 蹦跳为主 ▸", "步态 · 滚动为主 ▸", "步态 · 混合平衡 ▸"]
+
+func _on_radio_gait(value: int) -> void:
+
+	_update_gait_label(value)
+
+	SettingsManager.set_int("move_style", value)
+
+	EventBus.setting_toggled.emit("move_style", value > 0)
+
+	_submenu.refresh_radio("gait", value)
+
+func _update_gait_label(mode: int) -> void:
+
+	gait_btn.text = GAIT_LABELS[mode]
+
 # ── 工具函数 ──
 
 func _set_toggle(btn: Button, is_on: bool, on_text: String, off_text: String) -> void:
@@ -674,6 +708,7 @@ func _build_submenus() -> void:
 	_submenu.register_trigger("effects", effects_btn)
 	_submenu.register_trigger("entertain", entertain_btn)
 	_submenu.register_trigger("mode", mode_btn)
+	_submenu.register_trigger("gait", gait_btn)
 	_submenu.register_trigger("hud", hud_btn)
 	_submenu.register_trigger("chatter", chatter_btn)
 	# 单选子菜单
@@ -686,6 +721,11 @@ func _build_submenus() -> void:
 		{"value": 0, "label": "自由行动", "desc": "活力满满，随意滚动跳跃"},
 		{"value": 1, "label": "安静待命", "desc": "安安静静，乖乖不动"},
 	], _on_radio_behavior_mode)
+	_submenu.create_radio("gait", [
+		{"value": 0, "label": "蹦跳为主", "desc": "纯蹦跳移动，不会滚动"},
+		{"value": 1, "label": "滚动为主", "desc": "纯滚动移动，不会跳跃"},
+		{"value": 2, "label": "混合平衡", "desc": "蹦跳和滚动各半，动静结合"},
+	], _on_radio_gait)
 	_submenu.create_radio("chatter", [
 		{"value": 0, "label": "关闭", "desc": "宠物不会主动说话"},
 		{"value": 1, "label": "每30分钟", "desc": "每到整点和半点，冒泡说点什么"},
@@ -697,7 +737,6 @@ func _build_submenus() -> void:
 		{"id": "trail_fx", "on": "◉ 粒子尾流", "off": "○ 粒子尾流", "key": "trail_fx", "default": true},
 	])
 	_submenu.create_toggle("entertain", [
-		{"id": "stroll", "on": "◉ 滚动散步", "off": "○ 滚动散步", "key": "stroll", "default": true},
 	])
 	_submenu.create_toggle("mode", [
 		{"id": "anti_gravity", "on": "◉ 反重力", "off": "○ 反重力", "key": "anti_gravity", "default": false},
@@ -712,7 +751,6 @@ func _build_submenus() -> void:
 func _refresh_submenu_states() -> void:
 	_submenu.refresh_toggle("shockwave", SettingsManager.get_bool("shockwave", true), "◉ 撞击冲击波", "○ 撞击冲击波")
 	_submenu.refresh_toggle("trail_fx", SettingsManager.get_bool("trail_fx", true), "◉ 粒子尾流", "○ 粒子尾流")
-	_submenu.refresh_toggle("stroll", SettingsManager.get_bool("stroll", true), "◉ 滚动散步", "○ 滚动散步")
 	_submenu.refresh_toggle("anti_gravity", SettingsManager.get_bool("anti_gravity", false), "◉ 反重力", "○ 反重力")
 	_submenu.refresh_toggle("hud_pin", SettingsManager.get_bool("hud_pin", false), "◉ 常驻显示", "○ 常驻显示")
 	_submenu.refresh_toggle("hud_clock", SettingsManager.get_bool("hud_clock", false), "◉ 系统时钟", "○ 系统时钟")

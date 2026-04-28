@@ -1,39 +1,59 @@
-# walk.gd — 蹦跳 / 悠闲散步 移动状态
-# 两种模式：单次蹦跳 (92%) 和悠闲散步 (8%)
-# 蹦跳：一次性冲量 → 落地回 Idle
-# 散步：缓速扭矩滚动到屏幕对面 → 到达边缘回 Idle
+# walk.gd — 蹦跳 / 滚动 移动状态
+# 步态风格: 蹦跳为主(纯冲量跳跃) / 滚动为主(短距扭矩滚动) / 混合平衡(50/50)
 class_name StateWalk
 extends PetState
 
 var _has_landed: bool = false
 var _land_pause: float = 0.0
-var _is_stroll: bool = false       # 是否为悠闲散步模式
-var _stroll_direction: float = 0.0 # 散步滚动方向
+var _is_stroll: bool = false       # 是否为滚动模式 (短距或长距)
+var _is_long_stroll: bool = false  # true=长距散步(到边缘), false=短距滚动
+var _stroll_direction: float = 0.0 # 滚动方向
 var _stroll_last_x: float = 0.0   # 卡死检测：上次位置
 var _stroll_stuck_timer: float = 0.0  # 卡死计时
+var _roll_target_x: float = 0.0   # 短距滚动目标 X
 
 func enter() -> void:
 	if not pet: return
 	_has_landed = false
 	_land_pause = 0.0
 	
-	# 8% 概率进入悠闲散步 (受设置开关控制)
-	if not _is_stroll and pet.stroll_enabled and randf() < 0.08:
+	# 决定本次移动方式
+	var do_roll := false
+	var long := false
+	match pet.move_style:
+		0:  # 蹦跳为主: 纯蹦跳, 不滚动
+			pass
+		1:  # 滚动为主: 100% 短距滚动
+			do_roll = true
+			long = false
+		2:  # 混合平衡: 50% 短距滚动
+			if randf() < 0.50:
+				do_roll = true
+				long = false
+	
+	if not _is_stroll and do_roll:
 		_is_stroll = true
+		_is_long_stroll = long
 		pet.is_strolling = true
 		_stroll_direction = [-1.0, 1.0].pick_random()
 		_stroll_stuck_timer = 0.0
 		_stroll_last_x = pet.global_position.x
-		# 边缘检测
+		# 边缘检测: 靠边时强制反向
 		var x = pet.global_position.x
 		var w = pet.boundary_size.x
 		if x < 120.0: _stroll_direction = 1.0
 		elif x > w - 120.0: _stroll_direction = -1.0
-		pet.linear_damp = 1.5     # 较高阻尼：滚动更稳重，不会越滚越快
-		pet.angular_damp = 0.5
+		# 短距滚动: 设定随机目标距离
+		if not long:
+			var roll_dist = randf_range(120.0, 300.0)
+			_roll_target_x = x + _stroll_direction * roll_dist
+			_roll_target_x = clampf(_roll_target_x, 80.0, w - 80.0)
+		pet.linear_damp = 2.0 if not long else 1.5
+		pet.angular_damp = 0.8 if not long else 0.5
 	else:
 		# 普通蹦跳
 		_is_stroll = false
+		_is_long_stroll = false
 		pet.is_strolling = false
 		pet.linear_damp = 0.3
 		pet.angular_damp = 0.5
@@ -41,6 +61,7 @@ func enter() -> void:
 
 func exit() -> void:
 	_is_stroll = false
+	_is_long_stroll = false
 	if pet:
 		pet.is_strolling = false
 
@@ -71,7 +92,7 @@ func physics_process(delta: float) -> void:
 	if not pet: return
 	
 	if _is_stroll:
-		# 卡死检测：0.8 秒内没移动超过 5px → 放弃散步
+		# 卡死检测：0.8 秒内没移动超过 5px → 放弃
 		if absf(pet.global_position.x - _stroll_last_x) < 5.0:
 			_stroll_stuck_timer += delta
 			if _stroll_stuck_timer > 0.8:
@@ -81,18 +102,27 @@ func physics_process(delta: float) -> void:
 			_stroll_stuck_timer = 0.0
 			_stroll_last_x = pet.global_position.x
 		
-		# 通知前方同伴跳开让路
-		_nudge_pets_ahead()
+		# 通知前方同伴跳开让路 (仅长距散步)
+		if _is_long_stroll:
+			_nudge_pets_ahead()
 		
-		# 缓速扭矩驱动悠闲滚动
-		pet.apply_torque(_stroll_direction * 25000.0 * pet.gravity_sign)
-		pet.apply_central_force(Vector2(_stroll_direction * 15.0, 0))
+		# 缓速扭矩驱动滚动 (短距滚动更慢更从容)
+		var torque_strength := 15000.0 if not _is_long_stroll else 25000.0
+		var force_strength := 8.0 if not _is_long_stroll else 15.0
+		pet.apply_torque(_stroll_direction * torque_strength * pet.gravity_sign)
+		pet.apply_central_force(Vector2(_stroll_direction * force_strength, 0))
 		
-		# 到达对面边缘 → 散步结束
+		# 到达目标 → 滚动结束
 		var x = pet.global_position.x
-		var w = pet.boundary_size.x
-		if (_stroll_direction > 0.0 and x > w - 80.0) or (_stroll_direction < 0.0 and x < 80.0):
-			_end_stroll()
+		if _is_long_stroll:
+			# 长距散步: 到达对面边缘
+			var w = pet.boundary_size.x
+			if (_stroll_direction > 0.0 and x > w - 80.0) or (_stroll_direction < 0.0 and x < 80.0):
+				_end_stroll()
+		else:
+			# 短距滚动: 到达目标 X (20px 容差)
+			if absf(x - _roll_target_x) < 20.0:
+				_end_stroll()
 	else:
 		if not _has_landed and pet.is_settled():
 			_has_landed = true
