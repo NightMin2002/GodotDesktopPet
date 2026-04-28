@@ -20,6 +20,11 @@ var shockwave_enabled: bool = true
 # ── 虹彩渐变时间 ──
 var hue_time: float = 0.0
 
+# ── 特效颜色模式 ──
+# 0 = 虹彩 (彩虹循环, 默认)
+# 1 = 跟随体色 (纯色, 使用宠物色调)
+var effect_color_mode: int = 0
+
 # ── 数据更新 (由 pet._process 调用) ──
 
 ## 更新特效数据，返回是否有视觉变化 (用于按需重绘)
@@ -70,8 +75,13 @@ func render(canvas: CanvasItem) -> void:
 
 func _render_shockwaves(canvas: CanvasItem) -> void:
 	for shock in shockwaves:
-		var effect_color = Color.from_hsv(fmod(hue_time + pet.palette.effective_hue() - _PetColorPalette.DEFAULT_HUE, 1.0), 0.6, 1.0, shock["alpha"])
-		# 高科技空心雷达弧辐射
+		var effect_color: Color
+		if effect_color_mode == 1:
+			# 跟随体色: 纯色冒击波
+			effect_color = Color.from_hsv(pet.palette.effective_hue(), 0.7, 1.0, shock["alpha"])
+		else:
+			# 虹彩: 彩虹循环
+			effect_color = Color.from_hsv(fmod(hue_time + pet.palette.effective_hue() - _PetColorPalette.DEFAULT_HUE, 1.0), 0.6, 1.0, shock["alpha"])
 		canvas.draw_arc(shock["local_pos"], shock["radius"], 0, TAU, 32, effect_color, 4.0, true)
 
 func _render_trail(canvas: CanvasItem) -> void:
@@ -79,6 +89,7 @@ func _render_trail(canvas: CanvasItem) -> void:
 	if trail_size < 2:
 		return
 	
+	var pet_hue = pet.palette.effective_hue()
 	var points = PackedVector2Array()
 	var colors = PackedColorArray()
 	for i in range(trail_size):
@@ -86,8 +97,13 @@ func _render_trail(canvas: CanvasItem) -> void:
 		points.append(local_pos)
 		var ratio = 1.0 - float(i) / trail_size
 		
-		# HSL 颜色空间：hue随时间加随粒子尾巴顺延发生偏转，产生五光十色的神圣尾迹！
-		var trail_color = Color.from_hsv(fmod(hue_time + pet.palette.effective_hue() - _PetColorPalette.DEFAULT_HUE + ratio * 0.3, 1.0), 0.65, 1.0, ratio * 0.7)
+		var trail_color: Color
+		if effect_color_mode == 1:
+			# 跟随体色: 尾端轻微偏移产生渐变感
+			trail_color = Color.from_hsv(fmod(pet_hue + ratio * 0.08, 1.0), 0.7, 1.0, ratio * 0.7)
+		else:
+			# 虹彩: 五光十色的神圣尾迹
+			trail_color = Color.from_hsv(fmod(hue_time + pet_hue - _PetColorPalette.DEFAULT_HUE + ratio * 0.3, 1.0), 0.65, 1.0, ratio * 0.7)
 		colors.append(trail_color)
 		
 		var fade_radius = pet.PET_RADIUS * ratio * 0.85

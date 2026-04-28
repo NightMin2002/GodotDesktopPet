@@ -103,6 +103,7 @@ func _ready() -> void:
 	eye_behavior.tracking_enabled = SettingsManager.get_bool("eye_track", true)
 	pet_effects.shockwave_enabled = SettingsManager.get_bool("shockwave", true)
 	pet_effects.trail_enabled = SettingsManager.get_bool("trail_fx", true)
+	pet_effects.effect_color_mode = SettingsManager.get_int("effect_color_mode", 0)
 	move_style = SettingsManager.get_int("move_style", 0)
 	stroll_enabled = SettingsManager.get_bool("stroll", true)
 	var ag = SettingsManager.get_bool("anti_gravity", false)
@@ -130,6 +131,8 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		pet_effects.shockwave_enabled = is_on
 	elif setting_id == "trail_fx":
 		pet_effects.trail_enabled = is_on
+	elif setting_id == "effect_color_mode":
+		pet_effects.effect_color_mode = SettingsManager.get_int("effect_color_mode", 0)
 	elif setting_id == "move_style":
 		move_style = SettingsManager.get_int("move_style", 0)
 	elif setting_id == "stroll":

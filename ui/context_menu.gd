@@ -641,6 +641,59 @@ func _update_gait_label(mode: int) -> void:
 
 	gait_btn.text = GAIT_LABELS[mode]
 
+# ── 特效配色 ──
+
+var _effect_color_btns: Array[Button] = []
+
+## 在 effects 面板的 VBox 中追加配色单选按钮
+func _append_effect_color_radio() -> void:
+	var effects_panel = _submenu.panels.get("effects")
+	if not effects_panel:
+		return
+	var vbox = effects_panel.get_child(0)  # VBoxContainer
+	
+	# 分割线
+	var sep = HSeparator.new()
+	sep.add_theme_constant_override("separation", 3)
+	var s = StyleBoxFlat.new()
+	s.bg_color = Color.from_hsv(EventBus.ui_hue, 0.6, 0.8, 0.15)
+	s.set_content_margin_all(0)
+	sep.add_theme_stylebox_override("separator", s)
+	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(sep)
+	
+	# 配色标题
+	var label = Label.new()
+	label.text = "特效配色"
+	label.add_theme_font_size_override("font_size", 14)
+	label.add_theme_color_override("font_color", Color(0.5, 0.6, 0.75, 0.5))
+	vbox.add_child(label)
+	
+	# 单选按钮
+	var saved = SettingsManager.get_int("effect_color_mode", 0)
+	var labels = ["虹彩模式", "跟随体色"]
+	_effect_color_btns.clear()
+	for i in range(2):
+		var btn = Button.new()
+		btn.flat = true
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.add_theme_font_size_override("font_size", 19)
+		btn.add_theme_color_override("font_color", Color(0.8, 0.9, 1, 1))
+		btn.add_theme_color_override("font_hover_color", Color(0.1, 1, 0.9, 1))
+		btn.text = ("● " if i == saved else "○ ") + labels[i]
+		var val = i
+		btn.pressed.connect(func(): _on_radio_effect_color(val))
+		vbox.add_child(btn)
+		_effect_color_btns.append(btn)
+
+func _on_radio_effect_color(value: int) -> void:
+	SettingsManager.set_int("effect_color_mode", value)
+	EventBus.setting_toggled.emit("effect_color_mode", value > 0)
+	# 刷新单选按钮显示
+	var labels = ["虹彩模式", "跟随体色"]
+	for i in range(_effect_color_btns.size()):
+		_effect_color_btns[i].text = ("● " if i == value else "○ ") + labels[i]
+
 # ── 工具函数 ──
 
 func _set_toggle(btn: Button, is_on: bool, on_text: String, off_text: String) -> void:
@@ -743,6 +796,8 @@ func _build_submenus() -> void:
 		{"id": "shockwave", "on": "◉ 撞击冲击波", "off": "○ 撞击冲击波", "key": "shockwave", "default": true},
 		{"id": "trail_fx", "on": "◉ 粒子尾流", "off": "○ 粒子尾流", "key": "trail_fx", "default": true},
 	])
+	# 在 effects 面板中追加特效配色单选 (共用同一面板)
+	_append_effect_color_radio()
 	_submenu.create_toggle("entertain", [
 		{"id": "stroll", "on": "◉ 自主巡航", "off": "○ 自主巡航", "key": "stroll", "default": true},
 	])
