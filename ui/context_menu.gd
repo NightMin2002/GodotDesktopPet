@@ -728,7 +728,7 @@ func _build_submenus() -> void:
 		{"id": "trail_fx", "on": "◉ 粒子尾流", "off": "○ 粒子尾流", "key": "trail_fx", "default": true},
 	])
 	_submenu.create_toggle("entertain", [
-		{"id": "stroll", "on": "◉ 滚动散步", "off": "○ 滚动散步", "key": "stroll", "default": true},
+		{"id": "stroll", "on": "◉ 自主巡航", "off": "○ 自主巡航", "key": "stroll", "default": true},
 	])
 	_submenu.create_toggle("mode", [
 		{"id": "anti_gravity", "on": "◉ 反重力", "off": "○ 反重力", "key": "anti_gravity", "default": false},
@@ -743,7 +743,7 @@ func _build_submenus() -> void:
 func _refresh_submenu_states() -> void:
 	_submenu.refresh_toggle("shockwave", SettingsManager.get_bool("shockwave", true), "◉ 撞击冲击波", "○ 撞击冲击波")
 	_submenu.refresh_toggle("trail_fx", SettingsManager.get_bool("trail_fx", true), "◉ 粒子尾流", "○ 粒子尾流")
-	_submenu.refresh_toggle("stroll", SettingsManager.get_bool("stroll", true), "◉ 滚动散步", "○ 滚动散步")
+	_submenu.refresh_toggle("stroll", SettingsManager.get_bool("stroll", true), "◉ 自主巡航", "○ 自主巡航")
 	_submenu.refresh_toggle("anti_gravity", SettingsManager.get_bool("anti_gravity", false), "◉ 反重力", "○ 反重力")
 	_submenu.refresh_toggle("hud_pin", SettingsManager.get_bool("hud_pin", false), "◉ 常驻显示", "○ 常驻显示")
 	_submenu.refresh_toggle("hud_clock", SettingsManager.get_bool("hud_clock", false), "◉ 系统时钟", "○ 系统时钟")
