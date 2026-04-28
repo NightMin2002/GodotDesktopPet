@@ -22,6 +22,8 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		pet_effects.shockwave_enabled = is_on
 	elif setting_id == "trail_fx":
 		pet_effects.trail_enabled = is_on
+	elif setting_id == "arc_fx":
+		pet_effects.arc_enabled = is_on
 	elif setting_id == "move_style":
 		move_style = SettingsManager.get_int("move_style", 0)
 	elif setting_id == "stroll":

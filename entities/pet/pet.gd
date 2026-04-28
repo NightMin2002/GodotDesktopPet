@@ -103,6 +103,7 @@ func _ready() -> void:
 	eye_behavior.tracking_enabled = SettingsManager.get_bool("eye_track", true)
 	pet_effects.shockwave_enabled = SettingsManager.get_bool("shockwave", true)
 	pet_effects.trail_enabled = SettingsManager.get_bool("trail_fx", true)
+	pet_effects.arc_enabled = SettingsManager.get_bool("arc_fx", true)
 	pet_effects.effect_color_mode = SettingsManager.get_int("effect_color_mode", 0)
 	move_style = SettingsManager.get_int("move_style", 0)
 	stroll_enabled = SettingsManager.get_bool("stroll", true)
@@ -131,6 +132,8 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		pet_effects.shockwave_enabled = is_on
 	elif setting_id == "trail_fx":
 		pet_effects.trail_enabled = is_on
+	elif setting_id == "arc_fx":
+		pet_effects.arc_enabled = is_on
 	elif setting_id == "effect_color_mode":
 		pet_effects.effect_color_mode = SettingsManager.get_int("effect_color_mode", 0)
 	elif setting_id == "move_style":
@@ -276,6 +279,8 @@ func _unhandled_input(event: InputEvent) -> void:
 func _draw() -> void:
 	# ── 绘制特效 (冲击波 + 拖影，委托给 PetEffects) ──
 	pet_effects.render(self)
+	# ── 绘制能量共鸣弧 (近距离宠物间的静电放电) ──
+	pet_effects.render_arcs(self)
 	
 	# ── 科幻单眼结构 ──
 	# 外壳不受眨眼影响

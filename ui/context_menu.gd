@@ -795,6 +795,7 @@ func _build_submenus() -> void:
 	_submenu.create_toggle("effects", [
 		{"id": "shockwave", "on": "◉ 撞击冲击波", "off": "○ 撞击冲击波", "key": "shockwave", "default": true},
 		{"id": "trail_fx", "on": "◉ 粒子尾流", "off": "○ 粒子尾流", "key": "trail_fx", "default": true},
+		{"id": "arc_fx", "on": "◉ 能量共鸣弧", "off": "○ 能量共鸣弧", "key": "arc_fx", "default": true},
 	])
 	# 在 effects 面板中追加特效配色单选 (共用同一面板)
 	_append_effect_color_radio()
@@ -814,6 +815,7 @@ func _build_submenus() -> void:
 func _refresh_submenu_states() -> void:
 	_submenu.refresh_toggle("shockwave", SettingsManager.get_bool("shockwave", true), "◉ 撞击冲击波", "○ 撞击冲击波")
 	_submenu.refresh_toggle("trail_fx", SettingsManager.get_bool("trail_fx", true), "◉ 粒子尾流", "○ 粒子尾流")
+	_submenu.refresh_toggle("arc_fx", SettingsManager.get_bool("arc_fx", true), "◉ 能量共鸣弧", "○ 能量共鸣弧")
 	_submenu.refresh_toggle("stroll", SettingsManager.get_bool("stroll", true), "◉ 自主巡航", "○ 自主巡航")
 	_submenu.refresh_toggle("anti_gravity", SettingsManager.get_bool("anti_gravity", false), "◉ 反重力", "○ 反重力")
 	_submenu.refresh_toggle("hud_pin", SettingsManager.get_bool("hud_pin", false), "◉ 常驻显示", "○ 常驻显示")
