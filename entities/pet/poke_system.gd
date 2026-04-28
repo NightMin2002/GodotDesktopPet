@@ -160,7 +160,9 @@ func _pick_unique(pool: Array) -> String:
 
 func _format_duration(seconds: float) -> String:
 	var total_sec = int(seconds)
+	@warning_ignore("integer_division")
 	var hours = total_sec / 3600
+	@warning_ignore("integer_division")
 	var minutes = (total_sec % 3600) / 60
 	var secs = total_sec % 60
 	if hours > 0:

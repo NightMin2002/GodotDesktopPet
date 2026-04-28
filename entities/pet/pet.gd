@@ -49,7 +49,8 @@ var window_mode: int = 0  # 0=FREE, 1=CONFINED, 2=REPELLED
 
 # ── 行为指令 ──
 var behavior_mode: int = 0  # 0=FREE(自由行动), 1=QUIET(安静待命)
-var _was_dragged_in_quiet: bool = false  # 安静模式下被拖拽的标记 (用于吐槽)
+@warning_ignore("unused_private_class_variable")
+var _was_dragged_in_quiet: bool = false  # 安静模式下被拖拽的标记 (drag.gd写/fall.gd读)
 var is_strolling: bool = false  # 是否正在滚动漫步 (供其他宠物检测让路)
 
 # ── 戳一戳交互系统 (委托给 PokeSystem) ──

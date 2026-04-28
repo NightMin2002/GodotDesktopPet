@@ -166,8 +166,6 @@ func _load_saved_settings() -> void:
 
 	var eye = SettingsManager.get_bool("eye_track", true)
 
-	var clock = SettingsManager.get_bool("hud_clock", false)
-
 	# 应用到本地按钮显示 (pet 自己从 SettingsManager 读取，不依赖信号)
 
 	_set_toggle(track_btn, eye, "◉ 眼球追踪", "○ 眼球追踪")

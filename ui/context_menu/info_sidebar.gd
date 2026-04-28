@@ -112,7 +112,9 @@ func update_uptime() -> void:
 		return
 	var now = Time.get_unix_time_from_system()
 	var elapsed = int(now - _boot_timestamp)
+	@warning_ignore("integer_division")
 	var hours = elapsed / 3600
+	@warning_ignore("integer_division")
 	var minutes = (elapsed % 3600) / 60
 	if "uptime" in _rows:
 		_rows["uptime"].text = "%dh %dm" % [hours, minutes]

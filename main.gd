@@ -1,4 +1,4 @@
-﻿# main.gd — 启动场景主脚本 (精简后的调度器)
+# main.gd — 启动场景主脚本 (精简后的调度器)
 # 职责: 窗口初始化、屏幕边界、宠物实例化、子系统编排
 # 实际逻辑已委托给: ghost_wall_manager / hit_region_manager / clone_manager / farewell_manager
 extends Node2D
@@ -37,7 +37,9 @@ func _ready() -> void:
 			win_manager.call("BoostProcessPriority")
 	
 	# 双保险：设置窗口前先隐藏，防止任务栏闪烁
-	get_window().visible = false
+	var win = get_window()
+	if win and win.get_parent():
+		win.visible = false
 	
 	_setup_window()
 	
