@@ -1,5 +1,5 @@
 # sysinfo_bubble.gd — 系统信息气泡子系统 (RefCounted)
-# 负责: 按需查询 CPU/GPU/RAM/Disk 并以气泡形式展示
+# 负责: 按需查询系统软硬件信息并以终端扫描报告风格展示
 # 从 context_menu.gd 拆分，由主控制器持有引用并在 _process 中调度
 extends RefCounted
 
@@ -120,81 +120,147 @@ func is_visible() -> bool:
 
 # ── 后台查询 ──
 
-const _PS_HW_SCRIPT := "$h=$env:COMPUTERNAME;$u=$env:USERNAME;$o=Get-CimInstance Win32_OperatingSystem;$osN=$o.Caption -replace 'Microsoft ','';$cpu=(Get-CimInstance Win32_Processor|Select-Object -First 1).Name;$g=Get-CimInstance Win32_VideoController|Where-Object{$_.Name -notmatch 'Virtual|MuMu|GameViewer'};$nv=$g|Where-Object{$_.Name -match 'NVIDIA|GeForce|RTX|GTX'};$gpu=if($nv){($nv|Select-Object -First 1).Name}else{($g|Select-Object -First 1).Name};$used=[math]::Round(($o.TotalVisibleMemorySize-$o.FreePhysicalMemory)/1MB,1);$total=[math]::Round($o.TotalVisibleMemorySize/1MB,1);$ip=(Get-NetIPAddress -AddressFamily IPv4|Where-Object{$_.InterfaceAlias -notmatch 'Loopback|vEthernet|Radmin|FlClash|VPN|Bluetooth' -and $_.InterfaceAlias -notlike '*蓝牙*' -and $_.IPAddress -ne '127.0.0.1' -and $_.IPAddress -notlike '169.254.*' -and $_.IPAddress -notlike '198.18.*'}|Select-Object -First 1).IPAddress;if(!$ip){$ip='N/A'};$disks=Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3'|ForEach-Object{($_.DeviceID -replace ':','')+':'+[math]::Round($_.FreeSpace/1GB).ToString()+':'+[math]::Round($_.Size/1GB).ToString()};Write-Host host=$h;Write-Host user=$u;Write-Host os=$osN;Write-Host cpu=$cpu;Write-Host gpu=$gpu;Write-Host ram=$used/$total;Write-Host ip=$ip;Write-Host disk=($disks -join '|')"
+# PS 脚本: 通过 run_command 注入 (避免 GDScript 反斜杠转义)
+const _PS_SCRIPT := "$h=$env:COMPUTERNAME;$u=$env:USERNAME;$o=Get-CimInstance Win32_OperatingSystem;$osN=$o.Caption -replace 'Microsoft ','';$p=Get-CimInstance Win32_Processor|Select-Object -First 1;$cpu=$p.Name;$cores=$p.NumberOfCores.ToString()+'C / '+$p.NumberOfLogicalProcessors.ToString()+'T';$freq=$p.MaxClockSpeed;$g=Get-CimInstance Win32_VideoController|Where-Object{$_.Name -notmatch 'Virtual|MuMu|GameViewer'};$nv=$g|Where-Object{$_.Name -match 'NVIDIA|GeForce|RTX|GTX'};$gpu=if($nv){($nv|Select-Object -First 1).Name}else{($g|Select-Object -First 1).Name};$used=[math]::Round(($o.TotalVisibleMemorySize-$o.FreePhysicalMemory)/1MB,1);$total=[math]::Round($o.TotalVisibleMemorySize/1MB,1);$mb=Get-CimInstance Win32_BaseBoard|Select-Object -First 1;$mobo=$mb.Manufacturer+' '+$mb.Product;$ip=(Get-NetIPAddress -AddressFamily IPv4|Where-Object{$_.InterfaceAlias -notmatch 'Loopback|vEthernet|Radmin|FlClash|VPN|Bluetooth' -and $_.InterfaceAlias -notlike '*蓝牙*' -and $_.IPAddress -ne '127.0.0.1' -and $_.IPAddress -notlike '169.254.*' -and $_.IPAddress -notlike '198.18.*'}|Select-Object -First 1).IPAddress;if(!$ip){$ip='N/A'};$disks=Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3'|ForEach-Object{($_.DeviceID -replace ':','')+':'+[math]::Round($_.FreeSpace/1GB).ToString()+':'+[math]::Round($_.Size/1GB).ToString()};$boot=$o.LastBootUpTime;$upMin=[math]::Round(((Get-Date)-$boot).TotalMinutes);$bat=try{(Get-CimInstance Win32_Battery -ErrorAction Stop|Select-Object -First 1)}catch{$null};$bp=if($bat){$bat.EstimatedChargeRemaining}else{'N/A'};$bs=if($bat){$bat.BatteryStatus}else{0};Write-Host host=$h;Write-Host user=$u;Write-Host os=$osN;Write-Host cpu=$cpu;Write-Host cores=$cores;Write-Host freq=$freq;Write-Host gpu=$gpu;Write-Host ram=$used/$total;Write-Host mobo=$mobo;Write-Host ip=$ip;Write-Host disk=($disks -join '|');Write-Host uptime=$upMin;Write-Host bat=$bp;Write-Host bstat=$bs"
 
 func _query_task() -> void:
+	var r: Dictionary = {}
+	# 主查询
 	var out: Array = []
-	OS.execute("powershell", ["-NoProfile", "-Command", _PS_HW_SCRIPT], out, true, false)
+	OS.execute("powershell", ["-NoProfile", "-Command", _PS_SCRIPT], out, true, false)
 	if out.size() > 0:
-		var r: Dictionary = {}
 		for line in out[0].strip_edges().split("\n"):
 			line = line.strip_edges()
 			var eq = line.find("=")
 			if eq > 0:
 				r[line.substr(0, eq)] = line.substr(eq + 1)
-		var host = r.get("host", "?")
-		var user = r.get("user", "?")
-		var os_info = r.get("os", "?")
-		var cpu = r.get("cpu", "?").replace(" with Radeon Graphics", "")
-		var gpu = r.get("gpu", "?")
-		var ram = r.get("ram", "?")
-		var ip = r.get("ip", "N/A")
-		var disk = r.get("disk", "?")
-		var t = Time.get_datetime_dict_from_system()
-		var ts = "%04d.%02d.%02d %02d:%02d" % [t.year, t.month, t.day, t.hour, t.minute]
-		var C_HEAD := "#4dd9e6"   # 标题/结尾: 亮青色
-		var C_ID   := "#5bb8c5"   # 身份标签: 青色调
-		var C_HW   := "#7799dd"   # 硬件标签: 蓝色调
-		var C_STR  := "#d4a030"   # 存储标题: 金色调
-		var C_SEP  := "#2a4055"   # 分隔线: 暗色
-		var C_VAL  := "#c8dce8"   # 值文本: 浅白
-		var C_OK   := "#6ccf6c"   # 磁盘正常 (>30%): 绿
-		var C_WARN := "#d4a030"   # 磁盘注意 (10~30%): 金
-		var C_CRIT := "#e05555"   # 磁盘危险 (<10%): 红
-		# BBCode 中 [TAG] 需用 [lb]/[rb] 转义方括号
-		var tag_id = func(t: String) -> String:
-			return "[color=%s][lb]%s[rb][/color]" % [C_ID, t]
-		var tag_hw = func(t: String) -> String:
-			return "[color=%s][lb]%s[rb][/color]" % [C_HW, t]
-		# 磁盘竖排 + 百分比 + 颜色分级
-		var disk_lines := ""
-		for part in disk.split("|"):
-			part = part.strip_edges()
-			if part == "":
-				continue
-			var segs = part.split(":")
-			if segs.size() < 3:
-				disk_lines += "[color=%s]%s[/color]\n" % [C_VAL, part]
-				continue
-			var drive = segs[0]
-			var free_gb = segs[1].to_int()
-			var total_gb = segs[2].to_int()
-			var pct = 0
-			if total_gb > 0:
-				pct = free_gb * 100 / total_gb
-			var c_disk = C_OK
-			if pct < 10:
-				c_disk = C_CRIT
-			elif pct < 30:
-				c_disk = C_WARN
-			disk_lines += "[color=%s]%s  %dGB / %dGB  (%d%%)[/color]\n" % [c_disk, drive, free_gb, total_gb, pct]
-		var sep = "[center][color=%s]─ ─ ─ ─ ─ ─ ─ ─ ─ ─[/color][/center]" % C_SEP
-		_pending = "[center][color=%s]── SYSTEM SCAN ──[/color][/center]\n" % C_HEAD \
-			+ "%s  [color=%s]%s[/color]\n" % [tag_id.call("HOST"), C_VAL, host] \
-			+ "%s  [color=%s]%s[/color]\n" % [tag_id.call("USER"), C_VAL, user] \
-			+ "%s    [color=%s]%s[/color]\n" % [tag_id.call("OS"), C_VAL, os_info] \
-			+ "%s  [color=%s]%s[/color]\n" % [tag_id.call("DISP"), C_VAL, _screen_res] \
-			+ sep + "\n" \
-			+ "%s   [color=%s]%s[/color]\n" % [tag_hw.call("CPU"), C_VAL, cpu] \
-			+ "%s   [color=%s]%s[/color]\n" % [tag_hw.call("GPU"), C_VAL, gpu] \
-			+ "%s   [color=%s]%s GB[/color]\n" % [tag_hw.call("MEM"), C_VAL, ram] \
-			+ "%s    [color=%s]%s[/color]\n" % [tag_hw.call("IP"), C_VAL, ip] \
-			+ "[center][color=%s]── STORAGE ──[/color][/center]\n" % C_STR \
-			+ disk_lines \
-			+ sep + "\n" \
-			+ "[center][color=%s]SCAN COMPLETE · %s[/color][/center]" % [C_HEAD, ts]
-	else:
-		_pending = "SCAN FAILED"
+	# 显示器单独查询 (root/wmi 命名空间, 可能需要权限)
+	var mon_out: Array = []
+	OS.execute("powershell", ["-NoProfile", "-Command",
+		"try{$m=Get-CimInstance WmiMonitorID -Namespace root/wmi -ErrorAction Stop|Select-Object -First 1;$n=($m.UserFriendlyName|Where-Object{$_ -ne 0}|ForEach-Object{[char]$_}) -join '';$mf=($m.ManufacturerName|Where-Object{$_ -ne 0}|ForEach-Object{[char]$_}) -join '';Write-Host mon=$mf $n}catch{Write-Host mon=N/A}"],
+		mon_out, true, false)
+	if mon_out.size() > 0:
+		for line in mon_out[0].strip_edges().split("\n"):
+			line = line.strip_edges()
+			var eq = line.find("=")
+			if eq > 0:
+				r[line.substr(0, eq)] = line.substr(eq + 1)
+	# ── 提取字段 ──
+	var host = r.get("host", "?")
+	var user = r.get("user", "?")
+	var os_info = r.get("os", "?")
+	var cpu = r.get("cpu", "?").replace(" with Radeon Graphics", "")
+	var cores = r.get("cores", "?")
+	var freq = r.get("freq", "?")
+	var gpu = r.get("gpu", "?")
+	var ram = r.get("ram", "?")
+	var mobo = r.get("mobo", "?")
+	var mon = r.get("mon", "N/A")
+	var ip = r.get("ip", "N/A")
+	var disk = r.get("disk", "?")
+	var uptime_str = r.get("uptime", "?")
+	var bat_pct = r.get("bat", "")
+	var bat_status = r.get("bstat", "0")
+	# ── 格式化计算值 ──
+	# 开机时长 + 反推开机时间
+	var up_text = uptime_str
+	var boot_time = "?"
+	if uptime_str != "?":
+		var up_min = uptime_str.to_int()
+		if up_min >= 60:
+			up_text = "%dh %dm" % [up_min / 60, up_min % 60]
+		else:
+			up_text = "%dm" % up_min
+		# 用当前 Unix 时间减去 uptime 反推开机时间
+		var now_unix = Time.get_unix_time_from_system()
+		var boot_unix = now_unix - up_min * 60
+		# get_datetime_dict_from_unix_time 返回 UTC, 需加时区偏移转本地
+		var tz = Time.get_time_zone_from_system()
+		var bd = Time.get_datetime_dict_from_unix_time(int(boot_unix) + tz.bias * 60)
+		boot_time = "%04d.%02d.%02d %02d:%02d" % [bd.year, bd.month, bd.day, bd.hour, bd.minute]
+	# CPU 基频
+	var freq_text = freq
+	if freq != "?":
+		var mhz = freq.to_float()
+		freq_text = "%.1f GHz" % (mhz / 1000.0)
+	# 时间戳
+	var t = Time.get_datetime_dict_from_system()
+	var ts = "%04d.%02d.%02d %02d:%02d" % [t.year, t.month, t.day, t.hour, t.minute]
+	# ── 颜色定义 ──
+	var C_HEAD := "#4dd9e6"   # 标题/结尾: 亮青色
+	var C_ID   := "#5bb8c5"   # 身份标签: 青色调
+	var C_HW   := "#7799dd"   # 硬件标签: 蓝色调
+	var C_STR  := "#d4a030"   # 存储标题: 金色调
+	var C_RT   := "#b07dd4"   # 运行时标题: 紫色调
+	var C_SEP  := "#2a4055"   # 分隔线: 暗色
+	var C_VAL  := "#c8dce8"   # 值文本: 浅白
+	var C_SUB  := "#607888"   # 副行补充: 较暗
+	var C_OK   := "#6ccf6c"   # 正常: 绿
+	var C_WARN := "#d4a030"   # 注意: 金
+	var C_CRIT := "#e05555"   # 危险: 红
+	# ── BBCode 标签工具 ──
+	var tag_id = func(n: String) -> String:
+		return "[color=%s][lb]%s[rb][/color]" % [C_ID, n]
+	var tag_hw = func(n: String) -> String:
+		return "[color=%s][lb]%s[rb][/color]" % [C_HW, n]
+	var tag_rt = func(n: String) -> String:
+		return "[color=%s][lb]%s[rb][/color]" % [C_RT, n]
+	# ── 磁盘竖排 + 百分比 + 颜色分级 ──
+	var disk_lines := ""
+	for part in disk.split("|"):
+		part = part.strip_edges()
+		if part == "":
+			continue
+		var segs = part.split(":")
+		if segs.size() < 3:
+			disk_lines += "[color=%s]%s[/color]\n" % [C_VAL, part]
+			continue
+		var drive = segs[0]
+		var free_gb = segs[1].to_int()
+		var total_gb = segs[2].to_int()
+		var pct = 0
+		if total_gb > 0:
+			pct = free_gb * 100 / total_gb
+		var c_disk = C_OK
+		if pct < 10:
+			c_disk = C_CRIT
+		elif pct < 30:
+			c_disk = C_WARN
+		disk_lines += "[color=%s]%s  %dGB / %dGB  (%d%%)[/color]\n" % [c_disk, drive, free_gb, total_gb, pct]
+	# ── 电池行 (可选, 台式机可能无电池) ──
+	var bat_line := ""
+	if bat_pct != "" and bat_pct != "N/A":
+		var bp = bat_pct.to_int()
+		var c_bat = C_OK
+		if bp < 20:
+			c_bat = C_CRIT
+		elif bp < 50:
+			c_bat = C_WARN
+		var charging = " · Charging" if bat_status == "2" else ""
+		bat_line = "%s   [color=%s]%s%%%s[/color]\n" % [tag_rt.call("BAT"), c_bat, bat_pct, charging]
+	# ── 组装 BBCode ──
+	var sep = "[center][color=%s]─ ─ ─ ─ ─ ─ ─ ─ ─ ─[/color][/center]" % C_SEP
+	_pending = "[center][color=%s]── SYSTEM SCAN ──[/color][/center]\n" % C_HEAD \
+		+ "%s  [color=%s]%s[/color]\n" % [tag_id.call("HOST"), C_VAL, host] \
+		+ "%s  [color=%s]%s[/color]\n" % [tag_id.call("USER"), C_VAL, user] \
+		+ "%s    [color=%s]%s[/color]\n" % [tag_id.call("OS"), C_VAL, os_info] \
+		+ "%s  [color=%s]%s[/color]\n" % [tag_id.call("DISP"), C_VAL, _screen_res] \
+		+ sep + "\n" \
+		+ "%s   [color=%s]%s[/color]\n" % [tag_hw.call("CPU"), C_VAL, cpu] \
+		+ "        [color=%s]%s · %s[/color]\n" % [C_SUB, cores, freq_text] \
+		+ "%s   [color=%s]%s[/color]\n" % [tag_hw.call("GPU"), C_VAL, gpu] \
+		+ "%s   [color=%s]%s GB[/color]\n" % [tag_hw.call("MEM"), C_VAL, ram] \
+		+ "%s  [color=%s]%s[/color]\n" % [tag_hw.call("MOBO"), C_VAL, mobo] \
+		+ "%s   [color=%s]%s[/color]\n" % [tag_hw.call("MON"), C_VAL, mon] \
+		+ "%s    [color=%s]%s[/color]\n" % [tag_hw.call("IP"), C_VAL, ip] \
+		+ "[center][color=%s]── STORAGE ──[/color][/center]\n" % C_STR \
+		+ disk_lines \
+		+ "[center][color=%s]── RUNTIME ──[/color][/center]\n" % C_RT \
+		+ "%s  [color=%s]%s[/color]\n" % [tag_rt.call("BOOT"), C_VAL, boot_time] \
+		+ "%s    [color=%s]%s[/color]\n" % [tag_rt.call("UP"), C_VAL, up_text] \
+		+ bat_line \
+		+ sep + "\n" \
+		+ "[center][color=%s]SCAN COMPLETE · %s[/color][/center]" % [C_HEAD, ts]
 	_has_pending = true
 
 # ── 工具 ──
