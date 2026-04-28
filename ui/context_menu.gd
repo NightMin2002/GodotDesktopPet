@@ -30,6 +30,8 @@ const SubmenuSystem = preload("res://ui/context_menu/submenu_system.gd")
 
 @onready var effects_btn: Button = $HUDPanel/Margin/VBox/EffectsBtn
 
+@onready var theme_btn: Button = $HUDPanel/Margin/VBox/ThemeBtn
+
 @onready var entertain_btn: Button = $HUDPanel/Margin/VBox/EntertainBtn
 
 @onready var mode_btn: Button = $HUDPanel/Margin/VBox/ModeBtn
@@ -86,6 +88,10 @@ func _ready() -> void:
 
 	_load_saved_settings()
 
+	# UI 主题色: 启动时应用 + 运行时监听
+	_apply_ui_theme(EventBus.ui_hue)
+	EventBus.ui_theme_changed.connect(_apply_ui_theme)
+
 	EventBus.show_context_menu.connect(_on_show_context_menu)
 
 	track_btn.pressed.connect(_on_track_btn_pressed)
@@ -129,6 +135,17 @@ func _ready() -> void:
 	effects_btn.mouse_exited.connect(func(): _submenu.on_trigger_exit())
 
 	effects_btn.pressed.connect(func(): _submenu.toggle("effects"))
+	
+	theme_btn.pressed.connect(func():
+		# 立即隐藏菜单 + 补发 false 平衡引用计数
+		_tooltip.panel.hide()
+		_submenu.hide_all_instant()
+		hud.hide()
+		_sidebar.panel.hide()
+		target = null
+		EventBus.context_menu_toggled.emit(false)
+		EventBus.show_theme_panel.emit()
+	)
 
 	entertain_btn.mouse_entered.connect(func(): _submenu.on_trigger_hover("entertain"))
 
@@ -482,12 +499,13 @@ func _update_chatter_label(mode: int) -> void:
 
 func _on_reminder_btn_pressed() -> void:
 
-	# 立即隐藏菜单 (不发 context_menu_toggled，由提醒面板接管)
+	# 立即隐藏菜单 + 补发 false 平衡引用计数
 	_tooltip.panel.hide()
 	_submenu.hide_all_instant()
 	hud.hide()
 	_sidebar.panel.hide()
 	target = null
+	EventBus.context_menu_toggled.emit(false)
 
 	EventBus.show_reminder_panel.emit()
 
@@ -752,3 +770,17 @@ func _on_sysinfo_btn_pressed() -> void:
 	_close_hud()
 
 	_sysinfo_bubble.trigger()
+
+## UI 主题色应用: 更新 HUD 面板边框 + 传递给子系统
+func _apply_ui_theme(hue: float) -> void:
+	var style = hud.get_theme_stylebox("panel") as StyleBoxFlat
+	if style:
+		style = style.duplicate()
+		style.border_color = Color.from_hsv(hue, 0.8, 1.0, 1.0)
+		hud.add_theme_stylebox_override("panel", style)
+	# 通知子菜单系统
+	if _submenu and _submenu.has_method("apply_ui_theme"):
+		_submenu.apply_ui_theme(hue)
+	# 通知侧栏
+	if _sidebar and _sidebar.has_method("apply_ui_theme"):
+		_sidebar.apply_ui_theme(hue)

@@ -12,6 +12,7 @@ var _transparent_mode := false  # true=完美模式, false=SetWindowRgn回退模
 # ── 穿透状态 ──
 var is_dragging := false
 var is_menu_open := false
+var _menu_open_count: int = 0   # 面板打开引用计数 (解决多面板时序竞争)
 var _is_click_through := false  # 当前 WS_EX_TRANSPARENT 状态 (初始为 false，与窗口实际一致)
 
 # ── 命中区域数据 ──
@@ -254,13 +255,18 @@ func _on_drag_ended() -> void:
 		_update_passthrough_state()
 
 func _on_context_menu_toggled(is_open: bool) -> void:
-	is_menu_open = is_open
+	# 引用计数: 多个面板可能同时处于打开状态 (菜单/提醒/主题)
+	# 只有所有面板都关闭后才恢复穿透
+	if is_open:
+		_menu_open_count += 1
+	else:
+		_menu_open_count = maxi(_menu_open_count - 1, 0)
+	is_menu_open = _menu_open_count > 0
 	if _transparent_mode:
-		if is_open:
+		if is_menu_open:
 			_set_click_through(false)
 		else:
-			# 菜单关闭：立即刷新命中区域和穿透状态
-			# 不延迟，否则 _process 中 is_menu_open 已 false 但 hit data 过时会导致全穿透
+			# 所有面板关闭：立即刷新命中区域和穿透状态
 			_collect_hit_regions()
 			_update_click_through()
 	else:

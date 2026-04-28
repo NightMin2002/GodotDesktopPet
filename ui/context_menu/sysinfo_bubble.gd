@@ -51,7 +51,7 @@ func _build() -> void:
 	_bubble.visible = false
 	var style = StyleBoxFlat.new()
 	style.bg_color = Color(0.04, 0.08, 0.16, 0.95)
-	style.border_color = Color(0.1, 0.8, 1.0, 0.7)
+	style.border_color = Color.from_hsv(EventBus.ui_hue, 0.8, 1.0, 0.7)
 	style.set_border_width_all(2)
 	style.set_corner_radius_all(14)
 	style.set_content_margin_all(16)

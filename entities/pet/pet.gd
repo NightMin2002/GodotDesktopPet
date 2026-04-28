@@ -5,13 +5,6 @@ extends RigidBody2D
 # ── 常量 ──
 const PET_RADIUS := 30.0
 
-# 占位符配色 (史莱姆风格)
-const BODY_COLOR := Color(0.3, 0.85, 0.7, 1.0)       # 青绿色身体
-const BODY_OUTLINE := Color(0.2, 0.6, 0.5, 1.0)       # 深色轮廓
-const EYE_WHITE := Color(1.0, 1.0, 1.0, 1.0)
-const EYE_PUPIL := Color(0.15, 0.15, 0.2, 1.0)
-const CHEEK_COLOR := Color(1.0, 0.6, 0.7, 0.4)        # 腮红
-
 # ── 状态机 ──
 var states: Dictionary = {}
 var current_state: PetState
@@ -24,7 +17,9 @@ var gravity_sign: float = 1.0        # 重力方向符号 (1.0=正常, -1.0=反�
 
 # ── 克隆系统 ──
 var is_clone: bool = false           # 是否为克隆分身
-var clone_hue_shift: float = 0.0    # 克隆体色调偏移 (0~1 HSV hue offset)
+
+# ── 调色板 ──
+var palette: PetColorPalette         # 每个宠物实例的独立调色板 (由 _ready 初始化)
 
 # ── HUD + 气泡系统 (委托给 PetHUD) ──
 var pet_hud: PetHUD
@@ -57,6 +52,10 @@ var is_strolling: bool = false  # 是否正在滚动漫步 (供其他宠物检�
 var poke_system: PokeSystem
 
 func _ready() -> void:
+	# 初始化调色板 (必须在所有子系统之前)
+	if palette == null:
+		palette = PetColorPalette.new()
+	
 	# 物理材质
 	var mat := PhysicsMaterial.new()
 	mat.bounce = 0.35    # 适度弹性，落地有轻微回弹但不过度
@@ -122,6 +121,7 @@ func _ready() -> void:
 	# 监听运行时设置变更
 	EventBus.setting_toggled.connect(_on_setting_toggled)
 	EventBus.behavior_mode_changed.connect(_on_behavior_mode_changed)
+	EventBus.pet_color_changed.connect(_on_pet_color_changed)
 
 func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 	if setting_id == "eye_track":
@@ -151,6 +151,15 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 
 func _on_behavior_mode_changed(mode: int) -> void:
 	behavior_mode = mode
+
+func _on_pet_color_changed(pet_index: int, hue: float, sat: float, val: float) -> void:
+	var my_index = get_meta("pet_index", 0)
+	if pet_index != my_index:
+		return
+	palette.set_hue(hue)
+	palette.sat_scale = sat
+	palette.val_scale = val
+	queue_redraw()
 
 func _init_states() -> void:
 	states = {
@@ -265,24 +274,24 @@ func _draw() -> void:
 	# ── 绘制特效 (冲击波 + 拖影，委托给 PetEffects) ──
 	pet_effects.render(self)
 	
-	# ── 科幻单眼结构 (深度结合图2的高级优化版) ──
+	# ── 科幻单眼结构 ──
 	# 外壳不受眨眼影响
-	# 1. 边缘深色轮廓与偏深的湛蓝主外壳 (克隆体应用色调偏移)
-	var shell_outline := _shift_color(Color(0.08, 0.12, 0.32, 1.0))
-	var shell_main := _shift_color(Color(0.15, 0.30, 0.80, 1.0))
+	# 1. 边缘深色轮廓与偏深的湛蓝主外壳 (palette 统一变换)
+	var shell_outline := palette.shift_color(Color(0.08, 0.12, 0.32, 1.0))
+	var shell_main := palette.shift_color(Color(0.15, 0.30, 0.80, 1.0))
 	draw_circle(Vector2.ZERO, PET_RADIUS + 1.2, shell_outline)
 	draw_circle(Vector2.ZERO, PET_RADIUS, shell_main)
 	
-	# 2. 白色边框 (优化：极细、通透，更显高级科幻感)
+	# 2. 白色边框 (不受色调影响)
 	var border_radius = PET_RADIUS * 0.85
 	draw_arc(Vector2.ZERO, border_radius, 0, TAU, 64, Color(1.0, 1.0, 1.0, 0.8), 1.2, true)
 	
-	# 3. 四个尖尖的角 (优化：正统的底座圆垫与独立四向锥形叶片重叠，完美还原形状)
-	var dark_blue := _shift_color(Color(0.12, 0.18, 0.42, 1.0))
+	# 3. 四个尖尖的角 (底座圆垫与独立四向锥形叶片)
+	var dark_blue := palette.shift_color(Color(0.12, 0.18, 0.42, 1.0))
 	var base_r = PET_RADIUS * 0.68
 	var tip_dist = border_radius - 1.0  # 尖角刚刚触碰白边内侧
 	
-	# 绘制深蓝底盘核心
+	# 绘制深色底盘核心
 	draw_circle(Vector2.ZERO, base_r, dark_blue)
 	# 绘制4个向外伸展的尖角（平滑与底盘融合的三角形）
 	for i in range(4):
@@ -303,13 +312,13 @@ func _draw() -> void:
 		# eye_behavior 直接输出世界坐标系偏移，draw_set_transform 已转为世界对齐绘制
 		var iris_offset = eye_behavior.get_pupil_offset() * iris_scale
 		# 第一层：眼白（巩膜）— 固定在圆心不动
-		draw_circle(Vector2.ZERO, PET_RADIUS * 0.54 * iris_scale, _shift_color(Color(0.85, 0.88, 0.92, 1.0)))
+		draw_circle(Vector2.ZERO, PET_RADIUS * 0.54 * iris_scale, palette.shift_color(Color(0.85, 0.88, 0.92, 1.0)))
 		# 第二层：灰蓝色虹膜外环 — 跟随鼠标
-		draw_circle(iris_offset, PET_RADIUS * 0.42 * iris_scale, _shift_color(Color(0.55, 0.65, 0.80, 1.0)))
+		draw_circle(iris_offset, PET_RADIUS * 0.42 * iris_scale, palette.shift_color(Color(0.55, 0.65, 0.80, 1.0)))
 		# 第三层：深蓝色虹膜内环 — 跟随鼠标
-		draw_circle(iris_offset, PET_RADIUS * 0.28 * iris_scale, _shift_color(Color(0.15, 0.28, 0.68, 1.0)))
+		draw_circle(iris_offset, PET_RADIUS * 0.28 * iris_scale, palette.shift_color(Color(0.15, 0.28, 0.68, 1.0)))
 		# 第四层：极暗的瞳孔核心 — 跟随鼠标
-		draw_circle(iris_offset, PET_RADIUS * 0.16 * iris_scale, _shift_color(Color(0.05, 0.08, 0.20, 1.0)))
+		draw_circle(iris_offset, PET_RADIUS * 0.16 * iris_scale, palette.shift_color(Color(0.05, 0.08, 0.20, 1.0)))
 		
 		# 高光反射点 (固定在虹膜左上方，模拟环境光泽)
 		var highlight_offset = iris_offset + Vector2(-PET_RADIUS * 0.08, -PET_RADIUS * 0.10) * iris_scale
@@ -317,11 +326,3 @@ func _draw() -> void:
 		draw_circle(highlight_offset, PET_RADIUS * 0.06 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale))
 	# 恢复默认变换，避免影响后续绘制
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
-
-## 克隆色偏工具函数: 将 RGB 颜色转到 HSV 空间偏移 hue 后转回
-func _shift_color(c: Color) -> Color:
-	if clone_hue_shift == 0.0:
-		return c
-	var h = c.h + clone_hue_shift
-	if h > 1.0: h -= 1.0
-	return Color.from_hsv(h, c.s, c.v, c.a)

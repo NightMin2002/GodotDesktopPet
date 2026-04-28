@@ -3,10 +3,10 @@
 extends Node
 
 var _main: Node2D
+const _PetColorPalette = preload("res://entities/pet/pet_color_palette.gd")
 
 # ── 克隆常量 ──
 const MAX_CLONES: int = 5
-var CLONE_HUE_SHIFTS: Array[float] = [0.75, 0.45, 0.12, 0.35, 0.85]
 
 
 func setup(main: Node2D) -> void:
@@ -38,7 +38,22 @@ func _clone_pet(source: Node2D, with_bubble: bool) -> void:
 	clone.screen_rect = _main.screen_rect
 	clone.boundary_size = _main.boundary_size
 	clone.window_mode = _main.window_mode
-	clone.clone_hue_shift = CLONE_HUE_SHIFTS[clone_count % CLONE_HUE_SHIFTS.size()]
+	
+	var pet_index = clone_count + 1
+	clone.set_meta("pet_index", pet_index)
+	
+	# 尝试从持久化恢复颜色，否则随机分配
+	var saved = SettingsManager.get_pet_color(pet_index)
+	clone.palette = _PetColorPalette.new()
+	if saved.hue >= 0:
+		clone.palette.set_hue_degrees(saved.hue)
+		clone.palette.set_sat_percent(saved.sat)
+		clone.palette.set_val_percent(saved.val)
+	else:
+		var random_hue = _generate_distinct_hue()
+		clone.palette.set_hue(random_hue)
+		# 首次随机分配后立即保存
+		SettingsManager.set_pet_color(pet_index, clone.palette.get_hue_degrees(), clone.palette.get_sat_percent(), clone.palette.get_val_percent())
 	
 	var spawn_x: float
 	if is_instance_valid(source):
@@ -59,7 +74,7 @@ func _clone_pet(source: Node2D, with_bubble: bool) -> void:
 		var greetings = ["分身术！召唤成功", "又多了一个伙伴！", "一起热闹热闹~", "家族壮大啦！", "我给你叫了个帮手！"]
 		EventBus.force_show_bubble.emit(greetings[clone_count % greetings.size()])
 	
-	print("[DesktopPet] 克隆体 #", clone_count + 1, " 已生成 (hue_shift=", clone.clone_hue_shift, ")")
+	print("[DesktopPet] 克隆体 #", pet_index, " 已生成 (hue=", clone.palette.get_hue_degrees(), "°)")
 	reorganize_quiet_queue()
 
 
@@ -115,5 +130,31 @@ func _apply_queue_targets(q: Array[RigidBody2D], base_x: float, spacing: float, 
 		if absf(old_tgt - new_tgt) > 5.0 and p.current_state_name == "idle":
 			if absf(p.global_position.x - new_tgt) > 20.0:
 				p.transition_to("retreat")
+
+## 生成一个与现有宠物色调差异足够大的随机 hue (避免撞色)
+func _generate_distinct_hue() -> float:
+	var existing_hues: Array[float] = []
+	for p in _main.pet_instances:
+		if is_instance_valid(p) and p.palette:
+			existing_hues.append(p.palette.hue)
+	
+	const MIN_HUE_DISTANCE := 0.08  # 色调最小间距 (约 29°)
+	const MAX_ATTEMPTS := 20
+	
+	for attempt in range(MAX_ATTEMPTS):
+		var candidate = randf()
+		var too_close = false
+		for h in existing_hues:
+			var dist = absf(candidate - h)
+			dist = minf(dist, 1.0 - dist)  # 环形距离
+			if dist < MIN_HUE_DISTANCE:
+				too_close = true
+				break
+		if not too_close:
+			return candidate
+	
+	# 如果尝试次数耗尽 (宠物太多)，直接返回随机值
+	return randf()
+
 
 

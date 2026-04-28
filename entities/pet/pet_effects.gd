@@ -6,6 +6,7 @@ class_name PetEffects
 extends RefCounted
 
 var pet: RigidBody2D  # 宿主宠物引用
+const _PetColorPalette = preload("res://entities/pet/pet_color_palette.gd")
 
 # ── 拖影系统 ──
 var trail_history: Array[Vector2] = []
@@ -69,7 +70,7 @@ func render(canvas: CanvasItem) -> void:
 
 func _render_shockwaves(canvas: CanvasItem) -> void:
 	for shock in shockwaves:
-		var effect_color = Color.from_hsv(fmod(hue_time + pet.clone_hue_shift, 1.0), 0.6, 1.0, shock["alpha"])
+		var effect_color = Color.from_hsv(fmod(hue_time + pet.palette.effective_hue() - _PetColorPalette.DEFAULT_HUE, 1.0), 0.6, 1.0, shock["alpha"])
 		# 高科技空心雷达弧辐射
 		canvas.draw_arc(shock["local_pos"], shock["radius"], 0, TAU, 32, effect_color, 4.0, true)
 
@@ -86,7 +87,7 @@ func _render_trail(canvas: CanvasItem) -> void:
 		var ratio = 1.0 - float(i) / trail_size
 		
 		# HSL 颜色空间：hue随时间加随粒子尾巴顺延发生偏转，产生五光十色的神圣尾迹！
-		var trail_color = Color.from_hsv(fmod(hue_time + pet.clone_hue_shift + ratio * 0.3, 1.0), 0.65, 1.0, ratio * 0.7)
+		var trail_color = Color.from_hsv(fmod(hue_time + pet.palette.effective_hue() - _PetColorPalette.DEFAULT_HUE + ratio * 0.3, 1.0), 0.65, 1.0, ratio * 0.7)
 		colors.append(trail_color)
 		
 		var fade_radius = pet.PET_RADIUS * ratio * 0.85

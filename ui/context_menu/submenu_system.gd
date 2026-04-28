@@ -214,7 +214,7 @@ func _make_panel() -> PanelContainer:
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	var style = StyleBoxFlat.new()
 	style.bg_color = Color(0.04, 0.08, 0.16, 0.92)
-	style.border_color = Color(0.1, 0.8, 1.0, 0.8)
+	style.border_color = Color.from_hsv(EventBus.ui_hue, 0.8, 1.0, 0.8)
 	style.set_border_width_all(2)
 	style.set_corner_radius_all(12)
 	style.content_margin_left = 14
@@ -235,3 +235,12 @@ func _on_toggle_pressed(item: Dictionary) -> void:
 func _on_radio_pressed(menu_id: String, value: int) -> void:
 	if _radio_callbacks.has(menu_id):
 		_radio_callbacks[menu_id].call(value)
+
+## UI 主题色运行时更新: 刷新所有子菜单面板边框
+func apply_ui_theme(hue: float) -> void:
+	for panel in panels.values():
+		var style = panel.get_theme_stylebox("panel") as StyleBoxFlat
+		if style:
+			style = style.duplicate()
+			style.border_color = Color.from_hsv(hue, 0.8, 1.0, 0.8)
+			panel.add_theme_stylebox_override("panel", style)

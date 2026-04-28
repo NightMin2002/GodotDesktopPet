@@ -33,3 +33,11 @@ signal behavior_mode_changed(mode: int)  # 0=FREE(自由行动), 1=QUIET(安静�
 # ── 克隆系统 ──
 signal clone_pet(source: Node2D)  # 请求从原体克隆一个分身
 signal dismiss_clones  # 一键遣散所有分身
+
+# ── 颜色系统 ──
+signal pet_color_changed(pet_index: int, hue: float, sat: float, val: float)
+signal ui_theme_changed(hue: float)
+signal show_theme_panel
+
+## UI 主题色 Hue (全局可读，默认 0.537 ≈ 当前青色)
+var ui_hue: float = 0.537

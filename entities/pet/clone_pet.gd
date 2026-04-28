@@ -5,7 +5,7 @@ extends "res://entities/pet/pet.gd"
 
 func _ready() -> void:
 	is_clone = true
-	# clone_hue_shift 由 main.gd 在 add_child 前设置
+	# palette 由 clone_manager.gd 在 add_child 前设置
 	super._ready()
 
 func _unhandled_input(event: InputEvent) -> void:

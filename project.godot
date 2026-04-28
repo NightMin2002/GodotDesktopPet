@@ -21,6 +21,10 @@ boot_splash/show_image=false
 EventBus="*res://core/event_bus.gd"
 SettingsManager="*res://core/settings_manager.gd"
 
+[debug]
+
+gdscript/warnings/unused_signal=0
+
 [display]
 
 window/size/viewport_width=1920
@@ -40,7 +44,3 @@ project/assembly_name="Desktop Pet"
 renderer/rendering_method="gl_compatibility"
 environment/defaults/default_clear_color=Color(0, 0, 0, 0)
 viewport/transparent_background=true
-
-[debug]
-
-gdscript/warnings/unused_signal=0

@@ -5,6 +5,7 @@ extends Node2D
 
 var pet_scene := preload("res://entities/pet/pet.tscn")
 var clone_scene := preload("res://entities/pet/clone_pet.tscn")
+const _PetColorPalette = preload("res://entities/pet/pet_color_palette.gd")
 var pet_instance: RigidBody2D  # 原体引用
 var pet_instances: Array[RigidBody2D] = []  # 所有宠物 (原体 + 克隆体)
 var screen_rect: Rect2i
@@ -79,6 +80,12 @@ func _ready() -> void:
 	# 挂载提醒系统
 	_setup_reminder_system()
 	_setup_pet_chatter()
+	_setup_theme_panel()
+	
+	# 恢复 UI 主题色
+	var saved_ui_hue = SettingsManager.get_ui_hue()
+	if saved_ui_hue >= 0:
+		EventBus.ui_hue = float(saved_ui_hue) / 360.0
 	
 	_setup_system_tray()
 
@@ -226,6 +233,14 @@ func _spawn_pet() -> void:
 	pet_instance.screen_rect = screen_rect
 	pet_instance.boundary_size = boundary_size
 	pet_instance.window_mode = window_mode
+	pet_instance.set_meta("pet_index", 0)
+	# 从持久化恢复原体颜色
+	var saved_color = SettingsManager.get_pet_color(0)
+	if saved_color.hue >= 0:
+		pet_instance.palette = _PetColorPalette.new()
+		pet_instance.palette.set_hue_degrees(saved_color.hue)
+		pet_instance.palette.set_sat_percent(saved_color.sat)
+		pet_instance.palette.set_val_percent(saved_color.val)
 	pet_instance.position = Vector2(
 		boundary_size.x / 2.0,
 		boundary_size.y / 3.0
@@ -251,6 +266,13 @@ func _setup_reminder_system() -> void:
 		add_child(bubble_node)
 		if pet_instance and bubble_node.has_method("link_pet"):
 			bubble_node.link_pet(pet_instance)
+
+func _setup_theme_panel() -> void:
+	var theme_script = load("res://ui/theme_panel.gd")
+	if theme_script:
+		var theme_node = CanvasLayer.new()
+		theme_node.set_script(theme_script)
+		add_child(theme_node)
 
 # ── 宠物碎碎念 ──
 

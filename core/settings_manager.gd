@@ -56,3 +56,31 @@ func get_reminders() -> Array:
 func save_reminders(list: Array) -> void:
 	_config.set_value("reminders", "list", list)
 	_config.save(SETTINGS_PATH)
+
+## ── 颜色系统 ──
+## pet_index: 0=原体, 1~5=克隆体
+## 存储格式: [colors] pet_0_hue=223, pet_0_sat=50, pet_0_val=50, ui_hue=190
+
+func get_pet_color(pet_index: int) -> Dictionary:
+	var section := "colors"
+	var prefix := "pet_%d_" % pet_index
+	return {
+		"hue": _config.get_value(section, prefix + "hue", -1) as int,
+		"sat": _config.get_value(section, prefix + "sat", 50) as int,
+		"val": _config.get_value(section, prefix + "val", 50) as int,
+	}
+
+func set_pet_color(pet_index: int, hue: int, sat: int, val: int) -> void:
+	var section := "colors"
+	var prefix := "pet_%d_" % pet_index
+	_config.set_value(section, prefix + "hue", hue)
+	_config.set_value(section, prefix + "sat", sat)
+	_config.set_value(section, prefix + "val", val)
+	_config.save(SETTINGS_PATH)
+
+func get_ui_hue() -> int:
+	return _config.get_value("colors", "ui_hue", -1) as int
+
+func set_ui_hue(hue: int) -> void:
+	_config.set_value("colors", "ui_hue", hue)
+	_config.save(SETTINGS_PATH)

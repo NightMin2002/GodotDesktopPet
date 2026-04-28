@@ -98,10 +98,10 @@ func _build_ui() -> void:
 	# 面板背景: 深色毛玻璃 + 金色边框 + 大圆角
 	var style = StyleBoxFlat.new()
 	style.bg_color = Color(0.02, 0.04, 0.10, 0.95)
-	style.border_color = Color(1.0, 0.85, 0.3, 0.5)
+	style.border_color = Color.from_hsv(EventBus.ui_hue, 0.7, 1.0, 0.5)
 	style.set_border_width_all(2)
 	style.set_corner_radius_all(16)
-	style.shadow_color = Color(1.0, 0.85, 0.3, 0.1)
+	style.shadow_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.1)
 	style.shadow_size = 12
 	panel.add_theme_stylebox_override("panel", style)
 	add_child(panel)
@@ -120,14 +120,14 @@ func _build_ui() -> void:
 	# ── 标题 ──
 	var title = Label.new()
 	title.text = "⏰ 提醒管理"
-	title.add_theme_color_override("font_color", Color(1, 0.85, 0.3, 1))
+	title.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.6, 1.0, 1.0))
 	title.add_theme_font_size_override("font_size", 22)
 	vbox.add_child(title)
 	
 	# 分割线
 	var sep = HSeparator.new()
 	sep.add_theme_constant_override("separation", 4)
-	sep.add_theme_color_override("separator_color", Color(1, 0.85, 0.3, 0.2))
+	sep.add_theme_color_override("separator_color", Color.from_hsv(EventBus.ui_hue, 0.6, 1.0, 0.2))
 	vbox.add_child(sep)
 	
 	# ── 提醒列表 ──
@@ -144,7 +144,7 @@ func _build_ui() -> void:
 	# ── 输入区 ──
 	var input_sep = HSeparator.new()
 	input_sep.add_theme_constant_override("separation", 4)
-	input_sep.add_theme_color_override("separator_color", Color(1, 0.85, 0.3, 0.15))
+	input_sep.add_theme_color_override("separator_color", Color.from_hsv(EventBus.ui_hue, 0.6, 1.0, 0.15))
 	vbox.add_child(input_sep)
 	
 	# ── 第一行：时间选择器 + 模式切换 ──
@@ -160,7 +160,7 @@ func _build_ui() -> void:
 	var colon_label = Label.new()
 	colon_label.text = ":"
 	colon_label.add_theme_font_size_override("font_size", 28)
-	colon_label.add_theme_color_override("font_color", Color(1, 0.85, 0.3, 0.8))
+	colon_label.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.6, 1.0, 0.8))
 	time_row.add_child(colon_label)
 	
 	var minute_col = _build_roller(0, 59, 0, "_minute_val")
@@ -247,8 +247,8 @@ func _build_roller(min_val: int, max_val: int, default_val: int, meta_key: Strin
 	up_btn.text = "▲"
 	up_btn.add_theme_font_size_override("font_size", 14)
 	up_btn.add_theme_color_override("font_color", Color(0.6, 0.75, 0.9, 0.8))
-	up_btn.add_theme_color_override("font_hover_color", Color(1, 0.85, 0.3, 1))
-	up_btn.add_theme_color_override("font_pressed_color", Color(1, 0.85, 0.3, 1))
+	up_btn.add_theme_color_override("font_hover_color", Color.from_hsv(EventBus.ui_hue, 0.6, 1.0, 1.0))
+	up_btn.add_theme_color_override("font_pressed_color", Color.from_hsv(EventBus.ui_hue, 0.6, 1.0, 1.0))
 	up_btn.custom_minimum_size = Vector2(56, 24)
 	_style_roller_btn(up_btn)
 	up_btn.pressed.connect(func(): _adjust_roller(meta_key, 1, min_val, max_val))
@@ -282,8 +282,8 @@ func _build_roller(min_val: int, max_val: int, default_val: int, meta_key: Strin
 	down_btn.text = "▼"
 	down_btn.add_theme_font_size_override("font_size", 14)
 	down_btn.add_theme_color_override("font_color", Color(0.6, 0.75, 0.9, 0.8))
-	down_btn.add_theme_color_override("font_hover_color", Color(1, 0.85, 0.3, 1))
-	down_btn.add_theme_color_override("font_pressed_color", Color(1, 0.85, 0.3, 1))
+	down_btn.add_theme_color_override("font_hover_color", Color.from_hsv(EventBus.ui_hue, 0.6, 1.0, 1.0))
+	down_btn.add_theme_color_override("font_pressed_color", Color.from_hsv(EventBus.ui_hue, 0.6, 1.0, 1.0))
 	down_btn.custom_minimum_size = Vector2(56, 24)
 	_style_roller_btn(down_btn)
 	down_btn.pressed.connect(func(): _adjust_roller(meta_key, -1, min_val, max_val))
@@ -303,7 +303,7 @@ func _style_roller_btn(btn: Button) -> void:
 	btn.add_theme_stylebox_override("normal", s)
 	var h = s.duplicate()
 	h.bg_color = Color(0.1, 0.18, 0.35, 0.9)
-	h.border_color = Color(1, 0.85, 0.3, 0.6)
+	h.border_color = Color.from_hsv(EventBus.ui_hue, 0.6, 1.0, 0.6)
 	btn.add_theme_stylebox_override("hover", h)
 	btn.add_theme_stylebox_override("pressed", h)
 
@@ -344,7 +344,7 @@ func _make_input(placeholder: String, min_width: int, max_len: int) -> LineEdit:
 	input.add_theme_stylebox_override("normal", input_style)
 	# 聚焦样式
 	var focus_style = input_style.duplicate()
-	focus_style.border_color = Color(1, 0.85, 0.3, 0.6)
+	focus_style.border_color = Color.from_hsv(EventBus.ui_hue, 0.6, 1.0, 0.6)
 	input.add_theme_stylebox_override("focus", focus_style)
 	return input
 
@@ -400,7 +400,7 @@ func _refresh_list() -> void:
 		var time_label = Label.new()
 		time_label.text = r.get("time", "??:??")
 		time_label.add_theme_font_size_override("font_size", 17)
-		time_label.add_theme_color_override("font_color", Color(1, 0.85, 0.3, 1) if is_on else Color(0.5, 0.45, 0.3, 0.5))
+		time_label.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.6, 1.0, 1.0) if is_on else Color(0.5, 0.45, 0.3, 0.5))
 		time_label.custom_minimum_size = Vector2(52, 0)
 		row.add_child(time_label)
 		

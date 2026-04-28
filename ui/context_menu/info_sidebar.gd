@@ -23,7 +23,7 @@ func build() -> void:
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var style = StyleBoxFlat.new()
 	style.bg_color = Color(0.035, 0.05, 0.1, 0.92)
-	style.border_color = Color(0.1, 0.8, 1.0, 0.5)
+	style.border_color = Color.from_hsv(EventBus.ui_hue, 0.8, 1.0, 0.5)
 	style.set_border_width_all(1)
 	style.set_corner_radius_all(12)
 	panel.add_theme_stylebox_override("panel", style)
@@ -87,7 +87,7 @@ func _make_sep() -> HSeparator:
 	var sep = HSeparator.new()
 	sep.add_theme_constant_override("separation", 4)
 	var s = StyleBoxFlat.new()
-	s.bg_color = Color(0.1, 0.8, 1.0, 0.15)
+	s.bg_color = Color.from_hsv(EventBus.ui_hue, 0.8, 1.0, 0.15)
 	s.set_content_margin_all(0)
 	sep.add_theme_stylebox_override("separator", s)
 	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -176,3 +176,11 @@ func apply_pending() -> void:
 ## 是否有待处理的异步结果
 func has_pending() -> bool:
 	return _sysinfo_has_pending
+
+## UI 主题色运行时更新
+func apply_ui_theme(hue: float) -> void:
+	var style = panel.get_theme_stylebox("panel") as StyleBoxFlat
+	if style:
+		style = style.duplicate()
+		style.border_color = Color.from_hsv(hue, 0.8, 1.0, 0.5)
+		panel.add_theme_stylebox_override("panel", style)

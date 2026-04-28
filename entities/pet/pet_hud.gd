@@ -32,7 +32,7 @@ func _create_bubble_panel(message: String) -> PanelContainer:
 	
 	var style = StyleBoxFlat.new()
 	style.bg_color = Color(0.05, 0.1, 0.2, 0.92)
-	var border_hue = fmod(0.13 + pet.clone_hue_shift, 1.0)  # 金色基底 + 色偏
+	var border_hue = pet.palette.effective_hue()  # 气泡边框跟随宠物色调
 	style.border_color = Color.from_hsv(border_hue, 0.7, 1.0, 0.85)
 	style.set_border_width_all(2)
 	style.set_corner_radius_all(14)

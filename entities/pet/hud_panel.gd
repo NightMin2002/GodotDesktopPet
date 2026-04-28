@@ -71,7 +71,7 @@ func _build_panel() -> void:
 	
 	var style = StyleBoxFlat.new()
 	style.bg_color = Color(0.04, 0.08, 0.18, 0.9)
-	var border_hue = fmod(0.13 + pet.clone_hue_shift, 1.0)
+	var border_hue = pet.palette.effective_hue()  # 面板边框跟随宠物色调
 	style.border_color = Color.from_hsv(border_hue, 0.6, 0.9, 0.7)
 	style.set_border_width_all(1)
 	style.set_corner_radius_all(10)
