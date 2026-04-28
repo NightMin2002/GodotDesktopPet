@@ -21,6 +21,9 @@ var _pupil_pos := Vector2.ZERO  # 当前瞳孔偏移 (世界坐标系)
 var _prev_pupil_pos := Vector2.ZERO  # 上帧瞳孔位置 (按需重绘检测用)
 var _look_at_pet: RigidBody2D = null  # 当前注视的同伴 (动态追踪)
 
+# ── 强制注视方向 (由状态机设定，非零时覆盖一切) ──
+var forced_look_dir := Vector2.ZERO
+
 # ── 机械虹膜眨眼 ──
 var _blink_timer := 3.0
 var _is_blinking := false
@@ -68,8 +71,12 @@ func _update_pupil(delta: float) -> void:
 	var target: Vector2
 	var lerp_speed: float
 	
+	# 最高优先级：状态机强制注视方向 (移动中看前方)
+	if forced_look_dir != Vector2.ZERO:
+		target = forced_look_dir.normalized() * max_offset
+		lerp_speed = 18.0
 	# 追踪关闭 或 鼠标闲置 → 游走/社交模式
-	if not tracking_enabled or _mouse_idle_time > MOUSE_IDLE_THRESHOLD:
+	elif not tracking_enabled or _mouse_idle_time > MOUSE_IDLE_THRESHOLD:
 		_wander_timer -= delta
 		if _wander_timer <= 0:
 			_look_at_pet = null

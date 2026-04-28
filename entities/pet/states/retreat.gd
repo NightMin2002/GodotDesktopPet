@@ -34,10 +34,13 @@ func enter() -> void:
 	# 行走时保持较高的线性阻尼，让位移主要来自扭矩+摩擦力转化
 	pet.linear_damp = 1.5
 	pet.angular_damp = 0.2  # 必须重置，否则从安静 idle(5.0) 转来时扭矩无效
+	# 看向撤退方向
+	pet.eye_behavior.forced_look_dir = Vector2(direction, 0)
 
 func exit() -> void:
 	if pet:
 		pet.linear_damp = 0.5
+		pet.eye_behavior.forced_look_dir = Vector2.ZERO
 
 func process(delta: float) -> void:
 	if not pet:

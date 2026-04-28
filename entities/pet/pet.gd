@@ -46,6 +46,8 @@ var window_mode: int = 0  # 0=FREE, 1=CONFINED, 2=REPELLED
 var behavior_mode: int = 0  # 0=FREE(自由行动), 1=QUIET(安静待命)
 @warning_ignore("unused_private_class_variable")
 var _was_dragged_in_quiet: bool = false  # 安静模式下被拖拽的标记 (drag.gd写/fall.gd读)
+var _quiet_drag_count: int = 0           # 安静模式下被拖拽的累计次数
+var _last_quiet_drag_line: String = ""   # 上次显示的话术 (防连续重复)
 var is_strolling: bool = false  # 是否正在滚动漫步 (供其他宠物检测让路)
 
 # ── 戳一戳交互系统 (委托给 PokeSystem) ──
@@ -157,6 +159,7 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 
 func _on_behavior_mode_changed(mode: int) -> void:
 	behavior_mode = mode
+	_was_dragged_in_quiet = false  # 清除残留标记
 
 func _on_pet_color_changed(pet_index: int, hue: float, sat: float, val: float) -> void:
 	var my_index = get_meta("pet_index", 0)

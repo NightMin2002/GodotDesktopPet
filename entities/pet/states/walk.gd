@@ -49,6 +49,8 @@ func enter() -> void:
 		var w = pet.boundary_size.x
 		if x < 120.0: _roll_direction = 1.0
 		elif x > w - 120.0: _roll_direction = -1.0
+		# 瞭向滚动方向
+		pet.eye_behavior.forced_look_dir = Vector2(_roll_direction, 0)
 		# 短距滚动: 设定随机目标距离
 		if not cruise:
 			var roll_dist = randf_range(120.0, 300.0)
@@ -68,6 +70,7 @@ func exit() -> void:
 	_is_cruise = false
 	if pet:
 		pet.is_strolling = false
+		pet.eye_behavior.forced_look_dir = Vector2.ZERO
 
 ## 执行一次蹦跳
 func _do_hop() -> void:
