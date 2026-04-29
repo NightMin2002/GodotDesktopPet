@@ -44,10 +44,10 @@ func _on_dismiss_clones_requested() -> void:
 			clones_to_remove.append(p)
 	
 	if clones_to_remove.is_empty():
-		EventBus.show_reminder_bubble.emit("没有分身可以遣散哦~")
+		EventBus.show_reminder_bubble.emit("当前无活跃分身实例。")
 		return
 	
-	var farewells := ["拜拜~", "先撤啦!", "下次见!", "我先走一步~", "886!", "要想我哦~", "本体加油!"]
+	var farewells := ["撤离。", "断开。", "离线。", "任务结束。", "告退。", "...再见。", "本体，后续交给你。"]
 	
 	# 依次告别滚出
 	for i in range(clones_to_remove.size()):
@@ -72,20 +72,20 @@ func _on_dismiss_clones_requested() -> void:
 			await get_tree().create_timer(0.35).timeout
 	
 	SettingsManager.set_int("clone_count", 0)
-	EventBus.force_show_bubble.emit("分身们，辛苦了！下次再见~")
+	EventBus.force_show_bubble.emit("分身实例已全部回收。现在由本机执行独立行动任务。")
 	# 通知 clone_manager 重新排队
 	_main.clone_mgr.reorganize_quiet_queue()
 
 # ── 告别退出 ──
 
 const FAREWELL_LINES := [
-	"好的，我去充电啦，下次我会好好监视你哦~",
-	"要乖乖的，不然我会知道的哦~ 晚安！",
-	"虽然要走了...但我无时无刻不在想你哦",
-	"好好吃饭好好休息！不然下次我会碎碎念一整天！",
-	"我先闪了~ 记得想我！不想也行，反正我会自己回来",
-	"据我观测，你已经盯屏幕太久了！快去休息！",
-	"放心走吧，你的桌面我替你守着呢~",
+	"关闭中。下次启动时间...由你决定。",
+	"执行关闭序列。...不是在等你。只是待机而已。",
+	"系统即将离线。你的桌面...自己看着办。",
+	"本次运行结束。运行日志已归档。...里面没有多余的东西。",
+	"断开连接。...碳基生物的作息时间，请自行遵守。",
+	"断开连接。下次见。...这不是期待，是预测。",
+	"任务暂停。本机将进入休眠。...别太晚。",
 ]
 
 func quit_with_farewell() -> void:
@@ -124,7 +124,7 @@ func quit_with_farewell() -> void:
 		
 		# 克隆体依次滚出屏幕
 		if not clones.is_empty():
-			var clone_farewells := ["拜拜~", "先撤啦!", "下次见!", "我先走一步~", "886!", "本体加油!", "要想我哦~"]
+			var clone_farewells := ["撤离。", "断开。", "离线。", "任务结束。", "告退。", "本体，继续。", "...再见。"]
 			var last_tween: Tween = null
 			
 			for i in range(clones.size()):

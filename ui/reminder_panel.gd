@@ -76,10 +76,10 @@ func _check_reminders() -> void:
 		var key = r.get("time", "") + "|" + r.get("msg", "")
 		if r.get("time", "") == now_str and not _fired_keys.has(key):
 			_fired_keys[key] = true
-			EventBus.show_reminder_bubble.emit(r.get("msg", "⏰ 时间到了！"))
+			EventBus.show_reminder_bubble.emit(r.get("msg", "时间节点已到达。"))
 			# 记为待确认提醒 (用户戳宠物时再次传达)
 			if is_instance_valid(_pet) and _pet.has_method("handle_poke"):
-				_pet.poke_system.pending_reminders.append({"time": r.get("time", ""), "msg": r.get("msg", "⏰ 时间到了！")})
+				_pet.poke_system.pending_reminders.append({"time": r.get("time", ""), "msg": r.get("msg", "时间节点已到达。")})
 			# 一次性提醒：触发后标记删除
 			if r.get("once", false):
 				to_remove.append(i)
@@ -419,7 +419,7 @@ func _refresh_list() -> void:
 	
 	if reminders.is_empty():
 		var empty_label = Label.new()
-		empty_label.text = "还没有提醒哦~"
+		empty_label.text = "当前无已注册提醒。"
 		empty_label.add_theme_font_size_override("font_size", 15)
 		empty_label.add_theme_color_override("font_color", Color(0.4, 0.5, 0.6, 0.7))
 		empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -568,7 +568,7 @@ func _on_add_pressed() -> void:
 	var t = "%02d:%02d" % [_hour_val, _minute_val]
 	var m = msg_input.text.strip_edges()
 	if m.is_empty():
-		m = "⏰ 时间到了！"
+		m = "时间节点已到达。"
 	var reminders = SettingsManager.get_reminders()
 	reminders.append({"time": t, "msg": m, "on": true, "once": _add_once})
 	SettingsManager.save_reminders(reminders)
