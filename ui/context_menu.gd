@@ -891,11 +891,11 @@ func _build_debug_behavior_submenu() -> void:
 	panel.add_child(vbox)
 	
 	var debug_items := [
-		{"label": "休眠: 挡板半闭", "behavior": "hibernate:0", "desc": "机械眼睑半闭 + 瞳孔下垂"},
-		{"label": "休眠: 加载指示", "behavior": "hibernate:1", "desc": "旋转弧线指示器，像设备待机"},
-		{"label": "休眠: 电池图标", "behavior": "hibernate:2", "desc": "电池轮廓 + 脉冲充电条"},
-		{"label": "系统自检", "behavior": "scan", "desc": "瞳孔快速左右扫描"},
-		{"label": "完成对勾", "behavior": "_scan_done", "desc": "瞳孔显示绿色对勾图标 (5秒)"},
+		{"label": "待机 · 眼睑下垂", "behavior": "hibernate:0", "desc": "机械虹膜半闭，进入待机呼吸状态"},
+		{"label": "待机 · 引导循环", "behavior": "hibernate:1", "desc": "系统引导指示器循环运转"},
+		{"label": "待机 · 能源监测", "behavior": "hibernate:2", "desc": "能源状态监测面板"},
+		{"label": "诊断扫描", "behavior": "scan", "desc": "瞳孔快速左右扫描"},
+		{"label": "状态确认", "behavior": "_scan_done", "desc": "显示任务完成确认标识"},
 	]
 	
 	for item in debug_items:

@@ -213,14 +213,14 @@ alignment = 0
 layout_mode = 2
 theme_override_colors/font_color = Color(0.7, 0.5, 0.2, 0.8)
 theme_override_font_sizes/font_size = 14
-text = "▌调试"
+text = "▌指令序列"
 
 [node name="DebugBehaviorBtn" type="Button" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
 theme_override_colors/font_hover_color = Color(1.0, 0.7, 0.2, 1)
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 20
-text = "行为测试 [+]"
+text = "指令序列 [+]"
 flat = true
 alignment = 0
 
