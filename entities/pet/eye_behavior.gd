@@ -55,6 +55,12 @@ var _scanning_done_target := 0.0
 var scanning_time := 0.0         # 加载动画累计时间
 var _scanning_state := "idle"    # "idle" / "scanning" / "done"
 
+# ── 瞳孔图标覆盖 (通用图标显示系统) ──
+var eye_icon_blend := 0.0        # 图标混合度 (0=不显示, 1=完全显示)
+var _eye_icon_target := 0.0
+var eye_icon_type := ""           # 当前图标类型: "mail"/"alert"/"question"/""
+var eye_icon_time := 0.0         # 图标动画累计时间
+
 func update(delta: float) -> void:
 	if not is_instance_valid(pet):
 		return
@@ -99,6 +105,9 @@ func is_animating() -> bool:
 		return true
 	if absf(scanning_done_blend - _scanning_done_target) > 0.01:
 		return true
+	# 图标覆盖状态变化时需要重绘
+	if eye_icon_blend > 0.01 or absf(eye_icon_blend - _eye_icon_target) > 0.01:
+		return true
 	return _pupil_pos.distance_to(_prev_pupil_pos) > 0.05
 
 # ── 内部逻辑 ──
@@ -121,6 +130,10 @@ func _update_pupil(delta: float) -> void:
 	scanning_done_blend = lerpf(scanning_done_blend, _scanning_done_target, delta * 4.0)
 	if _scanning_state != "idle":
 		scanning_time += delta
+	# 图标覆盖平滑过渡
+	eye_icon_blend = lerpf(eye_icon_blend, _eye_icon_target, delta * 5.0)
+	if eye_icon_type != "":
+		eye_icon_time += delta
 	
 	var max_offset = pet.PET_RADIUS * 0.12
 	
@@ -272,6 +285,11 @@ func _update_blink(delta: float) -> void:
 		_is_blinking = false
 		_blink_progress = 0.0
 		return
+	# 图标覆盖态抑制眨眼
+	if eye_icon_blend > 0.3:
+		_is_blinking = false
+		_blink_progress = 0.0
+		return
 	if _is_blinking:
 		_blink_progress += delta * BLINK_SPEED
 		if _blink_progress >= 1.0:
@@ -328,3 +346,16 @@ func stop_scanning() -> void:
 	_scanning_state = "idle"
 	_scanning_blend_target = 0.0
 	_scanning_done_target = 0.0
+
+# ── 通用瞳孔图标覆盖 ──
+
+## 显示瞳孔图标 (mail/alert/question)
+func show_eye_icon(icon: String) -> void:
+	eye_icon_type = icon
+	_eye_icon_target = 1.0
+	eye_icon_time = 0.0
+
+## 隐藏瞳孔图标 (淡出)
+func hide_eye_icon() -> void:
+	_eye_icon_target = 0.0
+	# blend 淡到接近 0 时清理 type (由 is_animating 驱动最后几帧重绘)

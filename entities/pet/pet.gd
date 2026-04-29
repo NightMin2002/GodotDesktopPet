@@ -135,6 +135,7 @@ func _ready() -> void:
 	EventBus.pet_color_changed.connect(_on_pet_color_changed)
 	EventBus.trigger_idle_behavior.connect(_on_trigger_idle_behavior)
 	EventBus.pet_scanning_changed.connect(_on_pet_scanning_changed)
+	EventBus.pet_show_eye_icon.connect(_on_pet_show_eye_icon)
 
 func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 	if setting_id == "eye_track":
@@ -198,6 +199,13 @@ func _on_pet_scanning_changed(state: String) -> void:
 		"idle":
 			eye_behavior.stop_scanning()
 
+func _on_pet_show_eye_icon(icon_type: String) -> void:
+	if is_clone:
+		return
+	if icon_type == "":
+		eye_behavior.hide_eye_icon()
+	else:
+		eye_behavior.show_eye_icon(icon_type)
 func _on_pet_color_changed(pet_index: int, hue: float, sat: float, val: float) -> void:
 	var my_index = get_meta("pet_index", 0)
 	if pet_index != my_index:
@@ -403,6 +411,19 @@ func _draw() -> void:
 		if done_blend > 0.01:
 			_draw_scanning_checkmark(scan_r, done_blend)
 	
+	# ── 通用图标覆盖层 (邮件/感叹号/问号等) ──
+	var icon_blend = eye_behavior.eye_icon_blend
+	if icon_blend > 0.01:
+		var icon_r = PET_RADIUS * 0.83  # 白边框内侧
+		# 暗色屏幕覆盖层
+		draw_circle(Vector2.ZERO, icon_r, Color(0.03, 0.05, 0.12, icon_blend * 0.95), true, -1.0, true)
+		# 按类型绘制对应图标
+		match eye_behavior.eye_icon_type:
+			"mail": _draw_eye_icon_mail(icon_r, icon_blend, eye_behavior.eye_icon_time)
+			"alert": _draw_eye_icon_alert(icon_r, icon_blend, eye_behavior.eye_icon_time)
+			"question": _draw_eye_icon_question(icon_r, icon_blend, eye_behavior.eye_icon_time)
+			"error": _draw_eye_icon_error(icon_r, icon_blend, eye_behavior.eye_icon_time)
+	
 	# ── 休眠挡板 (仅风格0: 机械光圈半闭效果) ──
 	var drowsy = eye_behavior.get_drowsy_amount()
 	var is_shutter = idle_behaviors.active_behavior != "hibernate" or idle_behaviors.hibernate_style == 0
@@ -505,17 +526,113 @@ func _draw_battery_icon(radius: float, alpha: float, time: float) -> void:
 
 ## 绘制完成对勾图标 (检索完成: 机械风格SVG对勾)
 func _draw_scanning_checkmark(radius: float, alpha: float) -> void:
-	var scale_f = radius * 0.028  # 缩放因子
+	var s = radius * 0.06  # 缩放因子 (与其他图标统一)
 	var glow_color = palette.shift_color(Color(0.2, 0.9, 0.5, alpha * 0.9))
+	var lw = 2.2 * (radius / 16.0)
 	# 对勾路径: 从左侧中部 → 底部中心 → 右上角
 	var check_pts = PackedVector2Array([
-		Vector2(-7.0, 0.0) * scale_f,    # 起点: 左侧
-		Vector2(-2.5, 5.0) * scale_f,    # 拐点: 底部
-		Vector2(7.0, -5.0) * scale_f,    # 终点: 右上
+		Vector2(-5.5, 0.0) * s,    # 起点: 左侧
+		Vector2(-1.5, 5.0) * s,    # 拐点: 底部
+		Vector2(6.0, -4.5) * s,    # 终点: 右上
 	])
-	# 主对勾线 (较粗)
-	draw_polyline(check_pts, glow_color, 2.2 * (radius / 16.0), true)
+	draw_polyline(check_pts, glow_color, lw, true)
 	# 外圈环 (完成状态标识)
-	var ring_r = radius * 0.65
+	var ring_r = radius * 0.7
 	var ring_color = Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.5)
 	draw_arc(Vector2.ZERO, ring_r, 0, TAU, 32, ring_color, 1.2, true)
+
+## 绘制邮件图标 (信封轮廓 + V 型翻盖 + 呼吸脉冲)
+func _draw_eye_icon_mail(radius: float, alpha: float, time: float) -> void:
+	var s = radius * 0.06  # 缩放因子 (填满白边框区域)
+	var glow_color = palette.shift_color(Color(0.3, 0.7, 1.0, alpha * 0.9))
+	# 呼吸脉冲
+	var pulse = 0.85 + sin(time * TAU / 3.0) * 0.15
+	var c = Color(glow_color.r, glow_color.g, glow_color.b, alpha * pulse)
+	var lw = 1.2 * (radius / 16.0)  # 线宽随半径缩放
+	# 信封主体 (矩形轮廓)
+	var hw = 7.0 * s  # 半宽
+	var hh = 5.0 * s  # 半高
+	var body_pts = PackedVector2Array([
+		Vector2(-hw, -hh), Vector2(hw, -hh),
+		Vector2(hw, hh), Vector2(-hw, hh),
+		Vector2(-hw, -hh),  # 闭合
+	])
+	draw_polyline(body_pts, c, lw, true)
+	# V 型翻盖 (从左上角 → 中下 → 右上角)
+	var flap_pts = PackedVector2Array([
+		Vector2(-hw, -hh),
+		Vector2(0, hh * 0.35),
+		Vector2(hw, -hh),
+	])
+	draw_polyline(flap_pts, c, lw, true)
+	# 外环微光
+	var ring_c = Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.3)
+	draw_arc(Vector2.ZERO, radius * 0.7, 0, TAU, 32, ring_c, 0.8, true)
+
+## 绘制感叹号图标 (锥形竖条 + 醒目圆点 + 警示闪烁)
+func _draw_eye_icon_alert(radius: float, alpha: float, time: float) -> void:
+	var s = radius * 0.06
+	var flash = 0.7 + sin(time * TAU / 1.5) * 0.3  # 1.5s 周期闪烁
+	var glow_color = palette.shift_color(Color(1.0, 0.6, 0.15, alpha * flash))
+	# 竖条主体 (上宽下窄的锥形多边形，而非均匀细线)
+	var top_y = -8.5 * s
+	var bot_y = 0.5 * s
+	var top_hw = 1.8 * s   # 顶部半宽 (宽)
+	var bot_hw = 0.7 * s   # 底部半宽 (窄)
+	var bar_pts = PackedVector2Array([
+		Vector2(-top_hw, top_y), Vector2(top_hw, top_y),  # 顶边
+		Vector2(bot_hw, bot_y), Vector2(-bot_hw, bot_y),  # 底边
+	])
+	draw_colored_polygon(bar_pts, glow_color)
+	# 抗锯齿轮廓
+	var outline = bar_pts.duplicate()
+	outline.append(bar_pts[0])
+	draw_polyline(outline, glow_color, 0.8, true)
+	# 底部圆点 (醒目，与竖条有明确间距)
+	var dot_y = 4.0 * s
+	draw_circle(Vector2(0, dot_y), 1.8 * (radius / 16.0), glow_color, true, -1.0, true)
+	# 外环 (警示橙色)
+	var ring_c = Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.4)
+	draw_arc(Vector2.ZERO, radius * 0.7, 0, TAU, 32, ring_c, 1.0, true)
+
+## 绘制问号图标 (弧线 + 竖线 + 圆点 + 微摆动)
+func _draw_eye_icon_question(radius: float, alpha: float, time: float) -> void:
+	var s = radius * 0.06
+	var glow_color = palette.shift_color(Color(0.5, 0.8, 1.0, alpha * 0.9))
+	var lw = 1.6 * (radius / 16.0)
+	# 微小浮动 (好奇的左右摆动)
+	var sway = sin(time * TAU / 2.5) * 1.0 * s
+	# 问号上半弧 (C 形曲线，采样绘制)
+	var arc_pts = PackedVector2Array()
+	var arc_cx = sway
+	var arc_cy = -3.0 * s
+	var arc_r = 3.5 * s
+	for i in range(17):
+		var t = float(i) / 16.0
+		var a = PI * 1.1 + t * PI * 1.4  # 从左上绕到右下
+		arc_pts.append(Vector2(arc_cx + cos(a) * arc_r, arc_cy + sin(a) * arc_r))
+	draw_polyline(arc_pts, glow_color, lw, true)
+	# 竖线段 (弧线底部到圆点上方)
+	var stem_top = arc_cy + arc_r * sin(PI * 1.1 + PI * 1.4)
+	var stem_bot = 2.0 * s
+	draw_line(Vector2(sway, stem_top), Vector2(sway, stem_bot), glow_color, lw, true)
+	# 底部圆点
+	var dot_y = 4.5 * s
+	draw_circle(Vector2(sway, dot_y), 1.0 * (radius / 16.0), glow_color, true, -1.0, true)
+	# 外环微光
+	var ring_c = Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.35)
+	draw_arc(Vector2.ZERO, radius * 0.7, 0, TAU, 32, ring_c, 0.8, true)
+
+## 绘制错误标识 (红色交叉线 + 外环 + 闪烁)
+func _draw_eye_icon_error(radius: float, alpha: float, time: float) -> void:
+	var s = radius * 0.06
+	var flash = 0.9 + sin(time * TAU / 3.0) * 0.1  # 3s 缓慢呼吸，微微明暗变化
+	var glow_color = palette.shift_color(Color(1.0, 0.25, 0.2, alpha * flash))
+	var lw = 2.2 * (radius / 16.0)
+	# 交叉线 (左上→右下 + 右上→左下)
+	var d = 5.5 * s  # 交叉半径
+	draw_line(Vector2(-d, -d), Vector2(d, d), glow_color, lw, true)
+	draw_line(Vector2(d, -d), Vector2(-d, d), glow_color, lw, true)
+	# 外环 (警示红色)
+	var ring_c = Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.45)
+	draw_arc(Vector2.ZERO, radius * 0.7, 0, TAU, 32, ring_c, 1.2, true)

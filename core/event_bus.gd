@@ -31,6 +31,7 @@ signal window_mode_changed(mode: int)  # 0=FREE, 1=CONFINED, 2=REPELLED
 signal behavior_mode_changed(mode: int)  # 0=FREE(自由行动), 1=QUIET(安静待命)
 signal trigger_idle_behavior(behavior: String)  # 调试: 强制触发 idle 微行为
 signal pet_scanning_changed(state: String)  # 检索动画: "scanning"/"done"/"idle"
+signal pet_show_eye_icon(icon_type: String)  # 瞳孔图标覆盖: "mail"/"alert"/"question"/""(清除)
 
 # ── 克隆系统 ──
 signal clone_pet(source: Node2D)  # 请求从原体克隆一个分身

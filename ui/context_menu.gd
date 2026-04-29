@@ -896,6 +896,10 @@ func _build_debug_behavior_submenu() -> void:
 		{"label": "待机 · 能源监测", "behavior": "hibernate:2", "desc": "能源状态监测面板"},
 		{"label": "诊断扫描", "behavior": "scan", "desc": "瞳孔快速左右扫描"},
 		{"label": "状态确认", "behavior": "_scan_done", "desc": "显示任务完成确认标识"},
+		{"label": "消息通知", "behavior": "_icon:mail", "desc": "显示未读消息信封图标"},
+		{"label": "警告标识", "behavior": "_icon:alert", "desc": "显示警告感叹号图标"},
+		{"label": "疑问标识", "behavior": "_icon:question", "desc": "显示疑问标志图标"},
+		{"label": "错误标识", "behavior": "_icon:error", "desc": "显示操作失败交叉图标"},
 	]
 	
 	for item in debug_items:
@@ -935,5 +939,11 @@ func _on_debug_behavior_pressed(behavior: String) -> void:
 		EventBus.pet_scanning_changed.emit("done")
 		await get_tree().create_timer(5.0).timeout
 		EventBus.pet_scanning_changed.emit("idle")
+	elif behavior.begins_with("_icon:"):
+		# 图标指令: 显示 5 秒后自动隐藏
+		var icon_type = behavior.substr(6)  # 截取 "_icon:" 后的类型名
+		EventBus.pet_show_eye_icon.emit(icon_type)
+		await get_tree().create_timer(5.0).timeout
+		EventBus.pet_show_eye_icon.emit("")
 	else:
 		EventBus.trigger_idle_behavior.emit(behavior)
