@@ -56,6 +56,9 @@ func build() -> void:
 	_add_row(vbox, "wifi", "●", "WiFi", Color(0.3, 0.8, 0.4))
 	_add_row(vbox, "battery", "■", "电池", Color(0.4, 0.85, 0.3))
 	_add_row(vbox, "uptime", "▲", "开机", Color(0.6, 0.7, 0.85))
+	vbox.add_child(_make_sep())
+	_add_row(vbox, "cpu", "◆", "CPU", Color(0.85, 0.55, 0.3))
+	_add_row(vbox, "ram", "◆", "RAM", Color(0.7, 0.45, 0.85))
 
 func _add_row(parent: VBoxContainer, key: String, icon: String, tag: String, color: Color) -> void:
 	var row = HBoxContainer.new()
@@ -132,13 +135,13 @@ func update_position(hud: PanelContainer) -> void:
 # ── 异步查询 ──
 
 func query() -> void:
-	for key in ["wifi", "battery"]:
+	for key in ["wifi", "battery", "cpu", "ram"]:
 		if key in _rows: _rows[key].text = "..."
 	if _boot_timestamp <= 0.0 and "uptime" in _rows:
 		_rows["uptime"].text = "..."
 	WorkerThreadPool.add_task(_sysinfo_task)
 
-const _PS_SIDEBAR := "$w=(Get-NetConnectionProfile|Where-Object{$_.InterfaceAlias -match 'Wi-Fi|WLAN|Wireless'}|Select-Object -First 1).Name;if(!$w){$w='N/A'};$b=Get-CimInstance Win32_Battery;if($b){$bp=$b.EstimatedChargeRemaining.ToString()+'%';if($b.BatteryStatus-eq 2){$bp+=' ⚡'}}else{$bp='无电池'};Write-Host wifi=$w;Write-Host battery=$bp"
+const _PS_SIDEBAR := "$w=(Get-NetConnectionProfile|Where-Object{$_.InterfaceAlias -match 'Wi-Fi|WLAN|Wireless'}|Select-Object -First 1).Name;if(!$w){$w='N/A'};$b=Get-CimInstance Win32_Battery;if($b){$bp=$b.EstimatedChargeRemaining.ToString()+'%';if($b.BatteryStatus-eq 2){$bp+=' ⚡'}}else{$bp='无电池'};Write-Host wifi=$w;Write-Host battery=$bp;$cl=(Get-CimInstance Win32_Processor|Select-Object -First 1).LoadPercentage;Write-Host cpu=$cl%;$os=Get-CimInstance Win32_OperatingSystem;$ru=[math]::Round(($os.TotalVisibleMemorySize-$os.FreePhysicalMemory)*100/$os.TotalVisibleMemorySize);Write-Host ram=$ru%"
 const _PS_BOOT_TIME := "[int](([DateTimeOffset](Get-CimInstance Win32_OperatingSystem).LastBootUpTime).ToUnixTimeSeconds())"
 
 func _sysinfo_task() -> void:
