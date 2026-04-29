@@ -895,6 +895,7 @@ func _build_debug_behavior_submenu() -> void:
 		{"label": "休眠: 加载指示", "behavior": "hibernate:1", "desc": "旋转弧线指示器，像设备待机"},
 		{"label": "休眠: 电池图标", "behavior": "hibernate:2", "desc": "电池轮廓 + 脉冲充电条"},
 		{"label": "系统自检", "behavior": "scan", "desc": "瞳孔快速左右扫描"},
+		{"label": "完成对勾", "behavior": "_scan_done", "desc": "瞳孔显示绿色对勾图标 (5秒)"},
 	]
 	
 	for item in debug_items:
@@ -929,4 +930,10 @@ func _on_debug_behavior_pressed(behavior: String) -> void:
 	EventBus.context_menu_toggled.emit(false)
 	# 延迟一帧让菜单关闭完毕
 	await get_tree().process_frame
-	EventBus.trigger_idle_behavior.emit(behavior)
+	if behavior == "_scan_done":
+		# 特殊处理: 完成对勾测试 (直接进入 done 状态, 5秒后自动恢复)
+		EventBus.pet_scanning_changed.emit("done")
+		await get_tree().create_timer(5.0).timeout
+		EventBus.pet_scanning_changed.emit("idle")
+	else:
+		EventBus.trigger_idle_behavior.emit(behavior)

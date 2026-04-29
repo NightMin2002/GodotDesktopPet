@@ -47,6 +47,14 @@ var _scan_progress := 0.0      # 0→1 完整扫描周期
 var _scan_callback: Callable   # 扫描结束回调
 const SCAN_DURATION := 1.2     # 扫描总时长 (2次快速来回)
 
+# ── 检索动画 (系统信息查询时瞳孔变加载指示器) ──
+var scanning_blend := 0.0        # 加载动画混合度 (0=正常, 1=完全显示加载)
+var _scanning_blend_target := 0.0
+var scanning_done_blend := 0.0   # 完成图标混合度 (0=不显示, 1=完全显示对勾)
+var _scanning_done_target := 0.0
+var scanning_time := 0.0         # 加载动画累计时间
+var _scanning_state := "idle"    # "idle" / "scanning" / "done"
+
 func update(delta: float) -> void:
 	if not is_instance_valid(pet):
 		return
@@ -84,6 +92,13 @@ func is_animating() -> bool:
 		return true
 	if drowsy_amount > 0.01 or hibernate_dim > 0.01 or hibernate_iris_shrink > 0.01:
 		return true
+	# 检索动画状态变化时需要重绘
+	if scanning_blend > 0.01 or scanning_done_blend > 0.01:
+		return true
+	if absf(scanning_blend - _scanning_blend_target) > 0.01:
+		return true
+	if absf(scanning_done_blend - _scanning_done_target) > 0.01:
+		return true
 	return _pupil_pos.distance_to(_prev_pupil_pos) > 0.05
 
 # ── 内部逻辑 ──
@@ -101,6 +116,11 @@ func _update_pupil(delta: float) -> void:
 	drowsy_amount = lerpf(drowsy_amount, _drowsy_target, delta * 3.0)
 	hibernate_dim = lerpf(hibernate_dim, _hibernate_dim_target, delta * 3.0)
 	hibernate_iris_shrink = lerpf(hibernate_iris_shrink, _hibernate_iris_shrink_target, delta * 3.0)
+	# 检索动画平滑过渡
+	scanning_blend = lerpf(scanning_blend, _scanning_blend_target, delta * 5.0)
+	scanning_done_blend = lerpf(scanning_done_blend, _scanning_done_target, delta * 4.0)
+	if _scanning_state != "idle":
+		scanning_time += delta
 	
 	var max_offset = pet.PET_RADIUS * 0.12
 	
@@ -247,6 +267,11 @@ func _update_blink(delta: float) -> void:
 		_is_blinking = false
 		_blink_progress = 0.0
 		return
+	# 检索动画态抑制眨眼 (瞳孔已被覆盖，眨眼无意义且会穿帮)
+	if _scanning_state != "idle":
+		_is_blinking = false
+		_blink_progress = 0.0
+		return
 	if _is_blinking:
 		_blink_progress += delta * BLINK_SPEED
 		if _blink_progress >= 1.0:
@@ -262,7 +287,7 @@ func _update_blink(delta: float) -> void:
 			_is_blinking = true
 			_blink_progress = 0.0
 
-# ── 外部接口: 休眠/扫描控制 ──
+# ── 外部接口: 休眠/扫描/检索控制 ──
 
 ## 进入休眠态 (虹膜缓慢收缩到指定程度)
 func start_drowsy(amount := 0.6) -> void:
@@ -282,3 +307,24 @@ func start_scan(callback: Callable = Callable()) -> void:
 func stop_scan() -> void:
 	_scan_active = false
 	_scan_progress = 0.0
+
+## 进入检索动画 (瞳孔变为加载指示器)
+func start_scanning() -> void:
+	_scanning_state = "scanning"
+	_scanning_blend_target = 1.0
+	_scanning_done_target = 0.0
+	scanning_done_blend = 0.0
+	scanning_time = 0.0
+
+## 检索完成 (显示对勾图标, 保持直到手动调用 stop_scanning)
+## scanning_blend 保持 1.0 维持覆盖层不透，done_blend 淡入做内容交叉混合
+func finish_scanning() -> void:
+	_scanning_state = "done"
+	# 不淡出 scanning_blend — 覆盖层保持全不透明，避免过渡时闪出眼瞳
+	_scanning_done_target = 1.0
+
+## 强制停止检索动画
+func stop_scanning() -> void:
+	_scanning_state = "idle"
+	_scanning_blend_target = 0.0
+	_scanning_done_target = 0.0

@@ -134,6 +134,7 @@ func _ready() -> void:
 	EventBus.behavior_mode_changed.connect(_on_behavior_mode_changed)
 	EventBus.pet_color_changed.connect(_on_pet_color_changed)
 	EventBus.trigger_idle_behavior.connect(_on_trigger_idle_behavior)
+	EventBus.pet_scanning_changed.connect(_on_pet_scanning_changed)
 
 func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 	if setting_id == "eye_track":
@@ -185,6 +186,17 @@ func _on_trigger_idle_behavior(behavior: String) -> void:
 	if style >= 0 and base_behavior == "hibernate":
 		idle_behaviors.hibernate_style = style
 	idle_behaviors.trigger(base_behavior)
+
+func _on_pet_scanning_changed(state: String) -> void:
+	if is_clone:
+		return
+	match state:
+		"scanning":
+			eye_behavior.start_scanning()
+		"done":
+			eye_behavior.finish_scanning()
+		"idle":
+			eye_behavior.stop_scanning()
 
 func _on_pet_color_changed(pet_index: int, hue: float, sat: float, val: float) -> void:
 	var my_index = get_meta("pet_index", 0)
@@ -371,13 +383,33 @@ func _draw() -> void:
 			1: _draw_loading_spinner(screen_r, h_blend, idle_behaviors._hibernate_anim_time)
 			2: _draw_battery_icon(screen_r, h_blend, idle_behaviors._hibernate_anim_time)
 	
+	# ── 检索动画覆盖层 (系统信息查询时瞳孔变加载指示器/对勾) ──
+	# scanning_blend: 整体覆盖层 (scanning→done 期间保持1.0, stop时淡出)
+	# done_blend: 内容交叉混合 (0=纯旋转器, 1=纯对勾)
+	var scan_blend = eye_behavior.scanning_blend
+	var done_blend = eye_behavior.scanning_done_blend
+	if scan_blend > 0.01 or done_blend > 0.01:
+		var scan_r = PET_RADIUS * 0.83  # 白边框内侧 (与休眠视觉同范围)
+		# 暗色屏幕覆盖层 (由 scanning_blend 控制，过渡期间不会闪出眼瞳)
+		var overlay_alpha = scan_blend * 0.95
+		if done_blend > scan_blend:
+			overlay_alpha = done_blend * 0.95  # stop_scanning 后 done_blend 独立淡出
+		draw_circle(Vector2.ZERO, scan_r, Color(0.03, 0.05, 0.12, overlay_alpha), true, -1.0, true)
+		# 加载旋转指示器 (随 done_blend 增大而淡出，实现交叉混合)
+		var spinner_alpha = scan_blend * (1.0 - done_blend)
+		if spinner_alpha > 0.01:
+			_draw_loading_spinner(scan_r, spinner_alpha, eye_behavior.scanning_time)
+		# 完成对勾图标 (随 done_blend 增大而淡入)
+		if done_blend > 0.01:
+			_draw_scanning_checkmark(scan_r, done_blend)
+	
 	# ── 休眠挡板 (仅风格0: 机械光圈半闭效果) ──
 	var drowsy = eye_behavior.get_drowsy_amount()
 	var is_shutter = idle_behaviors.active_behavior != "hibernate" or idle_behaviors.hibernate_style == 0
 	if drowsy > 0.01 and iris_scale > 0.05 and is_shutter:
 		var sclera_r = PET_RADIUS * 0.54 * iris_scale
 		var plate_color = palette.shift_color(Color(0.10, 0.15, 0.38, 1.0))
-		# 仅上挡板: 机械眼睑沉重下垂
+		# 仅上挡板: 机械眼眸沉重下垂
 		_draw_eye_shutter(sclera_r, sclera_r * drowsy * 1.5, true, plate_color)
 	
 	# 恢复默认变换，避免影响后续绘制
@@ -469,3 +501,21 @@ func _draw_battery_icon(radius: float, alpha: float, time: float) -> void:
 	var fill_color = palette.shift_color(Color(0.25, 0.55, 1.0, alpha * 0.65))
 	if fill_w > 1.0:
 		draw_rect(Rect2(x0 + pad, y0 + pad, fill_w, bh - pad * 2), fill_color, true, -1.0, true)
+
+
+## 绘制完成对勾图标 (检索完成: 机械风格SVG对勾)
+func _draw_scanning_checkmark(radius: float, alpha: float) -> void:
+	var scale_f = radius * 0.028  # 缩放因子
+	var glow_color = palette.shift_color(Color(0.2, 0.9, 0.5, alpha * 0.9))
+	# 对勾路径: 从左侧中部 → 底部中心 → 右上角
+	var check_pts = PackedVector2Array([
+		Vector2(-7.0, 0.0) * scale_f,    # 起点: 左侧
+		Vector2(-2.5, 5.0) * scale_f,    # 拐点: 底部
+		Vector2(7.0, -5.0) * scale_f,    # 终点: 右上
+	])
+	# 主对勾线 (较粗)
+	draw_polyline(check_pts, glow_color, 2.2 * (radius / 16.0), true)
+	# 外圈环 (完成状态标识)
+	var ring_r = radius * 0.65
+	var ring_color = Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.5)
+	draw_arc(Vector2.ZERO, ring_r, 0, TAU, 32, ring_color, 1.2, true)
