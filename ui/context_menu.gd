@@ -46,6 +46,8 @@ const SubmenuSystem = preload("res://ui/context_menu/submenu_system.gd")
 
 @onready var sysinfo_btn: Button = $HUDPanel/Margin/VBox/SysInfoBtn
 
+@onready var debug_behavior_btn: Button = $HUDPanel/Margin/VBox/DebugBehaviorBtn
+
 @onready var quit_btn: Button = $HUDPanel/Margin/VBox/QuitBtn
 
 var _submenu: SubmenuSystem
@@ -175,6 +177,14 @@ func _ready() -> void:
 	sysinfo_btn.pressed.connect(_on_sysinfo_btn_pressed)
 
 	autostart_btn.pressed.connect(_on_autostart_btn_pressed)
+
+	# 调试子菜单触发器
+
+	debug_behavior_btn.mouse_entered.connect(func(): _submenu.on_trigger_hover("debug_behavior"))
+
+	debug_behavior_btn.mouse_exited.connect(func(): _submenu.on_trigger_exit())
+
+	debug_behavior_btn.pressed.connect(func(): _submenu.toggle("debug_behavior"))
 
 	quit_btn.pressed.connect(_on_quit_btn_pressed)
 
@@ -798,6 +808,7 @@ func _build_submenus() -> void:
 	_submenu.register_trigger("gait", gait_btn)
 	_submenu.register_trigger("hud", hud_btn)
 	_submenu.register_trigger("chatter", chatter_btn)
+	_submenu.register_trigger("debug_behavior", debug_behavior_btn)
 	# 单选子菜单
 	_submenu.create_radio("window_mode", [
 		{"value": 0, "label": "自由漫游", "desc": "在窗口间自由行走"},
@@ -837,6 +848,8 @@ func _build_submenus() -> void:
 		{"id": "hud_clock", "on": "系统时钟 [●]", "off": "系统时钟 [○]", "key": "hud_clock", "default": false},
 		{"id": "hud_wifi", "on": "WiFi 信息 [●]", "off": "WiFi 信息 [○]", "key": "hud_wifi", "default": false},
 	])
+	# 调试子菜单: 行为测试 (直接触发 idle 微行为)
+	_build_debug_behavior_submenu()
 
 ## 从 SettingsManager 刷新子菜单状态
 func _refresh_submenu_states() -> void:
@@ -868,3 +881,50 @@ func _apply_ui_theme(hue: float) -> void:
 	# 通知侧栏
 	if _sidebar and _sidebar.has_method("apply_ui_theme"):
 		_sidebar.apply_ui_theme(hue)
+
+# ── 调试: 行为测试子菜单 ──
+
+func _build_debug_behavior_submenu() -> void:
+	var panel = _submenu._make_panel()
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+	panel.add_child(vbox)
+	
+	var debug_items := [
+		{"label": "低功耗休眠", "behavior": "hibernate", "desc": "虹膜半闭 + 休眠气泡"},
+		{"label": "系统自检", "behavior": "scan", "desc": "瞳孔快速左右扫描"},
+	]
+	
+	for item in debug_items:
+		var btn = Button.new()
+		btn.flat = true
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.add_theme_font_size_override("font_size", 19)
+		btn.add_theme_color_override("font_color", Color(0.8, 0.9, 1, 1))
+		btn.add_theme_color_override("font_hover_color", Color(1.0, 0.7, 0.2, 1))
+		btn.text = item.label
+		var behavior_id = item.behavior
+		btn.pressed.connect(func(): _on_debug_behavior_pressed(behavior_id))
+		if item.has("desc"):
+			var desc_text = item.desc
+			var b = btn
+			btn.mouse_entered.connect(func(): _tooltip.show_for(b, desc_text, true))
+			btn.mouse_exited.connect(func(): _tooltip.show_for(b, desc_text, false))
+		vbox.add_child(btn)
+	
+	panel.mouse_entered.connect(func(): _submenu.on_panel_enter())
+	panel.mouse_exited.connect(func(): _submenu.on_panel_exit())
+	add_child(panel)
+	_submenu.panels["debug_behavior"] = panel
+
+func _on_debug_behavior_pressed(behavior: String) -> void:
+	# 关闭菜单后触发行为
+	_tooltip.panel.hide()
+	_submenu.hide_all_instant()
+	hud.hide()
+	_sidebar.panel.hide()
+	target = null
+	EventBus.context_menu_toggled.emit(false)
+	# 延迟一帧让菜单关闭完毕
+	await get_tree().process_frame
+	EventBus.trigger_idle_behavior.emit(behavior)

@@ -53,6 +53,9 @@ var is_strolling: bool = false  # 是否正在滚动漫步 (供其他宠物检�
 # ── 戳一戳交互系统 (委托给 PokeSystem) ──
 var poke_system: PokeSystem
 
+# ── Idle 微行为系统 (委托给 IdleBehaviors) ──
+var idle_behaviors: IdleBehaviors
+
 func _ready() -> void:
 	# 初始化调色板 (必须在所有子系统之前)
 	if palette == null:
@@ -92,6 +95,10 @@ func _ready() -> void:
 	pet_effects = PetEffects.new()
 	pet_effects.pet = self
 	
+	# 初始化 Idle 微行为系统
+	idle_behaviors = IdleBehaviors.new()
+	idle_behaviors.pet = self
+	
 	# 初始化 HUD + 气泡系统
 	pet_hud = PetHUD.new()
 	pet_hud.pet = self
@@ -126,6 +133,7 @@ func _ready() -> void:
 	EventBus.setting_toggled.connect(_on_setting_toggled)
 	EventBus.behavior_mode_changed.connect(_on_behavior_mode_changed)
 	EventBus.pet_color_changed.connect(_on_pet_color_changed)
+	EventBus.trigger_idle_behavior.connect(_on_trigger_idle_behavior)
 
 func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 	if setting_id == "eye_track":
@@ -160,6 +168,14 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 func _on_behavior_mode_changed(mode: int) -> void:
 	behavior_mode = mode
 	_was_dragged_in_quiet = false  # 清除残留标记
+
+func _on_trigger_idle_behavior(behavior: String) -> void:
+	if is_clone:
+		return
+	# 强制切到 idle 状态 (微行为需要在 idle 中运行)
+	if current_state_name != "idle":
+		transition_to("idle")
+	idle_behaviors.trigger(behavior)
 
 func _on_pet_color_changed(pet_index: int, hue: float, sat: float, val: float) -> void:
 	var my_index = get_meta("pet_index", 0)
@@ -249,6 +265,7 @@ func _process(delta: float) -> void:
 	hud_panel.update(delta)
 	eye_behavior.update(delta)
 	var has_visual_change = pet_effects.update(delta)
+	idle_behaviors.update(delta)
 	
 	# 按需重绘：特效活跃 / 物理运动中 / 眼球动画播放中
 	if has_visual_change or linear_velocity.length() > 1.0 or eye_behavior.is_animating():
@@ -290,8 +307,8 @@ func _draw() -> void:
 	# 1. 边缘深色轮廓与偏深的湛蓝主外壳 (palette 统一变换)
 	var shell_outline := palette.shift_color(Color(0.08, 0.12, 0.32, 1.0))
 	var shell_main := palette.shift_color(Color(0.15, 0.30, 0.80, 1.0))
-	draw_circle(Vector2.ZERO, PET_RADIUS + 1.2, shell_outline)
-	draw_circle(Vector2.ZERO, PET_RADIUS, shell_main)
+	draw_circle(Vector2.ZERO, PET_RADIUS + 1.2, shell_outline, true, -1.0, true)
+	draw_circle(Vector2.ZERO, PET_RADIUS, shell_main, true, -1.0, true)
 	
 	# 2. 白色边框 (不受色调影响)
 	var border_radius = PET_RADIUS * 0.85
@@ -303,7 +320,7 @@ func _draw() -> void:
 	var tip_dist = border_radius - 1.0  # 尖角刚刚触碰白边内侧
 	
 	# 绘制深色底盘核心
-	draw_circle(Vector2.ZERO, base_r, dark_blue)
+	draw_circle(Vector2.ZERO, base_r, dark_blue, true, -1.0, true)
 	# 绘制4个向外伸展的尖角（平滑与底盘融合的三角形）
 	for i in range(4):
 		var angle = i * PI / 2.0 + PI / 4.0  # 每个对角线：45, 135, 225, 315 度
@@ -323,17 +340,72 @@ func _draw() -> void:
 		# eye_behavior 直接输出世界坐标系偏移，draw_set_transform 已转为世界对齐绘制
 		var iris_offset = eye_behavior.get_pupil_offset() * iris_scale
 		# 第一层：眼白（巩膜）— 固定在圆心不动
-		draw_circle(Vector2.ZERO, PET_RADIUS * 0.54 * iris_scale, palette.shift_color(Color(0.85, 0.88, 0.92, 1.0)))
+		draw_circle(Vector2.ZERO, PET_RADIUS * 0.54 * iris_scale, palette.shift_color(Color(0.85, 0.88, 0.92, 1.0)), true, -1.0, true)
 		# 第二层：灰蓝色虹膜外环 — 跟随鼠标
-		draw_circle(iris_offset, PET_RADIUS * 0.42 * iris_scale, palette.shift_color(Color(0.55, 0.65, 0.80, 1.0)))
+		draw_circle(iris_offset, PET_RADIUS * 0.42 * iris_scale, palette.shift_color(Color(0.55, 0.65, 0.80, 1.0)), true, -1.0, true)
 		# 第三层：深蓝色虹膜内环 — 跟随鼠标
-		draw_circle(iris_offset, PET_RADIUS * 0.28 * iris_scale, palette.shift_color(Color(0.15, 0.28, 0.68, 1.0)))
+		draw_circle(iris_offset, PET_RADIUS * 0.28 * iris_scale, palette.shift_color(Color(0.15, 0.28, 0.68, 1.0)), true, -1.0, true)
 		# 第四层：极暗的瞳孔核心 — 跟随鼠标
-		draw_circle(iris_offset, PET_RADIUS * 0.16 * iris_scale, palette.shift_color(Color(0.05, 0.08, 0.20, 1.0)))
+		draw_circle(iris_offset, PET_RADIUS * 0.16 * iris_scale, palette.shift_color(Color(0.05, 0.08, 0.20, 1.0)), true, -1.0, true)
 		
 		# 高光反射点 (固定在虹膜左上方，模拟环境光泽)
 		var highlight_offset = iris_offset + Vector2(-PET_RADIUS * 0.08, -PET_RADIUS * 0.10) * iris_scale
-		draw_circle(highlight_offset, PET_RADIUS * 0.11 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale * 0.85))
-		draw_circle(highlight_offset, PET_RADIUS * 0.06 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale))
+		var highlight_fade = 1.0 - eye_behavior.get_drowsy_amount()  # 休眠时高光暗淡
+		draw_circle(highlight_offset, PET_RADIUS * 0.11 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale * 0.85 * highlight_fade), true, -1.0, true)
+		draw_circle(highlight_offset, PET_RADIUS * 0.06 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale * highlight_fade), true, -1.0, true)
+	
+	# ── 休眠挡板 (机械光圈半闭效果) ──
+	var drowsy = eye_behavior.get_drowsy_amount()
+	if drowsy > 0.01 and iris_scale > 0.05:
+		var sclera_r = PET_RADIUS * 0.54 * iris_scale
+		var plate_color = palette.shift_color(Color(0.10, 0.15, 0.38, 1.0))
+		# 仅上挡板: 机械眼睑沉重下垂
+		_draw_eye_shutter(sclera_r, sclera_r * drowsy * 1.5, true, plate_color)
+	
 	# 恢复默认变换，避免影响后续绘制
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+
+## 绘制机械挡板 (圆弧段多边形，覆盖眼白的上方或下方)
+func _draw_eye_shutter(radius: float, close_px: float, is_top: bool, color: Color) -> void:
+	if close_px < 0.5:
+		return
+	# flat_y: 挡板平边的 Y 坐标
+	var flat_y: float
+	if is_top:
+		flat_y = -radius + close_px    # 从顶部向下合拢
+	else:
+		flat_y = radius - close_px     # 从底部向上合拢
+	flat_y = clampf(flat_y, -radius + 0.1, radius - 0.1)
+	
+	# 圆与平线的交点 X: x² + y² = r² → x = sqrt(r² - y²)
+	var dx = sqrt(maxf(0.0, radius * radius - flat_y * flat_y))
+	
+	# 构建多边形: 平边两端点 + 沿圆弧的采样点
+	var pts = PackedVector2Array()
+	var arc_steps := 16
+	
+	if is_top:
+		# 从左交点出发，沿圆弧走上半圆到右交点，再沿平线封闭
+		var angle_l = atan2(flat_y, -dx)  # 左交点角度
+		var angle_r = atan2(flat_y, dx)   # 右交点角度
+		# 上半圆: 从 angle_l 经过 -PI/2 (顶部) 到 angle_r
+		# angle_l 在 Q2~Q3 (PI/2~PI 或 -PI), angle_r 在 Q4~Q1 (-PI/2~0)
+		# 需要跨越 ±PI 边界: 走 angle_l → -PI → angle_r
+		var span = angle_r - angle_l
+		for i in range(arc_steps + 1):
+			var t = float(i) / float(arc_steps)
+			var a = angle_l + span * t
+			pts.append(Vector2(cos(a), sin(a)) * radius)
+	else:
+		# 从左交点出发，沿圆弧走下半圆到右交点
+		var angle_l = atan2(flat_y, -dx)
+		var angle_r = atan2(flat_y, dx)
+		# 下半圆: 从 angle_l 经过 PI/2 (底部) 到 angle_r
+		var span = angle_r - angle_l
+		for i in range(arc_steps + 1):
+			var t = float(i) / float(arc_steps)
+			var a = angle_l + span * t
+			pts.append(Vector2(cos(a), sin(a)) * radius)
+	
+	if pts.size() >= 3:
+		draw_colored_polygon(pts, color)

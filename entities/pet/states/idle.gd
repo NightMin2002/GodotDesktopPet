@@ -22,6 +22,8 @@ func enter() -> void:
 func exit() -> void:
 	if pet:
 		pet.linear_damp = 0.5
+		# 离开 idle 时取消任何活跃的微行为 (被拖拽/状态切换等打断)
+		pet.idle_behaviors.cancel()
 
 func process(delta: float) -> void:
 	idle_timer += delta
@@ -42,6 +44,14 @@ func process(delta: float) -> void:
 				return
 			idle_timer = 0.0
 			idle_duration = randf_range(1.0, 3.0)
+			return
+		# 微行为活跃时不转移状态 (等它自然结束)
+		if pet.idle_behaviors.is_active():
+			return
+		# 尝试触发微行为 (休眠/自检)
+		if pet.idle_behaviors.try_random(idle_timer):
+			idle_timer = 0.0
+			idle_duration = randf_range(2.0, 4.0)  # 微行为结束后重置计时
 			return
 		# 正在注视同伴时不跳动，安静地看着
 		if pet.eye_behavior._look_at_pet != null:

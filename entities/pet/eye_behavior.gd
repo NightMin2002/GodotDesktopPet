@@ -31,6 +31,16 @@ var _was_blinking := false  # 上帧是否在眨眼 (保证眨眼结束后多重
 var _blink_progress := 0.0
 const BLINK_SPEED := 10.0
 
+# ── 低功耗休眠 (持续半闭眼) ──
+var drowsy_amount := 0.0       # 外部控制: 0.0=正常, ~0.6=半闭
+var _drowsy_target := 0.0      # 目标值 (lerp 过渡)
+
+# ── 系统自检扫描 ──
+var _scan_active := false
+var _scan_progress := 0.0      # 0→1 完整扫描周期
+var _scan_callback: Callable   # 扫描结束回调
+const SCAN_DURATION := 1.2     # 扫描总时长 (2次快速来回)
+
 func update(delta: float) -> void:
 	if not is_instance_valid(pet):
 		return
@@ -44,15 +54,25 @@ func update(delta: float) -> void:
 func get_pupil_offset() -> Vector2:
 	return _pupil_pos
 
-## 获取当前虹膜闭合程度
+## 获取眨眼闭合程度 (仅眨眼，不含休眠)
 func get_blink_amount() -> float:
 	if not _is_blinking:
 		return 0.0
 	return sin(_blink_progress * PI)
 
-## 只在眸球实际变化时才需要重绘 (眩眶或瞳孔移动中)
+## 获取休眠挡板闭合程度 (0.0=全开, ~0.6=半闭)
+func get_drowsy_amount() -> float:
+	return drowsy_amount
+
+## 只在眸球实际变化时才需要重绘
 func is_animating() -> bool:
-	if _is_blinking or _was_blinking:  # 眨眼结束后多绘一帧恢复原尺寸
+	if _is_blinking or _was_blinking:
+		return true
+	if absf(drowsy_amount - _drowsy_target) > 0.01:
+		return true
+	if _scan_active:
+		return true
+	if drowsy_amount > 0.01:  # 休眠持续状态也需要每帧重绘 (挡板随旋转补偿)
 		return true
 	return _pupil_pos.distance_to(_prev_pupil_pos) > 0.05
 
@@ -67,7 +87,33 @@ func _update_idle_detection(delta: float) -> void:
 		_mouse_idle_time += delta
 
 func _update_pupil(delta: float) -> void:
-	var max_offset = pet.PET_RADIUS * 0.2
+	# 休眠态平滑过渡
+	drowsy_amount = lerpf(drowsy_amount, _drowsy_target, delta * 3.0)
+	
+	var max_offset = pet.PET_RADIUS * 0.12
+	
+	# 扫描模式: 覆盖正常瞳孔控制
+	if _scan_active:
+		_scan_progress += delta / SCAN_DURATION
+		if _scan_progress >= 1.0:
+			_scan_active = false
+			_scan_progress = 0.0
+			if _scan_callback.is_valid():
+				_scan_callback.call()
+			_pupil_pos = _pupil_pos.lerp(Vector2.ZERO, delta * 6.0)
+			return
+		# 扫描轨迹: 2次快速来回 (smoothstep 急停转向，机械感)
+		var p = _scan_progress
+		var cycle = fmod(p * 2.0, 1.0)  # 2个周期
+		var scan_x: float
+		if cycle < 0.5:
+			var t = smoothstep(0.0, 1.0, cycle / 0.5)
+			scan_x = lerpf(-1.0, 1.0, t)   # 左→右
+		else:
+			var t = smoothstep(0.0, 1.0, (cycle - 0.5) / 0.5)
+			scan_x = lerpf(1.0, -1.0, t)   # 右→左
+		_pupil_pos = Vector2(scan_x * max_offset, 0)
+		return
 	var target: Vector2
 	var lerp_speed: float
 	
@@ -184,6 +230,11 @@ func _point_to_segment_dist(point: Vector2, seg_a: Vector2, seg_b: Vector2) -> f
 	return point.distance_to(closest)
 
 func _update_blink(delta: float) -> void:
+	# 休眠态抑制正常眨眼 (已经半闭了，不需要再眨)
+	if _drowsy_target > 0.3:
+		_is_blinking = false
+		_blink_progress = 0.0
+		return
 	if _is_blinking:
 		_blink_progress += delta * BLINK_SPEED
 		if _blink_progress >= 1.0:
@@ -198,3 +249,24 @@ func _update_blink(delta: float) -> void:
 		if _blink_timer <= 0:
 			_is_blinking = true
 			_blink_progress = 0.0
+
+# ── 外部接口: 休眠/扫描控制 ──
+
+## 进入休眠态 (虹膜缓慢收缩到指定程度)
+func start_drowsy(amount := 0.6) -> void:
+	_drowsy_target = amount
+
+## 退出休眠态 (虹膜缓慢恢复)
+func stop_drowsy() -> void:
+	_drowsy_target = 0.0
+
+## 启动系统自检扫描 (完成后调用 callback)
+func start_scan(callback: Callable = Callable()) -> void:
+	_scan_active = true
+	_scan_progress = 0.0
+	_scan_callback = callback
+
+## 强制中断扫描
+func stop_scan() -> void:
+	_scan_active = false
+	_scan_progress = 0.0
