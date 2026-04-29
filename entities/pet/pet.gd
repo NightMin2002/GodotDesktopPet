@@ -382,7 +382,8 @@ func _draw_eye_shutter(radius: float, close_px: float, is_top: bool, color: Colo
 	
 	# 构建多边形: 平边两端点 + 沿圆弧的采样点
 	var pts = PackedVector2Array()
-	var arc_steps := 16
+	var arc_steps := 32
+	var arc_r = radius + 1.0  # 弧线微超出巩膜圆, 消除内切弦间隙透出白色
 	
 	if is_top:
 		# 从左交点出发，沿圆弧走上半圆到右交点，再沿平线封闭
@@ -395,7 +396,7 @@ func _draw_eye_shutter(radius: float, close_px: float, is_top: bool, color: Colo
 		for i in range(arc_steps + 1):
 			var t = float(i) / float(arc_steps)
 			var a = angle_l + span * t
-			pts.append(Vector2(cos(a), sin(a)) * radius)
+			pts.append(Vector2(cos(a), sin(a)) * arc_r)
 	else:
 		# 从左交点出发，沿圆弧走下半圆到右交点
 		var angle_l = atan2(flat_y, -dx)
@@ -405,7 +406,11 @@ func _draw_eye_shutter(radius: float, close_px: float, is_top: bool, color: Colo
 		for i in range(arc_steps + 1):
 			var t = float(i) / float(arc_steps)
 			var a = angle_l + span * t
-			pts.append(Vector2(cos(a), sin(a)) * radius)
+			pts.append(Vector2(cos(a), sin(a)) * arc_r)
 	
 	if pts.size() >= 3:
 		draw_colored_polygon(pts, color)
+		# 抗锯齿轮廓线 (消除多边形边缘锯齿)
+		var outline_pts = pts.duplicate()
+		outline_pts.append(pts[0])  # 闭合路径
+		draw_polyline(outline_pts, color, 1.0, true)

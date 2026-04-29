@@ -128,8 +128,8 @@ func _enter_hibernate() -> void:
 	pet.angular_damp = 5.0
 
 func _update_hibernate(_delta: float) -> void:
-	# 鼠标恢复活动 → 立刻唤醒
-	if pet.eye_behavior._mouse_idle_time < 2.0 and _hibernate_phase == 1:
+	# 鼠标恢复活动 → 唤醒 (最低持续5秒，防止调试触发后因刚点菜单立即退出)
+	if pet.eye_behavior._mouse_idle_time < 2.0 and _hibernate_phase == 1 and _behavior_timer > 5.0:
 		_hibernate_phase = 2
 		_behavior_timer = 0.0
 		return
