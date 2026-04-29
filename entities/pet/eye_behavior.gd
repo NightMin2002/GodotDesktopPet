@@ -35,6 +35,12 @@ const BLINK_SPEED := 10.0
 var drowsy_amount := 0.0       # 外部控制: 0.0=正常, ~0.6=半闭
 var _drowsy_target := 0.0      # 目标值 (lerp 过渡)
 
+# ── 休眠视觉参数 (不同风格共用) ──
+var hibernate_dim := 0.0         # 亮度衰减: 0.0=正常, 1.0=全暗
+var _hibernate_dim_target := 0.0
+var hibernate_iris_shrink := 0.0 # 光圈收缩: 0.0=正常, 1.0=缩到最小
+var _hibernate_iris_shrink_target := 0.0
+
 # ── 系统自检扫描 ──
 var _scan_active := false
 var _scan_progress := 0.0      # 0→1 完整扫描周期
@@ -70,9 +76,13 @@ func is_animating() -> bool:
 		return true
 	if absf(drowsy_amount - _drowsy_target) > 0.01:
 		return true
+	if absf(hibernate_dim - _hibernate_dim_target) > 0.01:
+		return true
+	if absf(hibernate_iris_shrink - _hibernate_iris_shrink_target) > 0.01:
+		return true
 	if _scan_active:
 		return true
-	if drowsy_amount > 0.01:  # 休眠持续状态也需要每帧重绘 (挡板随旋转补偿)
+	if drowsy_amount > 0.01 or hibernate_dim > 0.01 or hibernate_iris_shrink > 0.01:
 		return true
 	return _pupil_pos.distance_to(_prev_pupil_pos) > 0.05
 
@@ -89,6 +99,8 @@ func _update_idle_detection(delta: float) -> void:
 func _update_pupil(delta: float) -> void:
 	# 休眠态平滑过渡
 	drowsy_amount = lerpf(drowsy_amount, _drowsy_target, delta * 3.0)
+	hibernate_dim = lerpf(hibernate_dim, _hibernate_dim_target, delta * 3.0)
+	hibernate_iris_shrink = lerpf(hibernate_iris_shrink, _hibernate_iris_shrink_target, delta * 3.0)
 	
 	var max_offset = pet.PET_RADIUS * 0.12
 	

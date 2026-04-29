@@ -172,10 +172,19 @@ func _on_behavior_mode_changed(mode: int) -> void:
 func _on_trigger_idle_behavior(behavior: String) -> void:
 	if is_clone:
 		return
+	# 解析风格参数 (格式: "hibernate:1" → behavior="hibernate", style=1)
+	var style := -1
+	var base_behavior := behavior
+	if ":" in behavior:
+		var parts = behavior.split(":")
+		base_behavior = parts[0]
+		style = int(parts[1])
 	# 强制切到 idle 状态 (微行为需要在 idle 中运行)
 	if current_state_name != "idle":
 		transition_to("idle")
-	idle_behaviors.trigger(behavior)
+	if style >= 0 and base_behavior == "hibernate":
+		idle_behaviors.hibernate_style = style
+	idle_behaviors.trigger(base_behavior)
 
 func _on_pet_color_changed(pet_index: int, hue: float, sat: float, val: float) -> void:
 	var my_index = get_meta("pet_index", 0)
@@ -337,7 +346,6 @@ func _draw() -> void:
 	var iris_scale = 1.0 - blink * 0.95  # 闭眼峰值时虹膜缩至 5%
 	if iris_scale > 0.05:
 		# 虹膜内三层跟随鼠标偏移，眼白固定
-		# eye_behavior 直接输出世界坐标系偏移，draw_set_transform 已转为世界对齐绘制
 		var iris_offset = eye_behavior.get_pupil_offset() * iris_scale
 		# 第一层：眼白（巩膜）— 固定在圆心不动
 		draw_circle(Vector2.ZERO, PET_RADIUS * 0.54 * iris_scale, palette.shift_color(Color(0.85, 0.88, 0.92, 1.0)), true, -1.0, true)
@@ -353,10 +361,20 @@ func _draw() -> void:
 		var highlight_fade = 1.0 - eye_behavior.get_drowsy_amount()  # 休眠时高光暗淡
 		draw_circle(highlight_offset, PET_RADIUS * 0.11 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale * 0.85 * highlight_fade), true, -1.0, true)
 		draw_circle(highlight_offset, PET_RADIUS * 0.06 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale * highlight_fade), true, -1.0, true)
+		# ── 自定义休眠视觉 (覆盖整个内部区域到白边框) ──
+	var h_blend = idle_behaviors.get_hibernate_visual_blend()
+	if h_blend > 0.01:
+		var screen_r = PET_RADIUS * 0.83  # 白边框内侧
+		# 暗色屏幕覆盖层 (模拟设备关屏，覆盖虹膜+底座)
+		draw_circle(Vector2.ZERO, screen_r, Color(0.03, 0.05, 0.12, h_blend * 0.95), true, -1.0, true)
+		match idle_behaviors.hibernate_style:
+			1: _draw_loading_spinner(screen_r, h_blend, idle_behaviors._hibernate_anim_time)
+			2: _draw_battery_icon(screen_r, h_blend, idle_behaviors._hibernate_anim_time)
 	
-	# ── 休眠挡板 (机械光圈半闭效果) ──
+	# ── 休眠挡板 (仅风格0: 机械光圈半闭效果) ──
 	var drowsy = eye_behavior.get_drowsy_amount()
-	if drowsy > 0.01 and iris_scale > 0.05:
+	var is_shutter = idle_behaviors.active_behavior != "hibernate" or idle_behaviors.hibernate_style == 0
+	if drowsy > 0.01 and iris_scale > 0.05 and is_shutter:
 		var sclera_r = PET_RADIUS * 0.54 * iris_scale
 		var plate_color = palette.shift_color(Color(0.10, 0.15, 0.38, 1.0))
 		# 仅上挡板: 机械眼睑沉重下垂
@@ -389,10 +407,9 @@ func _draw_eye_shutter(radius: float, close_px: float, is_top: bool, color: Colo
 		# 从左交点出发，沿圆弧走上半圆到右交点，再沿平线封闭
 		var angle_l = atan2(flat_y, -dx)  # 左交点角度
 		var angle_r = atan2(flat_y, dx)   # 右交点角度
-		# 上半圆: 从 angle_l 经过 -PI/2 (顶部) 到 angle_r
-		# angle_l 在 Q2~Q3 (PI/2~PI 或 -PI), angle_r 在 Q4~Q1 (-PI/2~0)
-		# 需要跨越 ±PI 边界: 走 angle_l → -PI → angle_r
 		var span = angle_r - angle_l
+		if span < 0:
+			span += TAU  # flat_y 越过圆心时 span 变负，修正为经过顶部的长弧
 		for i in range(arc_steps + 1):
 			var t = float(i) / float(arc_steps)
 			var a = angle_l + span * t
@@ -414,3 +431,41 @@ func _draw_eye_shutter(radius: float, close_px: float, is_top: bool, color: Colo
 		var outline_pts = pts.duplicate()
 		outline_pts.append(pts[0])  # 闭合路径
 		draw_polyline(outline_pts, color, 1.0, true)
+
+## 绘制加载旋转指示器 (休眠风格1: 旋转弧线 + 光点)
+func _draw_loading_spinner(radius: float, alpha: float, time: float) -> void:
+	var spin_r = radius * 0.55
+	var spin_angle = time * TAU * 0.4  # ~2.5 秒一圈
+	var arc_len = PI * 0.8  # 144° 弧段
+	var glow_color = palette.shift_color(Color(0.3, 0.6, 1.0, alpha * 0.85))
+	# 主弧线
+	draw_arc(Vector2.ZERO, spin_r, spin_angle, spin_angle + arc_len, 28, glow_color, 2.0, true)
+	# 弧头光点
+	var dot_pos = Vector2(cos(spin_angle + arc_len), sin(spin_angle + arc_len)) * spin_r
+	draw_circle(dot_pos, 2.5, Color(glow_color.r, glow_color.g, glow_color.b, alpha), true, -1.0, true)
+	# 弧尾渐隐尾迹 (更细、更透明)
+	var trail_color = Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.3)
+	draw_arc(Vector2.ZERO, spin_r, spin_angle - PI * 0.3, spin_angle, 12, trail_color, 1.0, true)
+
+## 绘制电池图标 (休眠风格2: 电池轮廓 + 脉冲充电条)
+func _draw_battery_icon(radius: float, alpha: float, time: float) -> void:
+	var bw = radius * 0.75  # 电池主体宽度
+	var bh = radius * 0.45  # 电池主体高度
+	var nub_w = radius * 0.08  # 正极凸起宽
+	var nub_h = bh * 0.35  # 正极凸起高
+	var outline_color = palette.shift_color(Color(0.35, 0.6, 1.0, alpha * 0.75))
+	# 电池主体轮廓
+	var x0 = -bw / 2.0
+	var y0 = -bh / 2.0
+	draw_rect(Rect2(x0, y0, bw, bh), outline_color, false, 1.5, true)
+	# 正极凸起
+	var nub_x = bw / 2.0
+	var nub_y0 = -nub_h / 2.0
+	draw_rect(Rect2(nub_x, nub_y0, nub_w, nub_h), outline_color, true, -1.0, true)
+	# 充电条 (脉冲呼吸)
+	var fill_pct = 0.25 + sin(time * TAU / 4.0) * 0.25  # 0% ~ 50%
+	var pad = 2.5
+	var fill_w = (bw - pad * 2) * fill_pct
+	var fill_color = palette.shift_color(Color(0.25, 0.55, 1.0, alpha * 0.65))
+	if fill_w > 1.0:
+		draw_rect(Rect2(x0 + pad, y0 + pad, fill_w, bh - pad * 2), fill_color, true, -1.0, true)

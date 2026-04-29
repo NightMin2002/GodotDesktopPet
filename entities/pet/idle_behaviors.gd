@@ -12,7 +12,9 @@ var _behavior_timer := 0.0         # 行为内部计时器
 
 # ── 休眠参数 ──
 var _hibernate_phase := 0          # 0=进入, 1=持续, 2=退出
-var _hibernate_duration := 0.0     # 持续阶段时长
+var hibernate_style := 0           # 0=挡板, 1=加载指示, 2=电池图标
+var _hibernate_anim_time := 0.0    # 累计动画时间 (跨阶段不重置, 用于平滑旋转)
+
 var _hibernate_bubble_shown := false
 var _hibernate_done := false        # 本轮离席已休眠过 (鼠标活动后重置)
 
@@ -70,9 +72,22 @@ func update(delta: float) -> void:
 		_window_clock = 0.0
 		_scan_count_3h = 0
 	
+	# ── 主动触发休眠: 持续监控，不依赖 idle.gd 的 try_random() ──
+	if active_behavior == "" and not _hibernate_done:
+		if pet.eye_behavior._mouse_idle_time >= MOUSE_IDLE_FOR_HIBERNATE:
+			var state = pet.current_state_name
+			if state == "idle":
+				trigger("hibernate")
+			elif state == "walk":
+				# 正在散步 → 先回到 idle 再进入休眠
+				pet.transition_to("idle")
+				trigger("hibernate")
+	
 	if active_behavior == "":
 		return
 	_behavior_timer += delta
+	if active_behavior == "hibernate":
+		_hibernate_anim_time += delta
 	match active_behavior:
 		"hibernate": _update_hibernate(delta)
 		"scan": _update_scan(delta)
@@ -80,6 +95,17 @@ func update(delta: float) -> void:
 ## 当前是否有活跃的微行为
 func is_active() -> bool:
 	return active_behavior != ""
+
+## 获取自定义休眠视觉的混合度 (0.0=不显示, 1.0=完全显示)
+## 用于 pet.gd 渲染时平滑淡入/淡出加载指示器和电池图标
+func get_hibernate_visual_blend() -> float:
+	if active_behavior != "hibernate" or hibernate_style == 0:
+		return 0.0
+	match _hibernate_phase:
+		0: return clampf(_behavior_timer / 1.5, 0.0, 1.0)
+		1: return 1.0
+		2: return clampf(1.0 - _behavior_timer / 0.8, 0.0, 1.0)
+	return 0.0
 
 ## 尝试触发微行为 (由 idle.gd 在 idle 状态中调用)
 ## 返回 true 表示触发了行为 (idle 不应转移到 walk/jump)
@@ -120,22 +146,29 @@ func cancel() -> void:
 func _enter_hibernate() -> void:
 	_hibernate_phase = 0  # 进入阶段
 	_hibernate_bubble_shown = false
-	_hibernate_duration = randf_range(30.0, 60.0)  # 用户不在，可以睡久一些
-	pet.eye_behavior.start_drowsy(0.6)  # 虹膜缓慢收缩
-	pet.eye_behavior.forced_look_dir = Vector2(0, 1)  # 瞳孔向下垂落
+	_hibernate_anim_time = 0.0
+	match hibernate_style:
+		0:  # 挡板半闭
+			pet.eye_behavior.start_drowsy(0.6)
+			pet.eye_behavior.forced_look_dir = Vector2(0, 1)
+		1, 2:  # 加载指示 / 电池图标: 抑制眨眼即可
+			pet.eye_behavior._drowsy_target = 0.35
 	# 增大阻尼，让它"沉下去"
 	pet.linear_damp = 3.0
 	pet.angular_damp = 5.0
+	pet.angular_velocity = 0.0  # 立即停止旋转
 
 func _update_hibernate(_delta: float) -> void:
 	# 鼠标恢复活动 → 唤醒 (最低持续5秒，防止调试触发后因刚点菜单立即退出)
 	if pet.eye_behavior._mouse_idle_time < 2.0 and _hibernate_phase == 1 and _behavior_timer > 5.0:
 		_hibernate_phase = 2
 		_behavior_timer = 0.0
+		_hibernate_bubble_shown = false  # 重置标志，供退出阶段一次性守卫
 		return
 	
 	match _hibernate_phase:
-		0:  # 进入阶段: 等虹膜收缩完毕 (~1.5s)
+		0:  # 进入阶段: 等虹膜收缩完毕 (~1.5s) + 身体回正
+			pet.rotation = lerpf(pet.rotation, 0.0, _delta * 3.0)
 			if _behavior_timer > 1.5:
 				_hibernate_phase = 1
 				_behavior_timer = 0.0
@@ -143,17 +176,18 @@ func _update_hibernate(_delta: float) -> void:
 				if not _hibernate_bubble_shown:
 					_hibernate_bubble_shown = true
 					pet.show_local_bubble(_pick(HIBERNATE_ENTER_LINES))
-		1:  # 持续阶段: 安静等待
-			if _behavior_timer >= _hibernate_duration:
-				_hibernate_phase = 2
-				_behavior_timer = 0.0
-		2:  # 退出阶段: 虹膜恢复
-			if _behavior_timer < 0.05:
+		1:  # 持续阶段: 无限期等待，直到鼠标活动唤醒
+			pet.rotation = lerpf(pet.rotation, 0.0, _delta * 3.0)
+			if hibernate_style == 0:
+				# 挡板呼吸
+				pet.eye_behavior._drowsy_target = 0.6 + sin(_behavior_timer * TAU / 5.0) * 0.12
+			# 风格 1-2 的动画由 pet.gd 渲染驱动，这里不需要额外逻辑
+		2:  # 退出阶段: 恢复 (一次性初始化 + 等待动画)
+			if not _hibernate_bubble_shown:
+				_hibernate_bubble_shown = true
 				pet.eye_behavior.stop_drowsy()
 				pet.eye_behavior.forced_look_dir = Vector2.ZERO
-				# 30% 概率说一句唤醒话术
-				if randf() < 0.30:
-					pet.show_local_bubble(_pick(HIBERNATE_WAKE_LINES))
+				pet.show_local_bubble(_pick(HIBERNATE_WAKE_LINES))
 			if _behavior_timer > 0.8:  # 等恢复动画完成
 				_finish("hibernate")
 
@@ -184,7 +218,7 @@ func _cancel_current() -> void:
 	match active_behavior:
 		"hibernate":
 			pet.eye_behavior.stop_drowsy()
-			pet.eye_behavior.drowsy_amount = 0.0  # 强制归零 (不走 lerp，拖拽时立即清除挡板)
+			pet.eye_behavior.drowsy_amount = 0.0
 			pet.eye_behavior.forced_look_dir = Vector2.ZERO
 			pet.linear_damp = 0.8
 			pet.angular_damp = 1.0

@@ -891,7 +891,9 @@ func _build_debug_behavior_submenu() -> void:
 	panel.add_child(vbox)
 	
 	var debug_items := [
-		{"label": "低功耗休眠", "behavior": "hibernate", "desc": "虹膜半闭 + 休眠气泡"},
+		{"label": "休眠: 挡板半闭", "behavior": "hibernate:0", "desc": "机械眼睑半闭 + 瞳孔下垂"},
+		{"label": "休眠: 加载指示", "behavior": "hibernate:1", "desc": "旋转弧线指示器，像设备待机"},
+		{"label": "休眠: 电池图标", "behavior": "hibernate:2", "desc": "电池轮廓 + 脉冲充电条"},
 		{"label": "系统自检", "behavior": "scan", "desc": "瞳孔快速左右扫描"},
 	]
 	
