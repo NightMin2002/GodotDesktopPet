@@ -280,19 +280,22 @@ func _set_anti_gravity(on: bool) -> void:
 	apply_central_impulse(Vector2(0, gravity_sign * 300.0))
 
 # ── 自由移动 (透明踏板跳跃) ──
-# 机制: 宠物先跳 → 顶点时踏板接住 → 落稳后继续跳 → 电梯式缓降归位
+# 机制: 跳→踏板接住→随心决策(继续跳/横移/跳下)→循环
 
 var _roam_platforms: Array[Node] = []  # 当前活跃的踏板
 var _roam_active: bool = false         # 是否正在攀升/下降
-var _roam_jumps_left: int = 0          # 剩余跳跃次数 (上升)
-var _roam_phase: int = 0               # 0=空闲, 1=上升等顶点, 2=等落稳, 3=电梯下降中
+var _roam_phase: int = 0               # 0=空闲, 1=上升等顶点, 2=等落稳, 3=电梯下降中, 4=横移中
 var _roam_was_rising: bool = false     # 是否曾上升 (检测顶点用)
 var _roam_airtime: float = 0.0        # 空中计时
 var _roam_descending: bool = false     # 是否在下降阶段
 var _roam_elevator: StaticBody2D = null  # 电梯踏板引用
+var _roam_current_plat: StaticBody2D = null  # 当前站立的踏板引用
 
-const PLATFORM_WIDTH := 150.0          # 踏板宽度 (足够站稳)
-const ELEVATOR_SPEED := 100.0          # 电梯下降速度 (px/s)
+const PLATFORM_WIDTH := 100.0          # 踏板宽度
+
+## 屏幕缩放因子 (基准 1080p，4K 约 2.0)
+func _screen_scale() -> float:
+	return boundary_size.y / 1080.0
 
 func _on_trigger_free_roam() -> void:
 	if is_clone:
@@ -303,114 +306,88 @@ func _on_trigger_free_roam() -> void:
 
 func _start_free_roam() -> void:
 	_roam_active = true
-	_roam_jumps_left = randi_range(2, 4)
 	_roam_phase = 0
 	_roam_descending = false
 	_roam_elevator = null
 	
-	# 锁定到 idle 状态 (中断 walk/jump 等行为，防止状态机冲突)
+	# 锁定到 idle 状态
 	if current_state != states.get("idle"):
 		transition_to("idle")
-	
-	# 显示启动话术
-	var lines := [
-		"检测到垂直空间...启动攀升协议。",
-		"切换至纵向移动模式。",
-		"计算跳跃路径...执行。",
-		"重力场分析完毕。开始移动。",
-	]
-	show_local_bubble(lines[randi() % lines.size()])
 	
 	# 第一跳
 	_roam_do_jump()
 
 func _roam_do_jump() -> void:
-	if _roam_jumps_left <= 0:
-		_roam_begin_descent()
-		return
-	
-	_roam_jumps_left -= 1
-	_roam_phase = 1  # 上升中，等待顶点
+	_roam_remove_side_walls()  # 清除横移侧墙
+	_roam_phase = 1
 	_roam_was_rising = false
 	_roam_airtime = 0.0
 	
-	# 随机跳跃方向
-	var hop_dir = [-1.0, 1.0].pick_random()
-	var x = global_position.x
-	var w = boundary_size.x
-	if x < 150.0: hop_dir = 1.0
-	elif x > w - 150.0: hop_dir = -1.0
+	var ss = _screen_scale()
 	
-	# 较大的跳跃冲量 (比普通 jump 更高)
-	var vy = randf_range(700.0, 1000.0) * -gravity_sign
-	var vx = hop_dir * randf_range(100.0, 250.0)
+	# 跳跃方向 + 边界保护
+	var hop_dir = [-1.0, 1.0].pick_random()
+	var edge_pad = boundary_size.x * 0.08
+	var x = global_position.x
+	if x < edge_pad: hop_dir = 1.0
+	elif x > boundary_size.x - edge_pad: hop_dir = -1.0
+	
+	# 跳跃力度 (650~800)
+	var vy = randf_range(650.0, 800.0) * ss * -gravity_sign
+	var vx = hop_dir * randf_range(60.0, 150.0) * ss
 	
 	linear_damp = 0.2
 	angular_damp = 0.6
 	apply_central_impulse(Vector2(vx, vy))
-	apply_torque_impulse(hop_dir * randf_range(3000.0, 8000.0))
+	apply_torque_impulse(hop_dir * randf_range(2000.0, 5000.0) * ss)
 	
-	# 瞳孔看向跳跃方向
 	eye_behavior.forced_look_dir = Vector2(hop_dir, -gravity_sign).normalized()
 
-## 每帧检测攀升/下降状态
+## 每帧检测攀升/下降/横移状态
 func _roam_update(_delta: float) -> void:
 	if not _roam_active or _roam_phase == 0:
 		return
 	
 	if _roam_phase == 1:
-		# ── 阶段 1: 上升中，检测抛物线顶点 ──
+		# ── 上升中，检测抛物线顶点 ──
 		_roam_airtime += _delta
-		var vy = linear_velocity.y * gravity_sign  # 标准化: 正=下落, 负=上升
-		
+		var vy = linear_velocity.y * gravity_sign
 		if vy < -30.0:
 			_roam_was_rising = true
-		
 		if _roam_was_rising and vy > -20.0 and _roam_airtime > 0.15:
-			# 到达顶点! 生成踏板 + 立即制动
-			var platform_y = global_position.y + (PET_RADIUS) * gravity_sign
-			_spawn_step_platform(Vector2(global_position.x, platform_y))
-			_roam_brake()  # 制动防滚落
+			var platform_y = global_position.y + PET_RADIUS * gravity_sign
+			_roam_current_plat = _spawn_step_platform(Vector2(global_position.x, platform_y))
+			_roam_brake()
 			_roam_phase = 2
 	
 	elif _roam_phase == 2:
-		# ── 阶段 2: 上升踏板已生成，等宠物落稳 ──
+		# ── 踏板已生成，等宠物落稳 ──
 		if is_settled():
-			_roam_full_stop()  # 完全刹车
+			_roam_full_stop()
 			_roam_phase = 0
-			_roam_pause_then_jump()
+			_roam_decide_next()
 	
 	elif _roam_phase == 3:
-		# ── 阶段 3: 电梯下降中 ──
+		# ── 电梯下降中 ──
 		if not is_instance_valid(_roam_elevator):
 			_roam_finish()
 			return
-		
-		# 缓慢移动电梯踏板
-		_roam_elevator.position.y += ELEVATOR_SPEED * _delta * gravity_sign
-		
-		# 直接锁定宠物到踏板正上方 (刚性跟随，无延迟)
+		var elevator_speed = 100.0 * _screen_scale()
+		_roam_elevator.position.y += elevator_speed * _delta * gravity_sign
 		var target_y = _roam_elevator.position.y - PET_RADIUS * gravity_sign
 		global_position.y = target_y
-		linear_velocity.y = 0  # 清零垂直速度，防止物理漂移
-		# 水平方向柔性居中
+		linear_velocity.y = 0
 		var drift = global_position.x - _roam_elevator.position.x
 		if absf(drift) > 3.0:
 			global_position.x = lerpf(global_position.x, _roam_elevator.position.x, 6.0 * _delta)
-		# 阻尼: 保持宠物稳定不晃动
 		linear_velocity.x *= 0.8
 		angular_velocity *= 0.85
-		
-		# 检查是否接近地面
 		var ground_y = boundary_size.y if not anti_gravity else 0.0
 		var dist = absf(_roam_elevator.position.y - ground_y)
-		
-		if dist < 20.0:
-			# 接近地面: 踏板渐隐，宠物自然着地
+		if dist < PET_RADIUS * 2.0:
 			linear_damp = 0.5
 			angular_damp = 0.8
 			_roam_phase = 0
-			# 渐隐电梯踏板
 			var elevator = _roam_elevator
 			_roam_elevator = null
 			var tween = elevator.create_tween()
@@ -421,53 +398,168 @@ func _roam_update(_delta: float) -> void:
 					elevator.queue_free()
 			)
 			_roam_finish()
+	
+	elif _roam_phase == 4:
+		# ── 横移中：踏板跟随宠物 + 空气墙防掉落 ──
+		_roam_airtime += _delta
+		if is_instance_valid(_roam_current_plat):
+			_roam_current_plat.position.x = lerpf(_roam_current_plat.position.x, global_position.x, 8.0 * _delta)
+		# 至少等 0.4 秒再检测落稳 (防止冲量未生效就判定)
+		if _roam_airtime > 0.4 and is_settled():
+			_roam_remove_side_walls()
+			_roam_full_stop()
+			_roam_phase = 0
+			_roam_decide_next()
 
-## 着陆制动: 大幅衰减速度防止滚落
+## 着陆制动
 func _roam_brake() -> void:
 	linear_velocity.x *= 0.15
 	angular_velocity *= 0.1
 	linear_damp = 4.0
 	angular_damp = 6.0
 
-## 完全刹车: 落稳后彻底停住
+## 完全刹车
 func _roam_full_stop() -> void:
 	linear_velocity.x = 0
 	angular_velocity = 0
 	linear_damp = 5.0
 	angular_damp = 8.0
 
-func _roam_pause_then_jump() -> void:
-	await get_tree().create_timer(0.8).timeout
+## 落稳后的决策: 继续跳 / 横移 / 跳下
+func _roam_decide_next() -> void:
+	# 短暂停留 (0.6~1.5秒)
+	var pause = randf_range(0.6, 1.5)
+	await get_tree().create_timer(pause).timeout
 	if not _roam_active:
 		return
-	if _roam_jumps_left > 0:
+	
+	var roll = randf()
+	if roll < 0.40:
+		# 40%: 继续向上跳
 		_roam_do_jump()
+	elif roll < 0.65:
+		# 25%: 在同高度横向滚动
+		_roam_walk_sideways()
+	elif roll < 0.90:
+		# 25%: 跳下去 (踏板破碎)
+		_roam_jump_down()
 	else:
+		# 10%: 电梯下降
 		_roam_begin_descent()
+
+## 在踏板上横向滚动: 空气墙防掉落 + 踏板跟随
+func _roam_walk_sideways() -> void:
+	var ss = _screen_scale()
+	var hop_dir = [-1.0, 1.0].pick_random()
+	var edge_pad = boundary_size.x * 0.08
+	var x = global_position.x
+	if x < edge_pad: hop_dir = 1.0
+	elif x > boundary_size.x - edge_pad: hop_dir = -1.0
+	
+	# 添加空气墙防掉落
+	_roam_add_side_walls()
+	
+	# 低阻尼 + 侧向滚动
+	_roam_phase = 4
+	_roam_airtime = 0.0  # 复用作 phase4 计时
+	linear_damp = 0.3
+	angular_damp = 0.5
+	apply_central_impulse(Vector2(hop_dir * randf_range(80.0, 160.0) * ss, 0))
+	apply_torque_impulse(hop_dir * randf_range(3000.0, 6000.0) * ss)
+	eye_behavior.forced_look_dir = Vector2(hop_dir, 0).normalized()
+
+## 跳下: 看向跳跃方向→蓄力→起跳→踏板因冲击破碎
+func _roam_jump_down() -> void:
+	var ss = _screen_scale()
+	var hop_dir = [-1.0, 1.0].pick_random()
+	var edge_pad = boundary_size.x * 0.08
+	var x = global_position.x
+	if x < edge_pad: hop_dir = 1.0
+	elif x > boundary_size.x - edge_pad: hop_dir = -1.0
+	
+	# 1. 蓄力准备: 瞳孔看向跳跃方向
+	_roam_full_stop()
+	eye_behavior.forced_look_dir = Vector2(hop_dir, 0).normalized()
+	await get_tree().create_timer(0.3).timeout
+	if not _roam_active:
+		return
+	
+	# 2. 移除空气墙
+	_roam_remove_side_walls()
+	
+	# 3. 起跳! (强力横向 + 微小上弹)
+	linear_damp = 0.2
+	angular_damp = 0.4
+	apply_central_impulse(Vector2(hop_dir * randf_range(200.0, 350.0) * ss, randf_range(50.0, 120.0) * -gravity_sign * ss))
+	apply_torque_impulse(hop_dir * randf_range(3000.0, 7000.0) * ss)
+	eye_behavior.forced_look_dir = Vector2(hop_dir, gravity_sign).normalized()
+	
+	# 4. 踏板因起跳冲击力破碎 (宠物先跳、踏板后碎)
+	if is_instance_valid(_roam_current_plat):
+		_roam_shatter_platform(_roam_current_plat)
+		_roam_platforms.erase(_roam_current_plat)
+		_roam_current_plat = null
+	_roam_clear_platforms()
+	
+	_roam_finish()
+
+## 踏板破碎视觉效果: 闪光 + 6个碎片四散
+func _roam_shatter_platform(plat: StaticBody2D) -> void:
+	var pos = plat.position
+	var parent_node = plat.get_parent()
+	
+	# 禁用碰撞
+	for child in plat.get_children():
+		if child is CollisionShape2D:
+			child.disabled = true
+	
+	# 闪白 + 快速消失
+	plat.modulate = Color(1.5, 1.5, 2.0, 1.0)
+	var main_tw = plat.create_tween()
+	main_tw.tween_property(plat, "modulate:a", 0.0, 0.2)
+	main_tw.finished.connect(func():
+		if is_instance_valid(plat): plat.queue_free()
+	)
+	
+	# 生成碎片粒子
+	if not parent_node: return
+	var g_dir = gravity_sign
+	for i in range(6):
+		var frag = Polygon2D.new()
+		var fw = randf_range(8.0, 16.0)
+		var fh = randf_range(2.0, 4.0)
+		frag.polygon = PackedVector2Array([
+			Vector2(-fw/2, -fh/2), Vector2(fw/2, -fh/2),
+			Vector2(fw/2, fh/2), Vector2(-fw/2, fh/2)
+		])
+		frag.color = Color(0.25, 0.55, 1.0, 0.75)
+		frag.position = pos + Vector2(randf_range(-35, 35), randf_range(-3, 3))
+		frag.rotation = randf_range(-0.3, 0.3)
+		frag.z_index = -1
+		parent_node.add_child(frag)
+		
+		# 碎片飞散 + 旋转 + 渐隐
+		var end_pos = frag.position + Vector2(randf_range(-150, 150), randf_range(60, 180) * g_dir)
+		var tw = frag.create_tween()
+		tw.tween_property(frag, "position", end_pos, 0.5).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+		tw.parallel().tween_property(frag, "rotation", frag.rotation + randf_range(-4.0, 4.0), 0.5)
+		tw.parallel().tween_property(frag, "modulate:a", 0.0, 0.4).set_delay(0.1)
+		tw.finished.connect(frag.queue_free)
 
 # ── 电梯式下降 ──
 
 func _roam_begin_descent() -> void:
-	# 清除所有残留的上升踏板
+	_roam_remove_side_walls()
 	_roam_clear_platforms()
 	
-	# 计算距离地面还有多远
 	var ground_y = boundary_size.y if not anti_gravity else 0.0
 	var dist_to_ground = absf(global_position.y - ground_y)
 	
-	if dist_to_ground < 120.0:
+	if dist_to_ground < boundary_size.y * 0.08:
 		_roam_finish()
 		return
 	
 	_roam_descending = true
-	
-	# 下降话术
-	var lines := [
-		"高度数据已记录。执行安全着陆程序。",
-		"启动减速下降...逐级归位。",
-		"重力辅助着陆协议启动。",
-	]
-	show_local_bubble(lines[randi() % lines.size()])
 	
 	# 等宠物稳定后生成电梯踏板
 	await get_tree().create_timer(0.6).timeout
@@ -489,15 +581,41 @@ func _roam_begin_descent() -> void:
 	_roam_phase = 3  # 开始电梯下降
 
 func _roam_finish() -> void:
+	_roam_remove_side_walls()
 	_roam_active = false
 	_roam_phase = 0
-	_roam_jumps_left = 0
 	_roam_descending = false
-	# 恢复重力
 	gravity_scale = gravity_sign
-	# 清理电梯引用
 	_roam_elevator = null
+	_roam_current_plat = null
 	eye_behavior.forced_look_dir = Vector2.ZERO
+
+## 在当前踏板两端添加空气墙 (横移时防掉落)
+func _roam_add_side_walls() -> void:
+	if not is_instance_valid(_roam_current_plat): return
+	# 先清除旧的
+	_roam_remove_side_walls()
+	for side in [-1.0, 1.0]:
+		var col = CollisionShape2D.new()
+		var shape = RectangleShape2D.new()
+		shape.size = Vector2(4.0, PET_RADIUS * 4.0)  # 薄而高
+		col.shape = shape
+		# 定位到踏板两端、宠物上方 (相对于踏板的位置)
+		col.position = Vector2(side * PLATFORM_WIDTH / 2.0, -PET_RADIUS * 2.0 * gravity_sign)
+		col.one_way_collision = false  # 双向碰撞: 挡住宠物
+		col.set_meta("_roam_wall", true)
+		_roam_current_plat.add_child(col)
+
+## 移除当前踏板上的空气墙 (立即禁用碰撞 + 下帧释放)
+func _roam_remove_side_walls() -> void:
+	if not is_instance_valid(_roam_current_plat): return
+	var to_remove: Array[CollisionShape2D] = []
+	for child in _roam_current_plat.get_children():
+		if child is CollisionShape2D and child.has_meta("_roam_wall"):
+			child.disabled = true  # 立即禁用 (同帧生效)
+			to_remove.append(child)
+	for c in to_remove:
+		c.queue_free()
 
 ## 快速清除所有残留踏板 (0.3秒渐隐)
 func _roam_clear_platforms() -> void:
@@ -554,13 +672,17 @@ func _spawn_step_platform(pos: Vector2, is_elevator: bool = false) -> StaticBody
 
 func _schedule_platform_removal(body: Node, delay: float) -> void:
 	await get_tree().create_timer(delay).timeout
-	if is_instance_valid(body):
-		var tween = body.create_tween()
-		tween.tween_property(body, "modulate:a", 0.0, 0.8)
-		tween.finished.connect(func():
-			if is_instance_valid(body):
-				_roam_platforms.erase(body)
-				body.queue_free()
+	if not is_instance_valid(body): return
+	# 如果宠物还在这个踏板上，延期重检
+	if _roam_active and is_instance_valid(_roam_current_plat) and _roam_current_plat == body:
+		_schedule_platform_removal(body, 2.0)
+		return
+	var tween = body.create_tween()
+	tween.tween_property(body, "modulate:a", 0.0, 0.8)
+	tween.finished.connect(func():
+		if is_instance_valid(body):
+			_roam_platforms.erase(body)
+			body.queue_free()
 		)
 
 ## 踏板视觉渲染 (科技风能量平台)

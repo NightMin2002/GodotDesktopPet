@@ -5,6 +5,7 @@ extends Node
 
 var _main: Node2D  # 主系统引用
 var _anti_gravity: bool = false  # 反重力状态
+var last_local_rects: Array[Rect2] = []  # 最新窗口矩形缓存 (本地坐标, 供外部查询)
 
 # ── 对象池 ──
 var ghost_walls: Array[StaticBody2D] = []
@@ -79,6 +80,9 @@ func _sync_ghost_walls() -> void:
 		var lx = float(desk_rect.position.x - _main.screen_rect.position.x)
 		var ly = float(desk_rect.position.y - _main.screen_rect.position.y)
 		local_rects.append(Rect2(lx, ly, float(desk_rect.size.x), float(desk_rect.size.y)))
+	
+	# 缓存供外部查询 (如空间跳跃窗口感知)
+	last_local_rects = local_rects
 	
 	# 根据当前模式分派处理
 	match _main.window_mode:

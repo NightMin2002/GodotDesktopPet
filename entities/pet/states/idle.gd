@@ -62,10 +62,12 @@ func process(delta: float) -> void:
 			idle_timer = 0.0
 			idle_duration = randf_range(1.5, 3.0)
 			return
-		# 空间跳跃: 小概率触发透明踏板攀升 (优先于常规移动)
-		if pet.free_roam_enabled and not pet._roam_active and randf() < 0.06:
-			pet._start_free_roam()
-			return
+		# 空间跳跃: 低概率触发 (2%, 且需冷却 60 秒)
+		if pet.free_roam_enabled and not pet._roam_active and randf() < 0.02:
+			if not pet.has_meta("_roam_cooldown") or (Time.get_ticks_msec() - pet.get_meta("_roam_cooldown")) > 60000:
+				pet.set_meta("_roam_cooldown", Time.get_ticks_msec())
+				pet._start_free_roam()
+				return
 		# 根据步态风格调整 walk/jump 概率
 		var jump_chance: float
 		match pet.move_style:
