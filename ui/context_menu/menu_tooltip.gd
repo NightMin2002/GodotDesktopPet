@@ -44,15 +44,25 @@ func update_position() -> void:
 	var tip_w = panel.size.x
 	var tip_h = panel.size.y
 	var y_pos = btn_pos.y + btn_size.y / 2.0 - tip_h / 2.0
-	# 优先右侧，空间不足时改左侧
 	var gap := 16.0
-	var right_x = btn_pos.x + btn_size.x + gap
-	if right_x + tip_w > vp_size.x - 10:
-		panel.position = Vector2(btn_pos.x - tip_w - gap, y_pos)
-		panel.pivot_offset = Vector2(tip_w, tip_h / 2.0)
+	if _menu._menu_side == 1:
+		# 菜单在宠物右侧 → tooltip 优先右侧
+		var right_x = btn_pos.x + btn_size.x + gap
+		if right_x + tip_w > vp_size.x - 10:
+			panel.position = Vector2(btn_pos.x - tip_w - gap, y_pos)
+			panel.pivot_offset = Vector2(tip_w, tip_h / 2.0)
+		else:
+			panel.position = Vector2(right_x, y_pos)
+			panel.pivot_offset = Vector2(0, tip_h / 2.0)
 	else:
-		panel.position = Vector2(right_x, y_pos)
-		panel.pivot_offset = Vector2(0, tip_h / 2.0)
+		# 菜单在宠物左侧 → tooltip 优先左侧
+		var left_x = btn_pos.x - tip_w - gap
+		if left_x < 10:
+			panel.position = Vector2(btn_pos.x + btn_size.x + gap, y_pos)
+			panel.pivot_offset = Vector2(0, tip_h / 2.0)
+		else:
+			panel.position = Vector2(left_x, y_pos)
+			panel.pivot_offset = Vector2(tip_w, tip_h / 2.0)
 
 # ── 显示/隐藏 ──
 
@@ -66,7 +76,6 @@ func show_for(btn: Button, text: String, show: bool) -> void:
 		panel.scale = Vector2(0.7, 0.7)
 		panel.show()
 		await _menu.get_tree().process_frame
-		panel.pivot_offset = Vector2(0, panel.size.y / 2.0)
 		update_position()
 		_tween = _menu.create_tween().set_parallel(true)
 		_tween.tween_property(panel, "modulate:a", 1.0, 0.15)

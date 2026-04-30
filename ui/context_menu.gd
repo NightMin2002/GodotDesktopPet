@@ -64,6 +64,9 @@ var _styler: SectionStyler
 
 var target: Node2D = null
 
+## 菜单展开方向: 1=菜单在宠物右侧, -1=菜单在宠物左侧
+var _menu_side: int = 1
+
 func _ready() -> void:
 
 	hud.hide()
@@ -304,12 +307,6 @@ func _process(delta: float) -> void:
 
 			_submenu.update_position(_submenu.active)
 
-		# 子菜单跟随主菜单
-
-		if _submenu.active != "":
-
-			_submenu.update_position(_submenu.active)
-
 	_sysinfo_bubble.process_tick()
 
 	# tooltip 跟随按钮位置
@@ -342,11 +339,11 @@ func _calc_menu_pos(pet_pos: Vector2) -> Vector2:
 
 	var gap := 45.0  # 宠物与面板间距
 
-	# 水平: 宠物在右半屏 → 面板弹到左边
+	# 水平: 跟随 _menu_side 方向
 
 	var x: float
 
-	if pet_pos.x > vp.x * 0.5:
+	if _menu_side == -1:
 
 		x = pet_pos.x - hs.x - gap
 
@@ -391,6 +388,8 @@ func _on_show_context_menu(target_node: Node2D) -> void:
 	_update_clone_label()
 
 	var pet_pos = target.get_global_transform_with_canvas().get_origin()
+	var vp = get_viewport().get_visible_rect().size
+	_menu_side = -1 if pet_pos.x > vp.x * 0.5 else 1
 
 	var panel_pos = _calc_menu_pos(pet_pos)
 
@@ -424,7 +423,11 @@ func _on_show_context_menu(target_node: Node2D) -> void:
 
 	hud.scale = Vector2(0.3, 0.3)
 
-	_sidebar.panel.pivot_offset = Vector2(_sidebar.panel.size.x, _sidebar.panel.size.y * 0.5)
+	# 侧栏 pivot: 从靠近主菜单的边缘绽放
+	if _menu_side == 1:
+		_sidebar.panel.pivot_offset = Vector2(_sidebar.panel.size.x, _sidebar.panel.size.y * 0.5)
+	else:
+		_sidebar.panel.pivot_offset = Vector2(0, _sidebar.panel.size.y * 0.5)
 
 	_sidebar.panel.scale = Vector2(0.3, 0.3)
 
@@ -453,6 +456,12 @@ func _close_hud() -> void:
 	tween.tween_property(hud, "scale", Vector2(0.3, 0.3), 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
 
 	tween.tween_property(hud, "modulate:a", 0.0, 0.15)
+
+	# 侧栏 pivot: 保持与展开方向一致
+	if _menu_side == 1:
+		_sidebar.panel.pivot_offset = Vector2(_sidebar.panel.size.x, _sidebar.panel.size.y * 0.5)
+	else:
+		_sidebar.panel.pivot_offset = Vector2(0, _sidebar.panel.size.y * 0.5)
 
 	tween.tween_property(_sidebar.panel, "scale", Vector2(0.3, 0.3), 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
 
@@ -571,6 +580,12 @@ func _on_quit_btn_pressed() -> void:
 	tween.tween_property(hud, "scale", Vector2(0.3, 0.3), 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
 
 	tween.tween_property(hud, "modulate:a", 0.0, 0.15)
+
+	# 侧栏 pivot: 保持与展开方向一致
+	if _menu_side == 1:
+		_sidebar.panel.pivot_offset = Vector2(_sidebar.panel.size.x, _sidebar.panel.size.y * 0.5)
+	else:
+		_sidebar.panel.pivot_offset = Vector2(0, _sidebar.panel.size.y * 0.5)
 
 	tween.tween_property(_sidebar.panel, "scale", Vector2(0.3, 0.3), 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
 

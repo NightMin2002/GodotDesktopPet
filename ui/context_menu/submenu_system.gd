@@ -111,7 +111,11 @@ func show(menu_id: String) -> void:
 	panel.show()
 	await _menu.get_tree().process_frame
 	update_position(menu_id)
-	panel.pivot_offset = Vector2(0, panel.size.y / 2.0)
+	# pivot: 从靠近主菜单的边缘展开
+	if _menu._menu_side == 1:
+		panel.pivot_offset = Vector2(0, panel.size.y / 2.0)
+	else:
+		panel.pivot_offset = Vector2(panel.size.x, panel.size.y / 2.0)
 	var tween = _menu.create_tween().set_parallel(true)
 	tween.tween_property(panel, "scale", Vector2.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tween.tween_property(panel, "modulate:a", 1.0, 0.15)
@@ -151,12 +155,22 @@ func update_position(menu_id: String) -> void:
 	var btn_size = trigger_btn.size
 	var vp_size = _menu.get_viewport().get_visible_rect().size
 	var panel_w = panel.size.x if panel.size.x > 0 else 160.0
+	var gap := 6.0
 	var x: float
-	var right_x = btn_pos.x + btn_size.x + 6
-	if right_x + panel_w > vp_size.x - 10:
-		x = btn_pos.x - panel_w - 6
+	if _menu._menu_side == 1:
+		# 菜单在宠物右侧 → 子菜单向右级联
+		var right_x = btn_pos.x + btn_size.x + gap
+		if right_x + panel_w > vp_size.x - 10:
+			x = btn_pos.x - panel_w - gap
+		else:
+			x = right_x
 	else:
-		x = right_x
+		# 菜单在宠物左侧 → 子菜单向左级联
+		var left_x = btn_pos.x - panel_w - gap
+		if left_x < 10:
+			x = btn_pos.x + btn_size.x + gap
+		else:
+			x = left_x
 	var y = btn_pos.y + btn_size.y / 2.0 - panel.size.y / 2.0
 	y = clampf(y, 8.0, vp_size.y - panel.size.y - 8.0)
 	panel.position = Vector2(x, y)
