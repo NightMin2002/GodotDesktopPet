@@ -854,6 +854,7 @@ func _build_submenus() -> void:
 	_append_effect_color_radio()
 	_submenu.create_toggle("entertain", [
 		{"id": "stroll", "on": "自主巡航 [●]", "off": "自主巡航 [○]", "key": "stroll", "default": true},
+		{"id": "free_roam", "on": "空间跳跃 [●]", "off": "空间跳跃 [○]", "key": "free_roam", "default": false},
 	])
 	_submenu.create_toggle("mode", [
 		{"id": "anti_gravity", "on": "反重力 [●]", "off": "反重力 [○]", "key": "anti_gravity", "default": false},
@@ -872,6 +873,7 @@ func _refresh_submenu_states() -> void:
 	_submenu.refresh_toggle("trail_fx", SettingsManager.get_bool("trail_fx", true), "粒子尾流 [●]", "粒子尾流 [○]")
 	_submenu.refresh_toggle("arc_fx", SettingsManager.get_bool("arc_fx", true), "能量共鸣弧 [●]", "能量共鸣弧 [○]")
 	_submenu.refresh_toggle("stroll", SettingsManager.get_bool("stroll", true), "自主巡航 [●]", "自主巡航 [○]")
+	_submenu.refresh_toggle("free_roam", SettingsManager.get_bool("free_roam", false), "空间跳跃 [●]", "空间跳跃 [○]")
 	_submenu.refresh_toggle("anti_gravity", SettingsManager.get_bool("anti_gravity", false), "反重力 [●]", "反重力 [○]")
 	_submenu.refresh_toggle("hud_pin", SettingsManager.get_bool("hud_pin", false), "常驻显示 [●]", "常驻显示 [○]")
 	_submenu.refresh_toggle("hud_clock", SettingsManager.get_bool("hud_clock", false), "系统时钟 [●]", "系统时钟 [○]")
@@ -915,6 +917,7 @@ func _build_debug_behavior_submenu() -> void:
 		{"label": "警告标识", "behavior": "_icon:alert", "desc": "显示警告感叹号图标"},
 		{"label": "疑问标识", "behavior": "_icon:question", "desc": "显示疑问标志图标"},
 		{"label": "错误标识", "behavior": "_icon:error", "desc": "显示操作失败交叉图标"},
+		{"label": "攀升测试", "behavior": "_free_roam", "desc": "生成透明踏板并连续跳跃到高处"},
 	]
 	
 	for item in debug_items:
@@ -954,6 +957,9 @@ func _on_debug_behavior_pressed(behavior: String) -> void:
 		EventBus.pet_scanning_changed.emit("done")
 		await get_tree().create_timer(5.0).timeout
 		EventBus.pet_scanning_changed.emit("idle")
+	elif behavior == "_free_roam":
+		# 攀升测试: 生成透明踏板并连续跳跃
+		EventBus.trigger_free_roam.emit()
 	elif behavior.begins_with("_icon:"):
 		# 图标指令: 显示 5 秒后自动隐藏
 		var icon_type = behavior.substr(6)  # 截取 "_icon:" 后的类型名

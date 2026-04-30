@@ -21,6 +21,9 @@ func enter() -> void:
 		_drag_time = 0.0
 		_init_mouse_pos = pet.get_global_mouse_position()
 		_init_pet_pos = pet.global_position
+		# 中断正在进行的攀升/下降 (拖拽打断自由移动)
+		if pet._roam_active:
+			pet._roam_finish()
 		EventBus.drag_started.emit()
 
 func process(delta: float) -> void:

@@ -28,6 +28,10 @@ func exit() -> void:
 func process(delta: float) -> void:
 	idle_timer += delta
 	
+	# ── 空间跳跃活跃时锁定 idle 状态，不做任何转换 ──
+	if pet._roam_active:
+		return
+	
 	# ── 安静模式位置锁定：持续微校正物理漂移 ──
 	if pet.behavior_mode == 1 and pet.has_meta("retreat_target_x"):
 		var target_x: float = pet.get_meta("retreat_target_x")
@@ -58,6 +62,10 @@ func process(delta: float) -> void:
 			idle_timer = 0.0
 			idle_duration = randf_range(1.5, 3.0)
 			return
+		# 空间跳跃: 小概率触发透明踏板攀升 (优先于常规移动)
+		if pet.free_roam_enabled and not pet._roam_active and randf() < 0.06:
+			pet._start_free_roam()
+			return
 		# 根据步态风格调整 walk/jump 概率
 		var jump_chance: float
 		match pet.move_style:
@@ -72,6 +80,10 @@ func process(delta: float) -> void:
 
 func physics_process(delta: float) -> void:
 	if not pet: return
+	
+	# 空间跳跃活跃时由 roam 系统完全接管，跳过所有辅助行为
+	if pet._roam_active:
+		return
 	
 	# 检查是否还在空中
 	if not pet.is_settled():

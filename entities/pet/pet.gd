@@ -12,6 +12,7 @@ var current_state_name: String = ""
 var speed: float = 200.0            # 移动速度基数
 var move_style: int = 0              # 步态风格: 0=蹦跳为主, 1=滚动为主, 2=混合平衡
 var stroll_enabled: bool = true      # 自主巡航特殊事件开关 (独立于步态)
+var free_roam_enabled: bool = false   # 空间跳跃开关 (透明踏板攀升)
 var anti_gravity: bool = false       # 反重力模式
 var gravity_sign: float = 1.0        # 重力方向符号 (1.0=正常, -1.0=反转)
 
@@ -116,6 +117,7 @@ func _ready() -> void:
 	pet_effects.effect_color_mode = SettingsManager.get_int("effect_color_mode", 0)
 	move_style = SettingsManager.get_int("move_style", 0)
 	stroll_enabled = SettingsManager.get_bool("stroll", true)
+	free_roam_enabled = SettingsManager.get_bool("free_roam", false)
 	var ag = SettingsManager.get_bool("anti_gravity", false)
 	_set_anti_gravity(ag)
 	# HUD 组件状态恢复 (仅原体)
@@ -134,6 +136,7 @@ func _ready() -> void:
 	EventBus.behavior_mode_changed.connect(_on_behavior_mode_changed)
 	EventBus.pet_color_changed.connect(_on_pet_color_changed)
 	EventBus.trigger_idle_behavior.connect(_on_trigger_idle_behavior)
+	EventBus.trigger_free_roam.connect(_on_trigger_free_roam)
 	EventBus.pet_scanning_changed.connect(_on_pet_scanning_changed)
 	EventBus.pet_show_eye_icon.connect(_on_pet_show_eye_icon)
 
@@ -152,6 +155,8 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		move_style = SettingsManager.get_int("move_style", 0)
 	elif setting_id == "stroll":
 		stroll_enabled = is_on
+	elif setting_id == "free_roam":
+		free_roam_enabled = is_on
 	elif setting_id == "anti_gravity":
 		_set_anti_gravity(is_on)
 	elif setting_id == "hud_clock":
@@ -274,6 +279,381 @@ func _set_anti_gravity(on: bool) -> void:
 	# 给一个初始推力让宠物快速飞向目标 (开启→向天花板, 关闭→向地板)
 	apply_central_impulse(Vector2(0, gravity_sign * 300.0))
 
+# ── 自由移动 (透明踏板跳跃) ──
+# 机制: 宠物先跳 → 顶点时踏板接住 → 落稳后继续跳 → 电梯式缓降归位
+
+var _roam_platforms: Array[Node] = []  # 当前活跃的踏板
+var _roam_active: bool = false         # 是否正在攀升/下降
+var _roam_jumps_left: int = 0          # 剩余跳跃次数 (上升)
+var _roam_phase: int = 0               # 0=空闲, 1=上升等顶点, 2=等落稳, 3=电梯下降中
+var _roam_was_rising: bool = false     # 是否曾上升 (检测顶点用)
+var _roam_airtime: float = 0.0        # 空中计时
+var _roam_descending: bool = false     # 是否在下降阶段
+var _roam_elevator: StaticBody2D = null  # 电梯踏板引用
+
+const PLATFORM_WIDTH := 150.0          # 踏板宽度 (足够站稳)
+const ELEVATOR_SPEED := 100.0          # 电梯下降速度 (px/s)
+
+func _on_trigger_free_roam() -> void:
+	if is_clone:
+		return
+	if _roam_active:
+		return
+	_start_free_roam()
+
+func _start_free_roam() -> void:
+	_roam_active = true
+	_roam_jumps_left = randi_range(2, 4)
+	_roam_phase = 0
+	_roam_descending = false
+	_roam_elevator = null
+	
+	# 锁定到 idle 状态 (中断 walk/jump 等行为，防止状态机冲突)
+	if current_state != states.get("idle"):
+		transition_to("idle")
+	
+	# 显示启动话术
+	var lines := [
+		"检测到垂直空间...启动攀升协议。",
+		"切换至纵向移动模式。",
+		"计算跳跃路径...执行。",
+		"重力场分析完毕。开始移动。",
+	]
+	show_local_bubble(lines[randi() % lines.size()])
+	
+	# 第一跳
+	_roam_do_jump()
+
+func _roam_do_jump() -> void:
+	if _roam_jumps_left <= 0:
+		_roam_begin_descent()
+		return
+	
+	_roam_jumps_left -= 1
+	_roam_phase = 1  # 上升中，等待顶点
+	_roam_was_rising = false
+	_roam_airtime = 0.0
+	
+	# 随机跳跃方向
+	var hop_dir = [-1.0, 1.0].pick_random()
+	var x = global_position.x
+	var w = boundary_size.x
+	if x < 150.0: hop_dir = 1.0
+	elif x > w - 150.0: hop_dir = -1.0
+	
+	# 较大的跳跃冲量 (比普通 jump 更高)
+	var vy = randf_range(700.0, 1000.0) * -gravity_sign
+	var vx = hop_dir * randf_range(100.0, 250.0)
+	
+	linear_damp = 0.2
+	angular_damp = 0.6
+	apply_central_impulse(Vector2(vx, vy))
+	apply_torque_impulse(hop_dir * randf_range(3000.0, 8000.0))
+	
+	# 瞳孔看向跳跃方向
+	eye_behavior.forced_look_dir = Vector2(hop_dir, -gravity_sign).normalized()
+
+## 每帧检测攀升/下降状态
+func _roam_update(_delta: float) -> void:
+	if not _roam_active or _roam_phase == 0:
+		return
+	
+	if _roam_phase == 1:
+		# ── 阶段 1: 上升中，检测抛物线顶点 ──
+		_roam_airtime += _delta
+		var vy = linear_velocity.y * gravity_sign  # 标准化: 正=下落, 负=上升
+		
+		if vy < -30.0:
+			_roam_was_rising = true
+		
+		if _roam_was_rising and vy > -20.0 and _roam_airtime > 0.15:
+			# 到达顶点! 生成踏板 + 立即制动
+			var platform_y = global_position.y + (PET_RADIUS) * gravity_sign
+			_spawn_step_platform(Vector2(global_position.x, platform_y))
+			_roam_brake()  # 制动防滚落
+			_roam_phase = 2
+	
+	elif _roam_phase == 2:
+		# ── 阶段 2: 上升踏板已生成，等宠物落稳 ──
+		if is_settled():
+			_roam_full_stop()  # 完全刹车
+			_roam_phase = 0
+			_roam_pause_then_jump()
+	
+	elif _roam_phase == 3:
+		# ── 阶段 3: 电梯下降中 ──
+		if not is_instance_valid(_roam_elevator):
+			_roam_finish()
+			return
+		
+		# 缓慢移动电梯踏板
+		_roam_elevator.position.y += ELEVATOR_SPEED * _delta * gravity_sign
+		
+		# 直接锁定宠物到踏板正上方 (刚性跟随，无延迟)
+		var target_y = _roam_elevator.position.y - PET_RADIUS * gravity_sign
+		global_position.y = target_y
+		linear_velocity.y = 0  # 清零垂直速度，防止物理漂移
+		# 水平方向柔性居中
+		var drift = global_position.x - _roam_elevator.position.x
+		if absf(drift) > 3.0:
+			global_position.x = lerpf(global_position.x, _roam_elevator.position.x, 6.0 * _delta)
+		# 阻尼: 保持宠物稳定不晃动
+		linear_velocity.x *= 0.8
+		angular_velocity *= 0.85
+		
+		# 检查是否接近地面
+		var ground_y = boundary_size.y if not anti_gravity else 0.0
+		var dist = absf(_roam_elevator.position.y - ground_y)
+		
+		if dist < 20.0:
+			# 接近地面: 踏板渐隐，宠物自然着地
+			linear_damp = 0.5
+			angular_damp = 0.8
+			_roam_phase = 0
+			# 渐隐电梯踏板
+			var elevator = _roam_elevator
+			_roam_elevator = null
+			var tween = elevator.create_tween()
+			tween.tween_property(elevator, "modulate:a", 0.0, 0.5)
+			tween.finished.connect(func():
+				if is_instance_valid(elevator):
+					_roam_platforms.erase(elevator)
+					elevator.queue_free()
+			)
+			_roam_finish()
+
+## 着陆制动: 大幅衰减速度防止滚落
+func _roam_brake() -> void:
+	linear_velocity.x *= 0.15
+	angular_velocity *= 0.1
+	linear_damp = 4.0
+	angular_damp = 6.0
+
+## 完全刹车: 落稳后彻底停住
+func _roam_full_stop() -> void:
+	linear_velocity.x = 0
+	angular_velocity = 0
+	linear_damp = 5.0
+	angular_damp = 8.0
+
+func _roam_pause_then_jump() -> void:
+	await get_tree().create_timer(0.8).timeout
+	if not _roam_active:
+		return
+	if _roam_jumps_left > 0:
+		_roam_do_jump()
+	else:
+		_roam_begin_descent()
+
+# ── 电梯式下降 ──
+
+func _roam_begin_descent() -> void:
+	# 清除所有残留的上升踏板
+	_roam_clear_platforms()
+	
+	# 计算距离地面还有多远
+	var ground_y = boundary_size.y if not anti_gravity else 0.0
+	var dist_to_ground = absf(global_position.y - ground_y)
+	
+	if dist_to_ground < 120.0:
+		_roam_finish()
+		return
+	
+	_roam_descending = true
+	
+	# 下降话术
+	var lines := [
+		"高度数据已记录。执行安全着陆程序。",
+		"启动减速下降...逐级归位。",
+		"重力辅助着陆协议启动。",
+	]
+	show_local_bubble(lines[randi() % lines.size()])
+	
+	# 等宠物稳定后生成电梯踏板
+	await get_tree().create_timer(0.6).timeout
+	if not _roam_active:
+		return
+	
+	# 完全停住宠物
+	_roam_full_stop()
+	gravity_scale = 0.0  # 下降期间关闭重力 (由电梯踏板带动)
+	
+	# 在脚下生成电梯踏板 (不走定时销毁)
+	var platform_y = global_position.y + PET_RADIUS * gravity_sign
+	var elevator = _spawn_step_platform(Vector2(global_position.x, platform_y), true)
+	_roam_elevator = elevator
+	
+	# 瞳孔朝下看
+	eye_behavior.forced_look_dir = Vector2(0, gravity_sign)
+	
+	_roam_phase = 3  # 开始电梯下降
+
+func _roam_finish() -> void:
+	_roam_active = false
+	_roam_phase = 0
+	_roam_jumps_left = 0
+	_roam_descending = false
+	# 恢复重力
+	gravity_scale = gravity_sign
+	# 清理电梯引用
+	_roam_elevator = null
+	eye_behavior.forced_look_dir = Vector2.ZERO
+
+## 快速清除所有残留踏板 (0.3秒渐隐)
+func _roam_clear_platforms() -> void:
+	for body in _roam_platforms:
+		if is_instance_valid(body):
+			var tween = body.create_tween()
+			tween.tween_property(body, "modulate:a", 0.0, 0.3)
+			tween.finished.connect(func():
+				if is_instance_valid(body):
+					body.queue_free()
+			)
+	_roam_platforms.clear()
+
+func _spawn_step_platform(pos: Vector2, is_elevator: bool = false) -> StaticBody2D:
+	var parent = get_parent()
+	if not parent:
+		return null
+	
+	var platform_thickness := 8.0
+	
+	# 物理碰撞体
+	var body = StaticBody2D.new()
+	body.position = pos
+	
+	var col = CollisionShape2D.new()
+	var shape = RectangleShape2D.new()
+	shape.size = Vector2(PLATFORM_WIDTH, platform_thickness)
+	col.shape = shape
+	col.one_way_collision = true  # 单向碰撞: 只能从下往上踩
+	# 反重力时翻转单向碰撞方向
+	if anti_gravity:
+		col.rotation = PI
+	body.add_child(col)
+	
+	# 视觉渲染节点
+	var visual = _PlatformVisual.new()
+	visual.platform_width = PLATFORM_WIDTH
+	visual.platform_color = palette.shift_color(Color(0.2, 0.6, 1.0, 0.6))
+	body.add_child(visual)
+	
+	parent.add_child(body)
+	_roam_platforms.append(body)
+	
+	# 淡入动画
+	body.modulate.a = 0.0
+	var tween = body.create_tween()
+	tween.tween_property(body, "modulate:a", 1.0, 0.15)
+	
+	# 电梯踏板不走定时销毁 (由电梯逻辑自行管理)
+	if not is_elevator:
+		_schedule_platform_removal(body, 3.5)
+	
+	return body
+
+func _schedule_platform_removal(body: Node, delay: float) -> void:
+	await get_tree().create_timer(delay).timeout
+	if is_instance_valid(body):
+		var tween = body.create_tween()
+		tween.tween_property(body, "modulate:a", 0.0, 0.8)
+		tween.finished.connect(func():
+			if is_instance_valid(body):
+				_roam_platforms.erase(body)
+				body.queue_free()
+		)
+
+## 踏板视觉渲染 (科技风能量平台)
+## 特效: 从中心向两端展开 + 刻度线 + 能量流动 + 着陆闪光
+class _PlatformVisual extends Node2D:
+	var platform_width: float = 120.0
+	var platform_color: Color = Color(0.2, 0.6, 1.0, 0.6)
+	var _time: float = 0.0
+	var _expand: float = 0.0          # 展开进度 0→1
+	var _land_flash: float = 0.0      # 着陆闪光强度
+	var _landed: bool = false         # 已检测到着陆
+	
+	func _process(delta: float) -> void:
+		_time += delta
+		# 展开动画: 0.3 秒从中心展开到全宽
+		_expand = minf(_expand + delta / 0.3, 1.0)
+		# 着陆闪光衰减
+		if _land_flash > 0.0:
+			_land_flash = maxf(_land_flash - delta * 3.0, 0.0)
+		# 着陆检测: 踏板存在 0.4 秒后，如果父节点(body)被碰撞到会产生微振
+		# 简化方案: 超过展开期后检测一次
+		if not _landed and _time > 0.35:
+			_landed = true
+			_land_flash = 1.0  # 接住时闪一下
+		queue_redraw()
+	
+	func _draw() -> void:
+		var expand_ease = _ease_out_quad(_expand)
+		var hw = platform_width / 2.0 * expand_ease  # 展开后的半宽
+		if hw < 1.0:
+			return
+		
+		var pulse = 0.85 + sin(_time * TAU / 2.5) * 0.15  # 呼吸脉冲
+		var flash_boost = _land_flash * 0.4  # 着陆时整体提亮
+		var c = Color(
+			minf(platform_color.r + flash_boost, 1.0),
+			minf(platform_color.g + flash_boost, 1.0),
+			minf(platform_color.b + flash_boost * 0.5, 1.0),
+			platform_color.a * pulse
+		)
+		
+		# ── 外发光层 (最宽最透明) ──
+		var glow_outer = Color(c.r, c.g, c.b, c.a * 0.15)
+		draw_line(Vector2(-hw, 0), Vector2(hw, 0), glow_outer, 12.0, true)
+		
+		# ── 中发光层 ──
+		var glow = Color(c.r, c.g, c.b, c.a * 0.3)
+		draw_line(Vector2(-hw, 0), Vector2(hw, 0), glow, 6.0, true)
+		
+		# ── 主光线 (核心细线) ──
+		draw_line(Vector2(-hw, 0), Vector2(hw, 0), c, 2.0, true)
+		
+		# ── 刻度线标记 (科技感细节) ──
+		var tick_c = Color(c.r, c.g, c.b, c.a * 0.5)
+		var tick_count = 5
+		for i in range(tick_count):
+			var t = float(i + 1) / float(tick_count + 1)
+			var tx = lerpf(-hw, hw, t)
+			draw_line(Vector2(tx, -3.0), Vector2(tx, 3.0), tick_c, 1.0, true)
+		
+		# ── 两端光点 (发散圆) ──
+		var dot_c = Color(c.r, c.g, c.b, c.a * 0.9)
+		draw_circle(Vector2(-hw, 0), 3.5, dot_c, true, -1.0, true)
+		draw_circle(Vector2(hw, 0), 3.5, dot_c, true, -1.0, true)
+		# 端点外圈光晕
+		var halo_c = Color(c.r, c.g, c.b, c.a * 0.25)
+		draw_circle(Vector2(-hw, 0), 6.0, halo_c, true, -1.0, true)
+		draw_circle(Vector2(hw, 0), 6.0, halo_c, true, -1.0, true)
+		
+		# ── 中心能量核心 ──
+		var core_c = Color(minf(c.r + 0.3, 1.0), minf(c.g + 0.3, 1.0), 1.0, c.a * 0.7)
+		draw_circle(Vector2.ZERO, 2.5, core_c, true, -1.0, true)
+		
+		# ── 能量流动粒子 (两个光点沿线来回移动) ──
+		if expand_ease > 0.8:
+			var particle_a = c.a * 0.7
+			var p1_t = fmod(_time * 0.6, 1.0)  # 从左到右
+			var p2_t = fmod(_time * 0.6 + 0.5, 1.0)  # 半周期偏移
+			var p1_x = lerpf(-hw * 0.9, hw * 0.9, p1_t)
+			var p2_x = lerpf(-hw * 0.9, hw * 0.9, p2_t)
+			var p_color = Color(minf(c.r + 0.2, 1.0), minf(c.g + 0.2, 1.0), 1.0, particle_a)
+			draw_circle(Vector2(p1_x, 0), 2.0, p_color, true, -1.0, true)
+			draw_circle(Vector2(p2_x, 0), 2.0, p_color, true, -1.0, true)
+		
+		# ── 着陆闪光环 (接住宠物时向外扩散) ──
+		if _land_flash > 0.01:
+			var ring_r = hw * (1.0 + (1.0 - _land_flash) * 0.3)
+			var ring_c = Color(c.r, c.g, c.b, _land_flash * 0.6)
+			draw_arc(Vector2.ZERO, ring_r, 0, TAU, 24, ring_c, 1.5, true)
+	
+	func _ease_out_quad(t: float) -> float:
+		return 1.0 - (1.0 - t) * (1.0 - t)
+
 
 # ── 戳一戳委托 ──
 
@@ -295,6 +675,7 @@ func _process(delta: float) -> void:
 	eye_behavior.update(delta)
 	var has_visual_change = pet_effects.update(delta)
 	idle_behaviors.update(delta)
+	_roam_update(delta)
 	
 	# 按需重绘：特效活跃 / 物理运动中 / 眼球动画播放中
 	if has_visual_change or linear_velocity.length() > 1.0 or eye_behavior.is_animating():
