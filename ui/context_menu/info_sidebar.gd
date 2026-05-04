@@ -126,20 +126,24 @@ func update_position(hud: PanelContainer) -> void:
 	if not panel.visible:
 		return
 	var info_w = panel.size.x if panel.size.x > 0 else 120.0
+	var info_h = panel.size.y if panel.size.y > 0 else 200.0
+	var vp = _menu.get_viewport().get_visible_rect().size
 	var gap := 4.0
 	var x: float
 	if _menu._menu_side == 1:
-		# 菜单在宠物右侧 → 侧栏优先放菜单左边
+		# 菜单在宠物右侧 → 侧栏放菜单更右侧 (远离宠物)
+		x = hud.position.x + hud.size.x + gap
+		if x + info_w > vp.x - 4.0:
+			# 放不下再退回菜单左边
+			x = hud.position.x - info_w - gap
+	else:
+		# 菜单在宠物左侧 → 侧栏放菜单更左侧 (远离宠物)
 		x = hud.position.x - info_w - gap
 		if x < 4.0:
 			x = hud.position.x + hud.size.x + gap
-	else:
-		# 菜单在宠物左侧 → 侧栏优先放菜单右边
-		x = hud.position.x + hud.size.x + gap
-		var vp_w = _menu.get_viewport().get_visible_rect().size.x
-		if x + info_w > vp_w - 4.0:
-			x = hud.position.x - info_w - gap
-	panel.position = Vector2(x, hud.position.y)
+	# Y 坐标: 与菜单对齐，但限制在屏幕范围内
+	var y = clampf(hud.position.y, 4.0, vp.y - info_h - 4.0)
+	panel.position = Vector2(x, y)
 
 # ── 异步查询 ──
 
