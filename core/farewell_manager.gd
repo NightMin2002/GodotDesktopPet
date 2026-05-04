@@ -158,13 +158,6 @@ func quit_with_farewell() -> void:
 		_main.pet_instance.freeze = true
 		
 		var tween = animate_exit(_main.pet_instance)
-		_main.pet_instance.overlay_rect = Rect2()
-		# 气泡同步淡出
-		for child in _main.get_children():
-			if child.has_method("is_busy"):
-				for sub in child.get_children():
-					if sub is PanelContainer and sub.visible:
-						tween.tween_property(sub, "modulate:a", 0.0, 0.7)
 		tween.chain().tween_callback(func(): get_tree().quit())
 		return
 	
