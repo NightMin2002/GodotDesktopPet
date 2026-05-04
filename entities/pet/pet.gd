@@ -36,6 +36,7 @@ var pet_effects: PetEffects
 var screen_rect: Rect2i
 var boundary_size: Vector2  # 视口坐标系的实际边界
 var last_frame_speed: float = 0.0 # 用于捕获撞击前瞬时速度
+var last_frame_velocity: Vector2 = Vector2.ZERO # 用于捕获撞击前速度方向
 var overlay_rect: Rect2 = Rect2() # 外部覆盖层的屏幕区域 (气泡通知等)
 
 
@@ -352,11 +353,12 @@ func _physics_process(delta: float) -> void:
 	
 	# 记录本帧物理速度，如果下帧发生撞击，就是参考依据
 	last_frame_speed = linear_velocity.length()
+	last_frame_velocity = linear_velocity
 
 func _on_body_entered(_body: Node) -> void:
-	# 弹性形变: 利用碰撞信号 + 碰撞前速度直接驱动弹簧
-	if squash.enabled:
-		squash.apply_impact(linear_velocity, last_frame_speed)
+	# 弹性形变: 拖拽中不触发 (沿地面拖拽会频繁接触/脱离地面)
+	if squash.enabled and current_state_name != "drag":
+		squash.apply_impact(last_frame_velocity, last_frame_speed)
 	# 只有获得极高动量猛烈砸在底盘或者墙壁时，才激荡出强大的火花
 	if pet_effects.shockwave_enabled and last_frame_speed > 350.0:
 		trigger_shockwave()
@@ -511,10 +513,7 @@ func _draw() -> void:
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 
 func _on_trigger_squash_test(squash_style: int) -> void:
-	if is_clone:
-		return
 	if squash_style < 0:
-		# 关闭弹性形变
 		squash.enabled = false
 	else:
 		squash.style = squash_style

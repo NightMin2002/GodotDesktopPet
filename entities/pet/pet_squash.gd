@@ -19,11 +19,13 @@ var style: int = 0  # 0=轻弹, 1=果冻, 2=弹力球
 var _deform: float = 0.0      # 形变量 (负=压扁, 正=拉伸)
 var _velocity: float = 0.0    # 形变速度
 var _squash_axis: int = 1     # 压扁方向: 0=水平(撞墙), 1=垂直(落地)
+var _cooldown: float = 0.0    # 同轴碰撞冷却 (秒), 防止弹地连续重置
+var _last_impact: float = 0.0 # 上次碰撞的强度
 
 # ── 风格参数 ──
 # stiffness: 弹簧刚度 (越大恢复越快)
 # damping: 阻尼系数 (越大振荡越少)
-# max_deform: 最大冲击时的目标压扁量 (0.12 = 12%压扁)
+# max_deform: 最大冲击时的目标压扁量 (0.18 = 18%压扁)
 const STYLES := [
 	# 轻弹: 快恢复 + 适度阻尼 → 自然柔弹，2-3次振荡
 	{"stiffness": 280.0, "damping": 13.0, "max_deform": 0.18},
@@ -34,31 +36,34 @@ const STYLES := [
 ]
 
 ## 碰撞事件驱动: 由 pet.gd 的 _on_body_entered 调用
-## velocity: 碰撞后的当前速度
-## pre_speed: 碰撞前一帧的速度大小
-func apply_impact(velocity: Vector2, pre_speed: float) -> void:
+## pre_velocity: 碰撞前一帧的速度向量 (方向判断依据)
+## pre_speed: 碰撞前一帧的速度大小 (冲击强度依据)
+func apply_impact(pre_velocity: Vector2, pre_speed: float) -> void:
 	if not enabled or pre_speed < 80.0:
 		return
 	
 	var params = STYLES[style]
+	var impact = clampf(pre_speed / 800.0, 0.15, 1.0)
 	
-	# 碰撞方向判断: 碰撞后速度分量比例
-	var vx = absf(velocity.x)
-	var vy = absf(velocity.y)
+	# 碰撞方向判断: 用碰撞前速度分量比例
+	var vx = absf(pre_velocity.x)
+	var vy = absf(pre_velocity.y)
 	var total = vx + vy + 0.01
 	var h_ratio = vx / total
+	var new_axis = 0 if h_ratio > 0.6 else 1
 	
-	if h_ratio > 0.6:
-		_switch_axis(0)  # 水平碰撞 → 压扁 X
-	else:
-		_switch_axis(1)  # 垂直碰撞 → 压扁 Y
+	# 冷却保护: 仅拦截同一轴上的弱碰撞 (防止弹地连续重置)
+	# 不同轴碰撞永远放行 (撞墙→落地应自然切换到地面形变)
+	if _cooldown > 0.0 and new_axis == _squash_axis and impact < _last_impact * 0.7:
+		return
+	_cooldown = 0.15
+	_last_impact = impact
 	
-	# 冲击强度: 碰撞前速度映射到 [0, 1]
-	var impact = clampf(pre_speed / 800.0, 0.15, 1.0)
+	_switch_axis(new_axis)
+	
 	# 目标压扁量
 	var target = impact * params.max_deform
 	# 物理学正确的初速度: v₀ = target × ω (ω = √k 是弹簧自然频率)
-	# 这样弹簧恰好能达到 target 的形变量
 	_velocity -= target * sqrt(params.stiffness)
 
 ## 每帧更新，返回 true 表示有视觉变化需要重绘
@@ -77,6 +82,11 @@ func update(delta: float) -> bool:
 	
 	# ── 弹簧阻尼器积分 ──
 	var params = STYLES[style]
+	
+	# 冷却计时器递减
+	if _cooldown > 0.0:
+		_cooldown -= delta
+	
 	var spring_force = -params.stiffness * _deform
 	var damping_force = -params.damping * _velocity
 	var acceleration = spring_force + damping_force
