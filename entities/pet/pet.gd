@@ -532,7 +532,9 @@ func _draw_body(world_offset: Vector2) -> void:
 	if drowsy > 0.01 and iris_scale > 0.05 and is_shutter:
 		var sclera_r = PET_RADIUS * 0.54 * iris_scale
 		var plate_color = palette.shift_color(Color(0.10, 0.15, 0.38, 1.0))
-		_draw_eye_shutter(sclera_r, sclera_r * drowsy * 1.5, true, plate_color)
+		# 正常: 挡板从屏幕顶部向下合拢 (自然闭眼)
+		# 反重力: 挡板从屏幕底部向上合拢 (宠物"站在天花板上"闭眼, 而非悬挂耷拉)
+		_draw_eye_shutter(sclera_r, sclera_r * drowsy * 1.5, not anti_gravity, plate_color)
 
 func _on_trigger_squash_test(squash_style: int) -> void:
 	if squash_style < 0:
@@ -576,8 +578,12 @@ func _draw_eye_shutter(radius: float, close_px: float, is_top: bool, color: Colo
 		# 从左交点出发，沿圆弧走下半圆到右交点
 		var angle_l = atan2(flat_y, -dx)
 		var angle_r = atan2(flat_y, dx)
-		# 下半圆: 从 angle_l 经过 PI/2 (底部) 到 angle_r
+		# 下半圆: 从 angle_l 经过 PI/2 (Godot Y轴向下=下方) 到 angle_r
+		# span 必须为负值: 递减方向经过 PI/2, 覆盖下半圆
+		# (close_px > radius 时 flat_y 变负, span 会翻正, 需修正回负值)
 		var span = angle_r - angle_l
+		if span > 0:
+			span -= TAU
 		for i in range(arc_steps + 1):
 			var t = float(i) / float(arc_steps)
 			var a = angle_l + span * t

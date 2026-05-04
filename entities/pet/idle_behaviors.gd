@@ -236,13 +236,17 @@ func _enter_hibernate() -> void:
 	match hibernate_style:
 		0:  # 挡板半闭
 			pet.eye_behavior.start_drowsy(0.6)
-			pet.eye_behavior.forced_look_dir = Vector2(0, 1)
+			pet.eye_behavior.forced_look_dir = Vector2(0, pet.gravity_sign)
 		1, 2:  # 加载指示 / 电池图标: 抑制眨眼即可
 			pet.eye_behavior._drowsy_target = 0.35
 	# 增大阻尼，让它"沉下去"
 	pet.linear_damp = 3.0
 	pet.angular_damp = 5.0
 	pet.angular_velocity = 0.0  # 立即停止旋转
+	# 锁定旋转 + 设置目标角度, 避免 _process 中赋值 rotation 与物理引擎打架
+	var rest_rot = PI if pet.anti_gravity else 0.0
+	pet.rotation = rest_rot
+	pet.lock_rotation = true
 
 func _update_hibernate(_delta: float) -> void:
 	# ── 唤醒条件 ──
@@ -256,8 +260,8 @@ func _update_hibernate(_delta: float) -> void:
 			return
 	
 	match _hibernate_phase:
-		0:  # 进入阶段: 等虹膜收缩完毕 (~1.5s) + 身体回正
-			pet.rotation = lerpf(pet.rotation, 0.0, _delta * 3.0)
+		0:  # 进入阶段: 等虹膜收缩完毕 (~1.5s)
+			# rotation 已在 _enter_hibernate 中锁定, 无需每帧 lerp
 			if _behavior_timer > 1.5:
 				_hibernate_phase = 1
 				_behavior_timer = 0.0
@@ -266,7 +270,7 @@ func _update_hibernate(_delta: float) -> void:
 					_hibernate_bubble_shown = true
 					pet.show_local_bubble(_pick(HIBERNATE_ENTER_LINES))
 		1:  # 持续阶段: 无限期等待，直到唤醒条件满足
-			pet.rotation = lerpf(pet.rotation, 0.0, _delta * 3.0)
+			# rotation 已锁定, 无需每帧 lerp
 			if hibernate_style == 0:
 				# 挡板呼吸
 				pet.eye_behavior._drowsy_target = 0.6 + sin(_behavior_timer * TAU / 5.0) * 0.12
@@ -311,6 +315,7 @@ func _cancel_current() -> void:
 			pet.eye_behavior.forced_look_dir = Vector2.ZERO
 			pet.linear_damp = 0.8
 			pet.angular_damp = 1.0
+			pet.lock_rotation = false  # 解锁旋转
 		"scan":
 			pet.eye_behavior.stop_scan()
 	active_behavior = ""

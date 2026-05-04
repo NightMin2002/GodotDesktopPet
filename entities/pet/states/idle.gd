@@ -87,8 +87,8 @@ func physics_process(delta: float) -> void:
 	if pet._roam_active:
 		return
 	
-	# 检查是否还在空中
-	if not pet.is_settled():
+	# 检查是否还在空中 (休眠活跃时跳过: rotation lerp 可能产生微小扰动)
+	if not pet.idle_behaviors.is_active() and not pet.is_settled():
 		pet.transition_to("fall")
 		return
 	
