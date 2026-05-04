@@ -72,6 +72,7 @@ func show_for(btn: Button, text: String, show: bool) -> void:
 	if show:
 		_active_btn = btn
 		_label.text = text
+		panel.reset_size()  # 强制重算尺寸适配当前文字
 		panel.modulate.a = 0.0
 		panel.scale = Vector2(0.7, 0.7)
 		panel.show()
