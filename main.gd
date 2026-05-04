@@ -81,6 +81,7 @@ func _ready() -> void:
 	_setup_reminder_system()
 	_setup_pet_chatter()
 	_setup_theme_panel()
+	_setup_platform_style_panel()
 	
 	# 恢复 UI 主题色
 	var saved_ui_hue = SettingsManager.get_ui_hue()
@@ -273,6 +274,13 @@ func _setup_theme_panel() -> void:
 		var theme_node = CanvasLayer.new()
 		theme_node.set_script(theme_script)
 		add_child(theme_node)
+
+func _setup_platform_style_panel() -> void:
+	var script = load("res://ui/platform_style_panel.gd")
+	if script:
+		var node = CanvasLayer.new()
+		node.set_script(script)
+		add_child(node)
 
 # ── 宠物碎碎念 ──
 

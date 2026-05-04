@@ -43,6 +43,7 @@ signal dismiss_clones  # 一键遣散所有分身
 signal pet_color_changed(pet_index: int, hue: float, sat: float, val: float)
 signal ui_theme_changed(hue: float)
 signal show_theme_panel
+signal show_platform_style_panel
 
 ## UI 主题色 Hue (全局可读，默认 0.537 ≈ 当前青色)
 var ui_hue: float = 0.537
