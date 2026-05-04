@@ -24,6 +24,7 @@ var _wifi_refresh_timer: float = 0.0
 var _wifi_pending: String = ""  # 线程安全缓冲区
 var _wifi_pending_connected: bool = false
 var _wifi_has_pending: bool = false  # 原子标志: 后台线程写入, 主线程读取+清除
+var _wifi_in_flight: bool = false   # 并发查询保护: 防止多个 PowerShell 进程同时运行
 const WIFI_REFRESH_INTERVAL := 15.0
 
 var _menu_hidden: bool = false  # 被右键菜单遮挡时临时隐藏
@@ -38,6 +39,7 @@ func init(p: RigidBody2D) -> void:
 	pet = p
 	_build_panel()
 	EventBus.context_menu_toggled.connect(_on_menu_toggled)
+	EventBus.pet_color_changed.connect(_on_pet_color_changed)
 
 func _on_menu_toggled(is_open: bool) -> void:
 	if not _has_any_component():
@@ -132,6 +134,7 @@ func _build_wifi_row(parent: VBoxContainer) -> void:
 	# WiFi 行 — 结构与时钟行对齐: [固定宽标签列] [SSID值]
 	var row = HBoxContainer.new()
 	row.mouse_filter = Control.MOUSE_FILTER_STOP
+	row.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	row.tooltip_text = "点击打开网络设置"
 	row.add_theme_constant_override("separation", 4)
 	row.visible = false
@@ -334,16 +337,22 @@ func _calc_target_pos() -> Vector2:
 
 # ── WiFi 数据 ──
 
+# PowerShell 命令: 获取真实 SSID
+# 1. Get-NetConnectionProfile.Name 返回的是网络配置文件名 (可能带数字后缀如 "MyWiFi 3")
+# 2. netsh wlan show profiles 返回的是真实 SSID (如 "MyWiFi")
+# 3. 用已保存的 SSID 列表反向匹配，找到最长前缀匹配的那个就是真实 SSID
+const _PS_WIFI := "$n=(Get-NetConnectionProfile|?{$_.InterfaceAlias -match 'Wi-Fi|WLAN|Wireless'}|Select -First 1).Name;if($n){$ss=@();(netsh wlan show profiles 2>$null)|%{if($_ -match ' : (.+)$'){$ss+=$Matches[1].Trim()}};foreach($s in ($ss|Sort-Object Length -Desc)){if($n.StartsWith($s)){$n=$s;break}};$n}else{''}"
+
 func _refresh_wifi_async() -> void:
+	if _wifi_in_flight:
+		return  # 上一次查询尚未完成, 跳过
+	_wifi_in_flight = true
 	WorkerThreadPool.add_task(_wifi_worker)
 
 ## 后台线程: 执行 PowerShell 查询 (不在主线程, 零卡顿)
 func _wifi_worker() -> void:
 	var output = []
-	var args = PackedStringArray([
-		"-NoProfile", "-Command",
-		"(Get-NetConnectionProfile | Where-Object {$_.InterfaceAlias -match 'Wi-Fi|WLAN|Wireless'} | Select-Object -First 1).Name"
-	])
+	var args = PackedStringArray(["-NoProfile", "-Command", _PS_WIFI])
 	var code = OS.execute("powershell", args, output, false, false)
 	
 	if code == 0 and output.size() > 0:
@@ -352,15 +361,32 @@ func _wifi_worker() -> void:
 			_wifi_pending = ssid
 			_wifi_pending_connected = true
 			_wifi_has_pending = true
+			_wifi_in_flight = false
 			return
 	
 	_wifi_pending = "未连接"
 	_wifi_pending_connected = false
 	_wifi_has_pending = true
+	_wifi_in_flight = false
 
 func _on_wifi_row_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		OS.shell_open("ms-settings:network-wifi")
+
+# ── 主题色联动 ──
+
+func _on_pet_color_changed(pet_index: int, _hue, _sat, _val) -> void:
+	# 仅响应自己所属宠物的颜色变更
+	if not is_instance_valid(pet) or not is_instance_valid(panel):
+		return
+	var my_index = pet.get_meta("pet_index", 0)
+	if pet_index != my_index:
+		return
+	var style = panel.get_theme_stylebox("panel") as StyleBoxFlat
+	if style:
+		style = style.duplicate()
+		style.border_color = Color.from_hsv(pet.palette.effective_hue(), 0.6, 0.9, 0.7)
+		panel.add_theme_stylebox_override("panel", style)
 
 # ── 命中区域 ──
 

@@ -154,7 +154,8 @@ func query() -> void:
 		_rows["uptime"].text = "..."
 	WorkerThreadPool.add_task(_sysinfo_task)
 
-const _PS_SIDEBAR := "$w=(Get-NetConnectionProfile|Where-Object{$_.InterfaceAlias -match 'Wi-Fi|WLAN|Wireless'}|Select-Object -First 1).Name;if(!$w){$w='N/A'};$b=Get-CimInstance Win32_Battery;if($b){$bp=$b.EstimatedChargeRemaining.ToString()+'%';if($b.BatteryStatus-eq 2){$bp+=' ⚡'}}else{$bp='无电池'};Write-Host wifi=$w;Write-Host battery=$bp;$cl=(Get-CimInstance Win32_Processor|Select-Object -First 1).LoadPercentage;Write-Host cpu=$cl%;$os=Get-CimInstance Win32_OperatingSystem;$ru=[math]::Round(($os.TotalVisibleMemorySize-$os.FreePhysicalMemory)*100/$os.TotalVisibleMemorySize);Write-Host ram=$ru%"
+# WiFi SSID 修正: .Name 返回配置文件名(可能带数字后缀), 需用 netsh wlan show profiles 反向匹配真实 SSID
+const _PS_SIDEBAR := "$w=(Get-NetConnectionProfile|?{$_.InterfaceAlias -match 'Wi-Fi|WLAN|Wireless'}|Select -First 1).Name;if($w){$ss=@();(netsh wlan show profiles 2>$null)|%{if($_ -match ' : (.+)$'){$ss+=$Matches[1].Trim()}};foreach($s in ($ss|Sort-Object Length -Desc)){if($w.StartsWith($s)){$w=$s;break}}}else{$w='N/A'};$b=Get-CimInstance Win32_Battery;if($b){$bp=$b.EstimatedChargeRemaining.ToString()+'%';if($b.BatteryStatus-eq 2){$bp+=' ⚡'}}else{$bp='无电池'};Write-Host wifi=$w;Write-Host battery=$bp;$cl=(Get-CimInstance Win32_Processor|Select-Object -First 1).LoadPercentage;Write-Host cpu=$cl%;$os=Get-CimInstance Win32_OperatingSystem;$ru=[math]::Round(($os.TotalVisibleMemorySize-$os.FreePhysicalMemory)*100/$os.TotalVisibleMemorySize);Write-Host ram=$ru%"
 const _PS_BOOT_TIME := "[int](([DateTimeOffset](Get-CimInstance Win32_OperatingSystem).LastBootUpTime).ToUnixTimeSeconds())"
 
 func _sysinfo_task() -> void:
