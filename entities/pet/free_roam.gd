@@ -50,6 +50,7 @@ func finish() -> void:
 	pet.gravity_scale = pet.gravity_sign
 	_elevator = null
 	_current_plat = null
+	pet.physics_material_override.friction = 0.6  # 确保摩擦力恢复
 	pet.eye_behavior.forced_look_dir = Vector2.ZERO
 
 ## 每帧更新 (由 pet._process 调用)
@@ -301,12 +302,6 @@ func _begin_descent() -> void:
 
 # ── 物理辅助 ──
 
-func _brake() -> void:
-	pet.linear_velocity.x *= 0.5   # 柔和减速，不瘦间停死
-	pet.angular_velocity *= 0.3
-	pet.linear_damp = 1.5          # 较低阻尼，允许自然滑行
-	pet.angular_damp = 3.0
-
 func _full_stop() -> void:
 	pet.linear_velocity.x = 0
 	pet.angular_velocity = 0
@@ -441,7 +436,7 @@ func _shatter_platform(plat: StaticBody2D) -> void:
 		tw.parallel().tween_property(frag, "modulate:a", 0.0, 0.4).set_delay(0.1)
 		tw.finished.connect(frag.queue_free)
 
-# ── 踏板视觉渲染 (科技风能量平台) ──
+# ── 踏板视觉渲染 (多风格) ──
 
 class PlatformVisual extends Node2D:
 	var platform_width: float = 120.0
@@ -451,7 +446,13 @@ class PlatformVisual extends Node2D:
 	var _land_flash: float = 0.0
 	var _landed: bool = false
 	
+	# 风格: -1=随机, 0=能量束, 1=脉冲链, 2=极简
+	static var style: int = 0
+	var _active_style: int = 0  # 实际渲染风格 (随机时每个平台的具体值)
+	
 	func _process(delta: float) -> void:
+		if _time == 0.0:
+			_active_style = randi_range(0, 2) if style < 0 else style
 		_time += delta
 		_expand = minf(_expand + delta / 0.3, 1.0)
 		if _land_flash > 0.0:
@@ -462,31 +463,41 @@ class PlatformVisual extends Node2D:
 		queue_redraw()
 	
 	func _draw() -> void:
-		var expand_ease = _ease_out_quad(_expand)
-		var hw = platform_width / 2.0 * expand_ease
+		var hw = platform_width / 2.0 * _ease_out(_expand)
 		if hw < 1.0:
 			return
 		
 		var pulse = 0.85 + sin(_time * TAU / 2.5) * 0.15
-		var flash_boost = _land_flash * 0.4
+		var flash = _land_flash * 0.4
 		var c = Color(
-			minf(platform_color.r + flash_boost, 1.0),
-			minf(platform_color.g + flash_boost, 1.0),
-			minf(platform_color.b + flash_boost * 0.5, 1.0),
+			minf(platform_color.r + flash, 1.0),
+			minf(platform_color.g + flash, 1.0),
+			minf(platform_color.b + flash * 0.5, 1.0),
 			platform_color.a * pulse
 		)
 		
-		# 外发光层
-		var glow_outer = Color(c.r, c.g, c.b, c.a * 0.15)
-		draw_line(Vector2(-hw, 0), Vector2(hw, 0), glow_outer, 12.0, true)
-		# 中发光层
-		var glow = Color(c.r, c.g, c.b, c.a * 0.3)
-		draw_line(Vector2(-hw, 0), Vector2(hw, 0), glow, 6.0, true)
-		# 主光线
+		match _active_style:
+			0: _draw_energy(hw, c)
+			1: _draw_pulse_chain(hw, c)
+			2: _draw_minimal(hw, c)
+			_: _draw_energy(hw, c)
+		
+		# 着陆闪光环 (所有风格通用)
+		if _land_flash > 0.01:
+			var ring_r = hw * (1.0 + (1.0 - _land_flash) * 0.3)
+			var ring_c = Color(c.r, c.g, c.b, _land_flash * 0.5)
+			draw_arc(Vector2.ZERO, ring_r, 0, TAU, 24, ring_c, 1.5, true)
+	
+	# ── 风格 0: 能量束 ──
+	func _draw_energy(hw: float, c: Color) -> void:
+		# 发光层
+		draw_line(Vector2(-hw, 0), Vector2(hw, 0), Color(c.r, c.g, c.b, c.a * 0.15), 12.0, true)
+		draw_line(Vector2(-hw, 0), Vector2(hw, 0), Color(c.r, c.g, c.b, c.a * 0.3), 6.0, true)
 		draw_line(Vector2(-hw, 0), Vector2(hw, 0), c, 2.0, true)
-		# 刻度线
+		# 自适应刻度线
+		var tick_gap = 20.0
+		var tick_count = clampi(int(hw * 2.0 / tick_gap) - 1, 2, 20)
 		var tick_c = Color(c.r, c.g, c.b, c.a * 0.5)
-		var tick_count = 5
 		for i in range(tick_count):
 			var t = float(i + 1) / float(tick_count + 1)
 			var tx = lerpf(-hw, hw, t)
@@ -498,24 +509,63 @@ class PlatformVisual extends Node2D:
 		var halo_c = Color(c.r, c.g, c.b, c.a * 0.25)
 		draw_circle(Vector2(-hw, 0), 6.0, halo_c, true, -1.0, true)
 		draw_circle(Vector2(hw, 0), 6.0, halo_c, true, -1.0, true)
-		# 中心能量核心
-		var core_c = Color(minf(c.r + 0.3, 1.0), minf(c.g + 0.3, 1.0), 1.0, c.a * 0.7)
-		draw_circle(Vector2.ZERO, 2.5, core_c, true, -1.0, true)
-		# 能量流动粒子
-		if expand_ease > 0.8:
-			var particle_a = c.a * 0.7
-			var p1_t = fmod(_time * 0.6, 1.0)
-			var p2_t = fmod(_time * 0.6 + 0.5, 1.0)
-			var p1_x = lerpf(-hw * 0.9, hw * 0.9, p1_t)
-			var p2_x = lerpf(-hw * 0.9, hw * 0.9, p2_t)
-			var p_color = Color(minf(c.r + 0.2, 1.0), minf(c.g + 0.2, 1.0), 1.0, particle_a)
-			draw_circle(Vector2(p1_x, 0), 2.0, p_color, true, -1.0, true)
-			draw_circle(Vector2(p2_x, 0), 2.0, p_color, true, -1.0, true)
-		# 着陆闪光环
-		if _land_flash > 0.01:
-			var ring_r = hw * (1.0 + (1.0 - _land_flash) * 0.3)
-			var ring_c = Color(c.r, c.g, c.b, _land_flash * 0.6)
-			draw_arc(Vector2.ZERO, ring_r, 0, TAU, 24, ring_c, 1.5, true)
+		# 汇聚粒子
+		if _expand > 0.8:
+			_draw_converge_particles(hw, c, 4)
 	
-	func _ease_out_quad(t: float) -> float:
+	# ── 风格 1: 脉冲链 ──
+	func _draw_pulse_chain(hw: float, c: Color) -> void:
+		# 底层暗线
+		draw_line(Vector2(-hw, 0), Vector2(hw, 0), Color(c.r, c.g, c.b, c.a * 0.15), 4.0, true)
+		# 分段依次亮起
+		var seg_w = 18.0
+		var gap = 3.0
+		var total = seg_w + gap
+		var seg_count = int(hw * 2.0 / total) + 1
+		var wave_speed = 2.0
+		for i in range(seg_count):
+			var sx = -hw + float(i) * total
+			if sx > hw: break
+			var ex = minf(sx + seg_w, hw)
+			# 每段的亮度波浪: 从左到右依次点亮
+			var phase_offset = float(i) * 0.3
+			var brightness = 0.3 + 0.7 * maxf(0, sin(_time * wave_speed - phase_offset))
+			var seg_c = Color(c.r, c.g, c.b, c.a * brightness)
+			draw_line(Vector2(sx, 0), Vector2(ex, 0), seg_c, 3.0, true)
+			# 高亮段加发光
+			if brightness > 0.7:
+				var glow_a = (brightness - 0.7) / 0.3 * c.a * 0.3
+				draw_line(Vector2(sx, 0), Vector2(ex, 0), Color(c.r, c.g, c.b, glow_a), 8.0, true)
+		# 两端小点
+		var dot_c = Color(c.r, c.g, c.b, c.a * 0.9)
+		draw_circle(Vector2(-hw, 0), 2.5, dot_c, true, -1.0, true)
+		draw_circle(Vector2(hw, 0), 2.5, dot_c, true, -1.0, true)
+		if _expand > 0.8:
+			_draw_converge_particles(hw, c, 3)
+	
+	# ── 风格 2: 极简 ──
+	func _draw_minimal(hw: float, c: Color) -> void:
+		draw_line(Vector2(-hw, 0), Vector2(hw, 0), Color(c.r, c.g, c.b, c.a * 0.1), 8.0, true)
+		draw_line(Vector2(-hw, 0), Vector2(hw, 0), Color(c.r, c.g, c.b, c.a * 0.6), 1.5, true)
+		var dot_c = Color(c.r, c.g, c.b, c.a * 0.8)
+		draw_circle(Vector2(-hw, 0), 2.0, dot_c, true, -1.0, true)
+		draw_circle(Vector2(hw, 0), 2.0, dot_c, true, -1.0, true)
+	
+	# ── 汇聚粒子 (两端→中心) ──
+	func _draw_converge_particles(hw: float, c: Color, count: int) -> void:
+		var pc = Color(minf(c.r + 0.2, 1.0), minf(c.g + 0.2, 1.0), 1.0)
+		for i in range(count):
+			var off = float(i) / float(count)
+			# 左侧粒子 → 中心
+			var lt = fmod(_time * 0.7 + off, 1.0)
+			var lx = lerpf(-hw * 0.95, 0, lt)
+			var la = sin(lt * PI) * c.a * 0.8
+			draw_circle(Vector2(lx, 0), 1.8, Color(pc.r, pc.g, pc.b, la), true, -1.0, true)
+			# 右侧粒子 → 中心
+			var rt = fmod(_time * 0.7 + off + 0.15, 1.0)
+			var rx = lerpf(hw * 0.95, 0, rt)
+			var ra = sin(rt * PI) * c.a * 0.8
+			draw_circle(Vector2(rx, 0), 1.8, Color(pc.r, pc.g, pc.b, ra), true, -1.0, true)
+	
+	func _ease_out(t: float) -> float:
 		return 1.0 - (1.0 - t) * (1.0 - t)

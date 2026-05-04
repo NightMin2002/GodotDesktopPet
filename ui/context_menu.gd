@@ -733,6 +733,66 @@ func _on_radio_effect_color(value: int) -> void:
 	for i in range(_effect_color_btns.size()):
 		_effect_color_btns[i].text = labels[i] + (" [●]" if i == value else " [○]")
 
+# ── 踏板风格单选 (追加到 mode 子菜单) ──
+
+var _plat_style_btns: Array = []
+
+func _append_platform_style_radio() -> void:
+	var mode_panel = _submenu.panels.get("mode")
+	if not mode_panel: return
+	var vbox = mode_panel.get_child(0) as VBoxContainer
+	if not vbox: return
+	
+	# 分隔线
+	var sep = HSeparator.new()
+	sep.add_theme_constant_override("separation", 4)
+	var s = StyleBoxFlat.new()
+	s.bg_color = Color.from_hsv(EventBus.ui_hue, 0.8, 1.0, 0.15)
+	s.set_content_margin_all(0)
+	sep.add_theme_stylebox_override("separator", s)
+	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(sep)
+	
+	# 标题
+	var label = Label.new()
+	label.text = "踏板视觉"
+	label.add_theme_font_size_override("font_size", 14)
+	label.add_theme_color_override("font_color", Color(0.5, 0.6, 0.75, 0.5))
+	vbox.add_child(label)
+	
+	# 单选项: -1=随机, 0=能量束, 1=脉冲链, 2=极简
+	var items = [
+		{"value": 0, "label": "能量束"},
+		{"value": 1, "label": "脉冲链"},
+		{"value": 2, "label": "极简"},
+		{"value": -1, "label": "随机"},
+	]
+	var saved = SettingsManager.get_int("platform_style", 0)
+	FreeRoamSystem.PlatformVisual.style = saved
+	_plat_style_btns.clear()
+	for item in items:
+		var btn = Button.new()
+		btn.flat = true
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.add_theme_font_size_override("font_size", 19)
+		btn.add_theme_color_override("font_color", Color(0.8, 0.9, 1, 1))
+		btn.add_theme_color_override("font_hover_color", Color(1.0, 0.7, 0.2, 1))
+		var active = (item.value == saved)
+		btn.text = ("● " if active else "○ ") + item.label
+		var val = item.value
+		btn.pressed.connect(func(): _on_radio_platform_style(val))
+		vbox.add_child(btn)
+		_plat_style_btns.append(btn)
+
+func _on_radio_platform_style(value: int) -> void:
+	FreeRoamSystem.PlatformVisual.style = value
+	SettingsManager.set_int("platform_style", value)
+	var labels = ["能量束", "脉冲链", "极简", "随机"]
+	var values = [0, 1, 2, -1]
+	for i in range(_plat_style_btns.size()):
+		var active = (values[i] == value)
+		_plat_style_btns[i].text = ("● " if active else "○ ") + labels[i]
+
 # ── 工具函数 ──
 
 ## 胶囊按钮样式: 半透明背景 + 细边框 + 圆角, 用于面板入口和危险操作
@@ -869,6 +929,8 @@ func _build_submenus() -> void:
 		{"id": "anti_gravity", "on": "反重力 [●]", "off": "反重力 [○]", "key": "anti_gravity", "default": false},
 		{"id": "free_roam", "on": "空间跳跃 [●]", "off": "空间跳跃 [○]", "key": "free_roam", "default": false},
 	])
+	# 在模式子菜单中追加踏板风格单选
+	_append_platform_style_radio()
 	_submenu.create_toggle("hud", [
 		{"id": "hud_pin", "on": "常驻显示 [●]", "off": "常驻显示 [○]", "key": "hud_pin", "default": false},
 		{"id": "hud_clock", "on": "系统时钟 [●]", "off": "系统时钟 [○]", "key": "hud_clock", "default": false},
@@ -943,7 +1005,6 @@ func _build_debug_behavior_submenu() -> void:
 		{"label": "警告标识", "behavior": "_icon:alert", "desc": "显示警告感叹号图标"},
 		{"label": "疑问标识", "behavior": "_icon:question", "desc": "显示疑问标志图标"},
 		{"label": "错误标识", "behavior": "_icon:error", "desc": "显示操作失败交叉图标"},
-		{"label": "攀升测试", "behavior": "_free_roam", "desc": "生成透明踏板并连续跳跃到高处"},
 	]
 	
 	for item in debug_items:
@@ -962,7 +1023,7 @@ func _build_debug_behavior_submenu() -> void:
 			btn.mouse_entered.connect(func(): _tooltip.show_for(b, desc_text, true))
 			btn.mouse_exited.connect(func(): _tooltip.show_for(b, desc_text, false))
 		vbox.add_child(btn)
-	
+
 	panel.mouse_entered.connect(func(): _submenu.on_panel_enter())
 	panel.mouse_exited.connect(func(): _submenu.on_panel_exit())
 	add_child(panel)
