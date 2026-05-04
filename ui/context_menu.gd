@@ -30,6 +30,8 @@ const SubmenuSystem = preload("res://ui/context_menu/submenu_system.gd")
 
 @onready var effects_btn: Button = $HUDPanel/Margin/VBox/EffectsBtn
 
+@onready var elastic_btn: Button = $HUDPanel/Margin/VBox/ElasticBtn
+
 @onready var theme_btn: Button = $HUDPanel/Margin/VBox/ThemeBtn
 
 @onready var entertain_btn: Button = $HUDPanel/Margin/VBox/EntertainBtn
@@ -47,6 +49,8 @@ const SubmenuSystem = preload("res://ui/context_menu/submenu_system.gd")
 @onready var sysinfo_btn: Button = $HUDPanel/Margin/VBox/SysInfoBtn
 
 @onready var debug_behavior_btn: Button = $HUDPanel/Margin/VBox/DebugBehaviorBtn
+
+@onready var test_btn: Button = $HUDPanel/Margin/VBox/TestBtn
 
 @onready var quit_btn: Button = $HUDPanel/Margin/VBox/QuitBtn
 
@@ -188,6 +192,11 @@ func _ready() -> void:
 	debug_behavior_btn.mouse_exited.connect(func(): _submenu.on_trigger_exit())
 
 	debug_behavior_btn.pressed.connect(func(): _submenu.toggle("debug_behavior"))
+
+	# 弹性形变子菜单触发器
+	elastic_btn.mouse_entered.connect(func(): _submenu.on_trigger_hover("elastic"))
+	elastic_btn.mouse_exited.connect(func(): _submenu.on_trigger_exit())
+	elastic_btn.pressed.connect(func(): _submenu.toggle("elastic"))
 
 	quit_btn.pressed.connect(_on_quit_btn_pressed)
 
@@ -824,6 +833,7 @@ func _build_submenus() -> void:
 	_submenu.register_trigger("hud", hud_btn)
 	_submenu.register_trigger("chatter", chatter_btn)
 	_submenu.register_trigger("debug_behavior", debug_behavior_btn)
+	_submenu.register_trigger("elastic", elastic_btn)
 	# 单选子菜单
 	_submenu.create_radio("window_mode", [
 		{"value": 0, "label": "自由漫游", "desc": "在窗口间自由行走"},
@@ -866,6 +876,13 @@ func _build_submenus() -> void:
 	])
 	# 调试子菜单: 行为测试 (直接触发 idle 微行为)
 	_build_debug_behavior_submenu()
+	# 弹性形变单选子菜单
+	_submenu.create_radio("elastic", [
+		{"value": 0, "label": "关闭", "desc": "标准球体，无弹性效果"},
+		{"value": 1, "label": "轻弹", "desc": "自然柔弹，快速恢复"},
+		{"value": 2, "label": "果冻", "desc": "QQ弹弹，慢速晃动恢复"},
+		{"value": 3, "label": "弹力球", "desc": "弹性十足，强力回弹"},
+	], _on_radio_elastic)
 
 ## 从 SettingsManager 刷新子菜单状态
 func _refresh_submenu_states() -> void:
@@ -878,6 +895,15 @@ func _refresh_submenu_states() -> void:
 	_submenu.refresh_toggle("hud_pin", SettingsManager.get_bool("hud_pin", false), "常驻显示 [●]", "常驻显示 [○]")
 	_submenu.refresh_toggle("hud_clock", SettingsManager.get_bool("hud_clock", false), "系统时钟 [●]", "系统时钟 [○]")
 	_submenu.refresh_toggle("hud_wifi", SettingsManager.get_bool("hud_wifi", false), "WiFi 信息 [●]", "WiFi 信息 [○]")
+	# 刷新弹性形变状态
+	var elastic_mode = SettingsManager.get_int("elastic_mode", 0)
+	_apply_elastic_mode(elastic_mode, false)  # 仅更新 UI，不发信号 (启动时由 pet.gd 自行恢复)
+	# 刷新所有单选菜单的 ○/● 状态
+	_submenu.refresh_radio("window_mode", SettingsManager.get_int("window_mode", 0))
+	_submenu.refresh_radio("behavior_mode", SettingsManager.get_int("behavior_mode", 0))
+	_submenu.refresh_radio("gait", SettingsManager.get_int("move_style", 0))
+	_submenu.refresh_radio("chatter", SettingsManager.get_int("chatter_mode", 0))
+	_submenu.refresh_radio("elastic", elastic_mode)
 
 func _on_sysinfo_btn_pressed() -> void:
 
@@ -968,3 +994,21 @@ func _on_debug_behavior_pressed(behavior: String) -> void:
 		EventBus.pet_show_eye_icon.emit("")
 	else:
 		EventBus.trigger_idle_behavior.emit(behavior)
+
+# ── 弹性形变单选回调 ──
+
+func _on_radio_elastic(value: int) -> void:
+	SettingsManager.set_int("elastic_mode", value)
+	_apply_elastic_mode(value, true)
+
+func _apply_elastic_mode(value: int, emit_signal: bool) -> void:
+	if value == 0:
+		elastic_btn.text = "弹性 · 关闭 [+]"
+		if emit_signal:
+			EventBus.trigger_squash_test.emit(-1)
+	else:
+		var names := ["轻弹", "果冻", "弹力球"]
+		var idx = clampi(value - 1, 0, 2)
+		elastic_btn.text = "弹性 · " + names[idx] + " [+]"
+		if emit_signal:
+			EventBus.trigger_squash_test.emit(idx)

@@ -57,6 +57,9 @@ var poke_system: PokeSystem
 # ── Idle 微行为系统 (委托给 IdleBehaviors) ──
 var idle_behaviors: IdleBehaviors
 
+# ── 弹性形变系统 (委托给 PetSquash) ──
+var squash: PetSquash
+
 func _ready() -> void:
 	# 初始化调色板 (必须在所有子系统之前)
 	if palette == null:
@@ -100,6 +103,10 @@ func _ready() -> void:
 	idle_behaviors = IdleBehaviors.new()
 	idle_behaviors.pet = self
 	
+	# 初始化弹性形变系统
+	squash = PetSquash.new()
+	squash.pet = self
+	
 	# 初始化空间跳跃系统
 	free_roam_sys = FreeRoamSystem.new()
 	free_roam_sys.pet = self
@@ -124,6 +131,11 @@ func _ready() -> void:
 	free_roam_enabled = SettingsManager.get_bool("free_roam", false)
 	var ag = SettingsManager.get_bool("anti_gravity", false)
 	_set_anti_gravity(ag)
+	# 弹性形变恢复 (elastic_mode: 0=关闭, 1=轻弹, 2=果冻, 3=弹力球)
+	var elastic_mode = SettingsManager.get_int("elastic_mode", 0)
+	if elastic_mode > 0:
+		squash.enabled = true
+		squash.style = clampi(elastic_mode - 1, 0, 2)
 	# HUD 组件状态恢复 (仅原体)
 	if not is_clone:
 		var hud_clock = SettingsManager.get_bool("hud_clock", false)
@@ -143,6 +155,7 @@ func _ready() -> void:
 	EventBus.trigger_free_roam.connect(_on_trigger_free_roam)
 	EventBus.pet_scanning_changed.connect(_on_pet_scanning_changed)
 	EventBus.pet_show_eye_icon.connect(_on_pet_show_eye_icon)
+	EventBus.trigger_squash_test.connect(_on_trigger_squash_test)
 
 func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 	if setting_id == "eye_track":
@@ -327,9 +340,10 @@ func _process(delta: float) -> void:
 	var has_visual_change = pet_effects.update(delta)
 	idle_behaviors.update(delta)
 	_roam_update(delta)
+	var squash_changed = squash.update(delta)
 	
-	# 按需重绘：特效活跃 / 物理运动中 / 眼球动画播放中
-	if has_visual_change or linear_velocity.length() > 1.0 or eye_behavior.is_animating():
+	# 按需重绘：特效活跃 / 物理运动中 / 眼球动画播放中 / 弹性形变
+	if has_visual_change or linear_velocity.length() > 1.0 or eye_behavior.is_animating() or squash_changed:
 		queue_redraw()
 
 func _physics_process(delta: float) -> void:
@@ -340,6 +354,9 @@ func _physics_process(delta: float) -> void:
 	last_frame_speed = linear_velocity.length()
 
 func _on_body_entered(_body: Node) -> void:
+	# 弹性形变: 利用碰撞信号 + 碰撞前速度直接驱动弹簧
+	if squash.enabled:
+		squash.apply_impact(linear_velocity, last_frame_speed)
 	# 只有获得极高动量猛烈砸在底盘或者墙壁时，才激荡出强大的火花
 	if pet_effects.shockwave_enabled and last_frame_speed > 350.0:
 		trigger_shockwave()
@@ -360,8 +377,28 @@ func _unhandled_input(event: InputEvent) -> void:
 func _draw() -> void:
 	# ── 绘制特效 (冲击波 + 拖影，委托给 PetEffects) ──
 	pet_effects.render(self)
-	# ── 绘制能量共鸣弧 (近距离宠物间的静电放电) ──
+	# ── 绘制能量共鸣弧 (近距离宠物间的静电放电，世界空间，不受形变影响) ──
 	pet_effects.render_arcs(self)
+	
+	# ── 弹性形变: 身体与眼球统一世界空间形变 ──
+	# draw_set_transform_matrix 叠加到 node transform 上:
+	#   最终绘图 = node_R * draw_M
+	# 其中 node_R = R(rot) 是 RigidBody2D 的旋转
+	# rotated(a) = 左乘 R(a)*M, scaled(s) = 左乘 S(s)*M
+	# rotated_local(a) = 右乘 M*R(a), scaled_local(s) = 右乘 M*S(s)
+	var sq = squash.get_scale()
+	
+	# 身体: 要 node_R * M = S_world * R(rot) (世界缩放 + 正常旋转)
+	# → M = R_inv * S * R = R(-rot) * S(sq) * R(rot)
+	# API 链(从最内层开始):
+	#   I.rotated_local(rot) = R(rot)        // 右乘: I*R
+	#   .scaled(sq)          = S*R(rot)      // 左乘: S*prev
+	#   .rotated(-rot)       = R(-rot)*S*R   // 左乘: R*prev
+	var body_xform = Transform2D.IDENTITY
+	body_xform = body_xform.rotated_local(rotation)
+	body_xform = body_xform.scaled(sq)
+	body_xform = body_xform.rotated(-rotation)
+	draw_set_transform_matrix(body_xform)
 	
 	# ── 科幻单眼结构 ──
 	# 外壳不受眨眼影响
@@ -392,8 +429,13 @@ func _draw() -> void:
 		draw_polygon(PackedVector2Array([left_base, tip_pos, right_base]), PackedColorArray([dark_blue, dark_blue, dark_blue]))
 	
 	# 机械虹膜：眨眼时内部光圈收缩向中心
-	# 眼球反向旋转补偿：抵消 RigidBody2D 的滚动角度，让眼球始终保持水平
-	draw_set_transform(Vector2.ZERO, -rotation, Vector2.ONE)
+	# 眼球: 要 node_R * M = S_world (世界缩放 + 无旋转 = 眼球保持水平)
+	# → M = R(-rot) * S(sq)
+	# API 链: I.scaled(sq) = S, .rotated(-rot) = R(-rot)*S
+	var eye_xform = Transform2D.IDENTITY
+	eye_xform = eye_xform.scaled(sq)
+	eye_xform = eye_xform.rotated(-rotation)
+	draw_set_transform_matrix(eye_xform)
 	var blink = eye_behavior.get_blink_amount()
 	var iris_scale = 1.0 - blink * 0.95  # 闭眼峰值时虹膜缩至 5%
 	if iris_scale > 0.05:
@@ -467,6 +509,16 @@ func _draw() -> void:
 	
 	# 恢复默认变换，避免影响后续绘制
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+
+func _on_trigger_squash_test(squash_style: int) -> void:
+	if is_clone:
+		return
+	if squash_style < 0:
+		# 关闭弹性形变
+		squash.enabled = false
+	else:
+		squash.style = squash_style
+		squash.enabled = true
 
 ## 绘制机械挡板 (圆弧段多边形，覆盖眼白的上方或下方)
 func _draw_eye_shutter(radius: float, close_px: float, is_top: bool, color: Color) -> void:

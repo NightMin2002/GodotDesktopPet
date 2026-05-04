@@ -33,6 +33,7 @@ signal trigger_idle_behavior(behavior: String)  # 调试: 强制触发 idle 微�
 signal trigger_free_roam  # 调试: 触发自由移动 (透明踏板跳跃)
 signal pet_scanning_changed(state: String)  # 检索动画: "scanning"/"done"/"idle"
 signal pet_show_eye_icon(icon_type: String)  # 瞳孔图标覆盖: "mail"/"alert"/"question"/""(清除)
+signal trigger_squash_test(style: int)  # 弹性形变测试: -1=关闭, 0=果冻, 1=弹力球, 2=水滴
 
 # ── 克隆系统 ──
 signal clone_pet(source: Node2D)  # 请求从原体克隆一个分身

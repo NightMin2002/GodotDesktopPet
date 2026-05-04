@@ -247,6 +247,7 @@ func _on_toggle_pressed(item: Dictionary) -> void:
 	EventBus.setting_toggled.emit(item.key, new_val)
 
 func _on_radio_pressed(menu_id: String, value: int) -> void:
+	refresh_radio(menu_id, value)
 	if _radio_callbacks.has(menu_id):
 		_radio_callbacks[menu_id].call(value)
 
