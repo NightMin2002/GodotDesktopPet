@@ -71,7 +71,7 @@ func update(delta: float) -> bool:
 			for other in main_node.pet_instances:
 				if other == pet or not is_instance_valid(other):
 					continue
-				if pet.global_position.distance_to(other.global_position) < ARC_RANGE:
+				if _arc_distance(other.global_position) < ARC_RANGE:
 					arc_nearby = true
 					break
 	if arc_nearby or was_nearby:
@@ -171,12 +171,12 @@ func render_arcs(canvas: CanvasItem) -> void:
 		var other = pets[i]
 		if not is_instance_valid(other) or not other.palette:
 			continue
-		var dist = pet.global_position.distance_to(other.global_position)
+		var dist = _arc_distance(other.global_position)
 		if dist >= ARC_RANGE:
 			_arc_paths.erase(i)
 			continue
-		# 世界对齐空间: 对方相对于自己的世界偏移 (不含旋转)
-		var other_offset = other.global_position - pet.global_position
+		# 世界对齐空间: 取最短路径的偏移 (屏幕穿越时可能跨边界)
+		var other_offset = _arc_offset(other.global_position)
 		var intensity = 1.0 - (dist / ARC_RANGE)
 		var other_hue = other.palette.effective_hue()
 		
@@ -229,3 +229,27 @@ func _draw_lightning_cached(points: PackedVector2Array, canvas: CanvasItem, inte
 	# 第2层: 白色闪电内核
 	var core = Color(0.9, 0.95, 1.0, alpha)
 	canvas.draw_polyline(points, core, 2.5 * intensity + 1.5, true)
+
+# ── 屏幕穿越辅助 (取直接距离和环绕距离中的最短) ──
+
+func _arc_distance(other_pos: Vector2) -> float:
+	var dist = pet.global_position.distance_to(other_pos)
+	if not pet.screen_wrap:
+		return dist
+	var w = pet.boundary_size.x
+	var shifted = other_pos
+	shifted.x += w
+	dist = min(dist, pet.global_position.distance_to(shifted))
+	shifted.x -= w * 2
+	dist = min(dist, pet.global_position.distance_to(shifted))
+	return dist
+
+func _arc_offset(other_pos: Vector2) -> Vector2:
+	var offset = other_pos - pet.global_position
+	if pet.screen_wrap:
+		var w = pet.boundary_size.x
+		if offset.x > w / 2.0:
+			offset.x -= w
+		elif offset.x < -w / 2.0:
+			offset.x += w
+	return offset

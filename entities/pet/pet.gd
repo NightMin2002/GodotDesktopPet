@@ -15,6 +15,8 @@ var stroll_enabled: bool = true      # 自主巡航特殊事件开关 (独立于
 var free_roam_enabled: bool = false   # 空间跳跃开关 (透明踏板攀升)
 var anti_gravity: bool = false       # 反重力模式
 var gravity_sign: float = 1.0        # 重力方向符号 (1.0=正常, -1.0=反转)
+var screen_wrap: bool = false        # 屏幕穿越模式 (左右边界环绕)
+var _wrap_ghost_offset: Vector2 = Vector2.ZERO  # 穿越时幽灵副本的世界偏移
 
 # ── 克隆系统 ──
 var is_clone: bool = false           # 是否为克隆分身
@@ -137,6 +139,7 @@ func _ready() -> void:
 	free_roam_enabled = SettingsManager.get_bool("free_roam", false)
 	var ag = SettingsManager.get_bool("anti_gravity", false)
 	_set_anti_gravity(ag)
+	screen_wrap = SettingsManager.get_bool("screen_wrap", false)
 	# 弹性形变恢复 (elastic_mode: 0=关闭, 1=轻弹, 2=果冻, 3=弹力球)
 	var elastic_mode = SettingsManager.get_int("elastic_mode", 0)
 	if elastic_mode > 0:
@@ -183,6 +186,10 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		free_roam_enabled = is_on
 	elif setting_id == "anti_gravity":
 		_set_anti_gravity(is_on)
+	elif setting_id == "screen_wrap":
+		screen_wrap = is_on
+		if not is_on:
+			_wrap_ghost_offset = Vector2.ZERO
 	elif setting_id == "hud_clock":
 		if is_clone:
 			return
@@ -311,6 +318,30 @@ func _set_anti_gravity(on: bool) -> void:
 	# 给一个初始推力让宠物快速飞向目标 (开启→向天花板, 关闭→向地板)
 	apply_central_impulse(Vector2(0, gravity_sign * 300.0))
 
+## 屏幕穿越: 传送 + 幽灵偏移计算
+func _update_screen_wrap() -> void:
+	var w = boundary_size.x
+	var margin = PET_RADIUS * 2.0
+	var x = global_position.x
+	
+	# 传送: 完全超出后坐标翻转 + 同步拖影历史
+	if x > w + PET_RADIUS:
+		global_position.x -= w
+		for i in range(pet_effects.trail_history.size()):
+			pet_effects.trail_history[i].x -= w
+	elif x < -PET_RADIUS:
+		global_position.x += w
+		for i in range(pet_effects.trail_history.size()):
+			pet_effects.trail_history[i].x += w
+	
+	# 幽灵偏移: 靠近边界时在对侧渲染副本
+	x = global_position.x  # 传送后的新位置
+	_wrap_ghost_offset = Vector2.ZERO
+	if x > w - margin:
+		_wrap_ghost_offset = Vector2(-w, 0)
+	elif x < margin:
+		_wrap_ghost_offset = Vector2(w, 0)
+
 # ── 自由移动 (委托 FreeRoamSystem) ──
 var free_roam_sys: FreeRoamSystem
 
@@ -357,8 +388,12 @@ func _process(delta: float) -> void:
 	_roam_update(delta)
 	var squash_changed = squash.update(delta)
 	
-	# 按需重绘：特效活跃 / 物理运动中 / 眼球动画播放中 / 弹性形变
-	if has_visual_change or linear_velocity.length() > 1.0 or eye_behavior.is_animating() or squash_changed:
+	# 屏幕穿越: 传送 + 幽灵偏移计算
+	if screen_wrap:
+		_update_screen_wrap()
+	
+	# 按需重绘
+	if has_visual_change or linear_velocity.length() > 1.0 or eye_behavior.is_animating() or squash_changed or _wrap_ghost_offset != Vector2.ZERO:
 		queue_redraw()
 
 func _physics_process(delta: float) -> void:
@@ -393,141 +428,111 @@ func _unhandled_input(event: InputEvent) -> void:
 func _draw() -> void:
 	# ── 绘制特效 (冲击波 + 拖影，委托给 PetEffects) ──
 	pet_effects.render(self)
+	if _wrap_ghost_offset != Vector2.ZERO:
+		# 对侧幽灵特效: 偏移后再画一次
+		draw_set_transform(_wrap_ghost_offset.rotated(-rotation), 0, Vector2.ONE)
+		pet_effects.render(self)
+		draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 	# ── 绘制静电弧 (近距离宠物间的放电弧，需在世界空间绘制) ──
-	# _draw() 的 canvas 坐标系自带 body rotation，需先反旋回世界空间
 	draw_set_transform(Vector2.ZERO, -rotation, Vector2.ONE)
 	pet_effects.render_arcs(self)
-	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)  # 恢复
+	if _wrap_ghost_offset != Vector2.ZERO:
+		# 幽灵位置的弧线: 补上被窗口裁剪的另一半
+		draw_set_transform(_wrap_ghost_offset.rotated(-rotation), -rotation, Vector2.ONE)
+		pet_effects.render_arcs(self)
+	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 	
-	# ── 弹性形变: 身体与眼球统一世界空间形变 ──
-	# draw_set_transform_matrix 叠加到 node transform 上:
-	#   最终绘图 = node_R * draw_M
-	# 其中 node_R = R(rot) 是 RigidBody2D 的旋转
-	# rotated(a) = 左乘 R(a)*M, scaled(s) = 左乘 S(s)*M
-	# rotated_local(a) = 右乘 M*R(a), scaled_local(s) = 右乘 M*S(s)
+	# ── 宠物本体 (可能画两次: 正常 + 屏幕穿越幽灵) ──
+	_draw_body(Vector2.ZERO)
+	if _wrap_ghost_offset != Vector2.ZERO:
+		_draw_body(_wrap_ghost_offset)
+	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+	
+## 绘制宠物本体 (外壳+眼球+覆盖层), world_offset 用于屏幕穿越双重渲染
+func _draw_body(world_offset: Vector2) -> void:
+	var local_off = world_offset.rotated(-rotation)  # 世界偏移→绘图空间本地偏移
 	var sq = squash.get_scale()
 	
-	# 身体: 要 node_R * M = S_world * R(rot) (世界缩放 + 正常旋转)
-	# → M = R_inv * S * R = R(-rot) * S(sq) * R(rot)
-	# API 链(从最内层开始):
-	#   I.rotated_local(rot) = R(rot)        // 右乘: I*R
-	#   .scaled(sq)          = S*R(rot)      // 左乘: S*prev
-	#   .rotated(-rot)       = R(-rot)*S*R   // 左乘: R*prev
+	# 身体 transform + offset
 	var body_xform = Transform2D.IDENTITY
 	body_xform = body_xform.rotated_local(rotation)
 	body_xform = body_xform.scaled(sq)
 	body_xform = body_xform.rotated(-rotation)
+	body_xform.origin += local_off
 	draw_set_transform_matrix(body_xform)
 	
 	# ── 科幻单眼结构 ──
-	# 外壳不受眨眼影响
-	# 1. 边缘深色轮廓与偏深的湛蓝主外壳 (palette 统一变换)
 	var shell_outline := palette.shift_color(Color(0.08, 0.12, 0.32, 1.0))
 	var shell_main := palette.shift_color(Color(0.15, 0.30, 0.80, 1.0))
 	draw_circle(Vector2.ZERO, PET_RADIUS + 1.2, shell_outline, true, -1.0, true)
 	draw_circle(Vector2.ZERO, PET_RADIUS, shell_main, true, -1.0, true)
-	
-	# 2. 白色边框 (不受色调影响)
 	var border_radius = PET_RADIUS * 0.85
 	draw_arc(Vector2.ZERO, border_radius, 0, TAU, 64, Color(1.0, 1.0, 1.0, 0.8), 1.2, true)
-	
-	# 3. 四个尖尖的角 (底座圆垫与独立四向锥形叶片)
 	var dark_blue := palette.shift_color(Color(0.12, 0.18, 0.42, 1.0))
 	var base_r = PET_RADIUS * 0.68
-	var tip_dist = border_radius - 1.0  # 尖角刚刚触碰白边内侧
-	
-	# 绘制深色底盘核心
+	var tip_dist = border_radius - 1.0
 	draw_circle(Vector2.ZERO, base_r, dark_blue, true, -1.0, true)
-	# 绘制4个向外伸展的尖角（平滑与底盘融合的三角形）
 	for i in range(4):
-		var angle = i * PI / 2.0 + PI / 4.0  # 每个对角线：45, 135, 225, 315 度
+		var angle = i * PI / 2.0 + PI / 4.0
 		var tip_pos = Vector2(cos(angle), sin(angle)) * tip_dist
-		var half_hw = PI / 10.0  # 控制尖刺的底部张角，避免过于瘦弱
+		var half_hw = PI / 10.0
 		var left_base = Vector2(cos(angle - half_hw), sin(angle - half_hw)) * (base_r * 0.95)
 		var right_base = Vector2(cos(angle + half_hw), sin(angle + half_hw)) * (base_r * 0.95)
 		draw_polygon(PackedVector2Array([left_base, tip_pos, right_base]), PackedColorArray([dark_blue, dark_blue, dark_blue]))
 	
-	# 机械虹膜：眨眼时内部光圈收缩向中心
-	# 眼球: 要 node_R * M = S_world (世界缩放 + 无旋转 = 眼球保持水平)
-	# → M = R(-rot) * S(sq)
-	# API 链: I.scaled(sq) = S, .rotated(-rot) = R(-rot)*S
+	# 眼球 transform + offset
 	var eye_xform = Transform2D.IDENTITY
 	eye_xform = eye_xform.scaled(sq)
 	eye_xform = eye_xform.rotated(-rotation)
+	eye_xform.origin += local_off
 	draw_set_transform_matrix(eye_xform)
 	var blink = eye_behavior.get_blink_amount()
-	var iris_scale = 1.0 - blink * 0.95  # 闭眼峰值时虹膜缩至 5%
+	var iris_scale = 1.0 - blink * 0.95
 	if iris_scale > 0.05:
-		# 虹膜内三层跟随鼠标偏移，眼白固定
 		var iris_offset = eye_behavior.get_pupil_offset() * iris_scale
-		# 第一层：眼白（巩膜）— 固定在圆心不动
 		draw_circle(Vector2.ZERO, PET_RADIUS * 0.54 * iris_scale, palette.shift_color(Color(0.85, 0.88, 0.92, 1.0)), true, -1.0, true)
-		# 第二层：灰蓝色虹膜外环 — 跟随鼠标
 		draw_circle(iris_offset, PET_RADIUS * 0.42 * iris_scale, palette.shift_color(Color(0.55, 0.65, 0.80, 1.0)), true, -1.0, true)
-		# 第三层：深蓝色虹膜内环 — 跟随鼠标
 		draw_circle(iris_offset, PET_RADIUS * 0.28 * iris_scale, palette.shift_color(Color(0.15, 0.28, 0.68, 1.0)), true, -1.0, true)
-		# 第四层：极暗的瞳孔核心 — 跟随鼠标
 		draw_circle(iris_offset, PET_RADIUS * 0.16 * iris_scale, palette.shift_color(Color(0.05, 0.08, 0.20, 1.0)), true, -1.0, true)
-		
-		# 高光反射点 (固定在虹膜左上方，模拟环境光泽)
 		var highlight_offset = iris_offset + Vector2(-PET_RADIUS * 0.08, -PET_RADIUS * 0.10) * iris_scale
-		var highlight_fade = 1.0 - eye_behavior.get_drowsy_amount()  # 休眠时高光暗淡
+		var highlight_fade = 1.0 - eye_behavior.get_drowsy_amount()
 		draw_circle(highlight_offset, PET_RADIUS * 0.11 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale * 0.85 * highlight_fade), true, -1.0, true)
 		draw_circle(highlight_offset, PET_RADIUS * 0.06 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale * highlight_fade), true, -1.0, true)
-		# ── 自定义休眠视觉 (覆盖整个内部区域到白边框) ──
 	var h_blend = idle_behaviors.get_hibernate_visual_blend()
 	if h_blend > 0.01:
-		var screen_r = PET_RADIUS * 0.83  # 白边框内侧
-		# 暗色屏幕覆盖层 (模拟设备关屏，覆盖虹膜+底座)
+		var screen_r = PET_RADIUS * 0.83
 		draw_circle(Vector2.ZERO, screen_r, Color(0.03, 0.05, 0.12, h_blend * 0.95), true, -1.0, true)
 		match idle_behaviors.hibernate_style:
 			1: _draw_loading_spinner(screen_r, h_blend, idle_behaviors._hibernate_anim_time)
 			2: _draw_battery_icon(screen_r, h_blend, idle_behaviors._hibernate_anim_time)
-	
-	# ── 检索动画覆盖层 (系统信息查询时瞳孔变加载指示器/对勾) ──
-	# scanning_blend: 整体覆盖层 (scanning→done 期间保持1.0, stop时淡出)
-	# done_blend: 内容交叉混合 (0=纯旋转器, 1=纯对勾)
 	var scan_blend = eye_behavior.scanning_blend
 	var done_blend = eye_behavior.scanning_done_blend
 	if scan_blend > 0.01 or done_blend > 0.01:
-		var scan_r = PET_RADIUS * 0.83  # 白边框内侧 (与休眠视觉同范围)
-		# 暗色屏幕覆盖层 (由 scanning_blend 控制，过渡期间不会闪出眼瞳)
+		var scan_r = PET_RADIUS * 0.83
 		var overlay_alpha = scan_blend * 0.95
 		if done_blend > scan_blend:
-			overlay_alpha = done_blend * 0.95  # stop_scanning 后 done_blend 独立淡出
+			overlay_alpha = done_blend * 0.95
 		draw_circle(Vector2.ZERO, scan_r, Color(0.03, 0.05, 0.12, overlay_alpha), true, -1.0, true)
-		# 加载旋转指示器 (随 done_blend 增大而淡出，实现交叉混合)
 		var spinner_alpha = scan_blend * (1.0 - done_blend)
 		if spinner_alpha > 0.01:
 			_draw_loading_spinner(scan_r, spinner_alpha, eye_behavior.scanning_time)
-		# 完成对勾图标 (随 done_blend 增大而淡入)
 		if done_blend > 0.01:
 			_draw_scanning_checkmark(scan_r, done_blend)
-	
-	# ── 通用图标覆盖层 (邮件/感叹号/问号等) ──
 	var icon_blend = eye_behavior.eye_icon_blend
 	if icon_blend > 0.01:
-		var icon_r = PET_RADIUS * 0.83  # 白边框内侧
-		# 暗色屏幕覆盖层
+		var icon_r = PET_RADIUS * 0.83
 		draw_circle(Vector2.ZERO, icon_r, Color(0.03, 0.05, 0.12, icon_blend * 0.95), true, -1.0, true)
-		# 按类型绘制对应图标
 		match eye_behavior.eye_icon_type:
 			"mail": _draw_eye_icon_mail(icon_r, icon_blend, eye_behavior.eye_icon_time)
 			"alert": _draw_eye_icon_alert(icon_r, icon_blend, eye_behavior.eye_icon_time)
 			"question": _draw_eye_icon_question(icon_r, icon_blend, eye_behavior.eye_icon_time)
 			"error": _draw_eye_icon_error(icon_r, icon_blend, eye_behavior.eye_icon_time)
-	
-	# ── 休眠挡板 (仅风格0: 机械光圈半闭效果) ──
 	var drowsy = eye_behavior.get_drowsy_amount()
 	var is_shutter = idle_behaviors.active_behavior != "hibernate" or idle_behaviors.hibernate_style == 0
 	if drowsy > 0.01 and iris_scale > 0.05 and is_shutter:
 		var sclera_r = PET_RADIUS * 0.54 * iris_scale
 		var plate_color = palette.shift_color(Color(0.10, 0.15, 0.38, 1.0))
-		# 仅上挡板: 机械眼眸沉重下垂
 		_draw_eye_shutter(sclera_r, sclera_r * drowsy * 1.5, true, plate_color)
-	
-	# 恢复默认变换，避免影响后续绘制
-	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 
 func _on_trigger_squash_test(squash_style: int) -> void:
 	if squash_style < 0:

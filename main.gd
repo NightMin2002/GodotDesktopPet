@@ -83,6 +83,9 @@ func _ready() -> void:
 	_setup_theme_panel()
 	_setup_platform_style_panel()
 	
+	# 监听屏幕穿越开关
+	EventBus.setting_toggled.connect(_on_main_setting_toggled)
+	
 	# 恢复 UI 主题色
 	var saved_ui_hue = SettingsManager.get_ui_hue()
 	if saved_ui_hue >= 0:
@@ -193,6 +196,8 @@ func _setup_window() -> void:
 	print("[DesktopPet] 窗口大小: ", window.size)
 
 # ── 屏幕边界 ──
+var _wall_left: StaticBody2D
+var _wall_right: StaticBody2D
 
 func _create_boundaries() -> void:
 	var vp_size := get_viewport_rect().size
@@ -206,12 +211,16 @@ func _create_boundaries() -> void:
 	
 	_add_wall(Vector2(w / 2.0, h + thickness / 2.0), Vector2(w * 2, thickness))
 	_add_wall(Vector2(w / 2.0, -thickness / 2.0), Vector2(w * 2, thickness))
-	_add_wall(Vector2(-thickness / 2.0, h / 2.0), Vector2(thickness, h * 2))
-	_add_wall(Vector2(w + thickness / 2.0, h / 2.0), Vector2(thickness, h * 2))
+	_wall_left = _add_wall(Vector2(-thickness / 2.0, h / 2.0), Vector2(thickness, h * 2))
+	_wall_right = _add_wall(Vector2(w + thickness / 2.0, h / 2.0), Vector2(thickness, h * 2))
+	
+	# 从持久化恢复屏幕穿越状态
+	if SettingsManager.get_bool("screen_wrap", false):
+		_set_side_walls_enabled(false)
 	
 	print("[DesktopPet] 边界墙已创建 — 地面y=", h, " 右墙x=", w)
 
-func _add_wall(pos: Vector2, size: Vector2) -> void:
+func _add_wall(pos: Vector2, size: Vector2) -> StaticBody2D:
 	var wall := StaticBody2D.new()
 	wall.position = pos
 	
@@ -226,6 +235,14 @@ func _add_wall(pos: Vector2, size: Vector2) -> void:
 	
 	wall.add_child(collision)
 	add_child(wall)
+	return wall
+
+## 启用/禁用左右墙壁碰撞 (屏幕穿越模式)
+func _set_side_walls_enabled(enabled: bool) -> void:
+	if is_instance_valid(_wall_left):
+		_wall_left.get_child(0).disabled = not enabled
+	if is_instance_valid(_wall_right):
+		_wall_right.get_child(0).disabled = not enabled
 
 # ── 宠物实例化 ──
 
@@ -301,6 +318,10 @@ func _guard_taskbar_style() -> void:
 		var fixed: bool = win_manager.call("EnsureHiddenFromTaskbar")
 		if fixed:
 			print("[DesktopPet] 任务栏样式守护：已自动修复 ToolWindow 标记")
+
+func _on_main_setting_toggled(setting_id: String, is_on: bool) -> void:
+	if setting_id == "screen_wrap":
+		_set_side_walls_enabled(not is_on)
 
 # ── 告别退出 (委托给 farewell_manager) ──
 

@@ -30,6 +30,10 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		stroll_enabled = is_on
 	elif setting_id == "anti_gravity":
 		_set_anti_gravity(is_on)
+	elif setting_id == "screen_wrap":
+		screen_wrap = is_on
+		if not is_on:
+			_wrap_ghost_offset = Vector2.ZERO
 	elif setting_id == "effect_color_mode":
 		pet_effects.effect_color_mode = SettingsManager.get_int("effect_color_mode", 0)
 	# hud_clock: 克隆体永远不显示，无需处理
