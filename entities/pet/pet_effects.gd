@@ -1,5 +1,5 @@
 # pet_effects.gd — 宠物视觉特效管理器
-# 管理: 冲击波、全息拖影、能量共鸣弧、虹彩渐变时间
+# 管理: 冲击波、全息拖影、静电弧、虹彩渐变时间
 # 从 pet.gd 拆分，负责特效数据的生命周期和渲染委托
 class_name PetEffects
 extends RefCounted
@@ -24,7 +24,7 @@ var hue_time: float = 0.0
 # 1 = 跟随体色 (纯色, 使用宠物色调)
 var effect_color_mode: int = 0
 
-# ── 能量共鸣弧 ──
+# ── 静电弧 ──
 const ARC_RANGE := 150.0    # 触发距离
 var arc_enabled: bool = true
 var arc_nearby: bool = false # 是否有近距离宠物 (用于按需重绘)
@@ -62,7 +62,7 @@ func update(delta: float) -> bool:
 		has_visual_change = true
 	shockwaves = active_shocks
 	
-	# 检测近距离宠物 (能量共鸣弧)
+	# 检测近距离宠物 (静电弧)
 	var was_nearby = arc_nearby
 	arc_nearby = false
 	if arc_enabled:
@@ -143,7 +143,9 @@ func _render_trail(canvas: CanvasItem) -> void:
 	# 最后用高聚焦光束线描绘骨干
 	canvas.draw_polyline_colors(points, colors, pet.PET_RADIUS * 0.5, true)
 
-# ── 能量共鸣弧 (近距离宠物间的静电放电弧) ──
+# ── 静电弧 (近距离宠物间的放电弧) ──
+# 注意: _draw() 中调用前已设置 draw_set_transform(V2.ZERO, -rotation, V2.ONE)
+# 因此绘图坐标系 = 以宠物中心为原点的世界对齐空间，需用世界差值而非 to_local()
 
 func render_arcs(canvas: CanvasItem) -> void:
 	if not arc_nearby:
@@ -173,19 +175,20 @@ func render_arcs(canvas: CanvasItem) -> void:
 		if dist >= ARC_RANGE:
 			_arc_paths.erase(i)
 			continue
-		var other_local = canvas.to_local(other.global_position)
+		# 世界对齐空间: 对方相对于自己的世界偏移 (不含旋转)
+		var other_offset = other.global_position - pet.global_position
 		var intensity = 1.0 - (dist / ARC_RANGE)
 		var other_hue = other.palette.effective_hue()
 		
 		# 缓存或重生路径
 		if need_regen or not _arc_paths.has(i):
-			_arc_paths[i] = _gen_lightning_path(Vector2.ZERO, other_local, intensity)
+			_arc_paths[i] = _gen_lightning_path(Vector2.ZERO, other_offset, intensity)
 		else:
 			# 路径已缓存，但端点需跟随实时位置更新
 			var cached = _arc_paths[i] as PackedVector2Array
 			if cached.size() > 1:
 				cached[0] = Vector2.ZERO
-				cached[cached.size() - 1] = other_local
+				cached[cached.size() - 1] = other_offset
 		
 		_draw_lightning_cached(_arc_paths[i], canvas, intensity, my_hue, other_hue)
 

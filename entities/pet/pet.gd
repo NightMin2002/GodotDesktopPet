@@ -393,8 +393,11 @@ func _unhandled_input(event: InputEvent) -> void:
 func _draw() -> void:
 	# ── 绘制特效 (冲击波 + 拖影，委托给 PetEffects) ──
 	pet_effects.render(self)
-	# ── 绘制能量共鸣弧 (近距离宠物间的静电放电，世界空间，不受形变影响) ──
+	# ── 绘制静电弧 (近距离宠物间的放电弧，需在世界空间绘制) ──
+	# _draw() 的 canvas 坐标系自带 body rotation，需先反旋回世界空间
+	draw_set_transform(Vector2.ZERO, -rotation, Vector2.ONE)
 	pet_effects.render_arcs(self)
+	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)  # 恢复
 	
 	# ── 弹性形变: 身体与眼球统一世界空间形变 ──
 	# draw_set_transform_matrix 叠加到 node transform 上:

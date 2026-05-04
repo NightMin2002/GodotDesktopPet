@@ -737,7 +737,7 @@ func _on_radio_effect_color(value: int) -> void:
 	for i in range(_effect_color_btns.size()):
 		_effect_color_btns[i].text = labels[i] + (" [●]" if i == value else " [○]")
 
-# ── 能量共鸣弧悬浮示意图 (实验) ──
+# ── 静电弧悬浮示意图 (实验) ──
 
 var _arc_preview_panel: PanelContainer
 var _arc_preview_ctrl: Control  # _ArcPreview instance
@@ -1074,7 +1074,7 @@ func _build_submenus() -> void:
 	_submenu.create_toggle("effects", [
 		{"id": "shockwave", "on": "撞击冲击波 [●]", "off": "撞击冲击波 [○]", "key": "shockwave", "default": true},
 		{"id": "trail_fx", "on": "粒子尾流 [●]", "off": "粒子尾流 [○]", "key": "trail_fx", "default": true},
-		{"id": "arc_fx", "on": "能量共鸣弧 [●]", "off": "能量共鸣弧 [○]", "key": "arc_fx", "default": true},
+		{"id": "arc_fx", "on": "静电弧 [●]", "off": "静电弧 [○]", "key": "arc_fx", "default": true},
 	])
 	# 在 effects 面板中追加特效配色单选 (共用同一面板)
 	_append_effect_color_radio()
@@ -1101,14 +1101,14 @@ func _build_submenus() -> void:
 		{"value": 2, "label": "果冻", "desc": "QQ弹弹，慢速晃动恢复"},
 		{"value": 3, "label": "弹力球", "desc": "弹性十足，强力回弹"},
 	], _on_radio_elastic)
-	# 为"能量共鸣弧"挂载悬浮示意图 (实验)
+	# 为"静电弧"挂载悬浮示意图 (实验)
 	_setup_arc_fx_preview()
 
 ## 从 SettingsManager 刷新子菜单状态
 func _refresh_submenu_states() -> void:
 	_submenu.refresh_toggle("shockwave", SettingsManager.get_bool("shockwave", true), "撞击冲击波 [●]", "撞击冲击波 [○]")
 	_submenu.refresh_toggle("trail_fx", SettingsManager.get_bool("trail_fx", true), "粒子尾流 [●]", "粒子尾流 [○]")
-	_submenu.refresh_toggle("arc_fx", SettingsManager.get_bool("arc_fx", true), "能量共鸣弧 [●]", "能量共鸣弧 [○]")
+	_submenu.refresh_toggle("arc_fx", SettingsManager.get_bool("arc_fx", true), "静电弧 [●]", "静电弧 [○]")
 	_submenu.refresh_toggle("stroll", SettingsManager.get_bool("stroll", true), "自主巡航 [●]", "自主巡航 [○]")
 	_submenu.refresh_toggle("anti_gravity", SettingsManager.get_bool("anti_gravity", false), "反重力 [●]", "反重力 [○]")
 	_submenu.refresh_toggle("free_roam", SettingsManager.get_bool("free_roam", false), "空间跳跃 [●]", "空间跳跃 [○]")
