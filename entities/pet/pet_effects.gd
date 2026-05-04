@@ -28,6 +28,9 @@ var effect_color_mode: int = 0
 const ARC_RANGE := 150.0    # 触发距离
 var arc_enabled: bool = true
 var arc_nearby: bool = false # 是否有近距离宠物 (用于按需重绘)
+var _arc_paths: Dictionary = {}    # pet_index -> PackedVector2Array (缓存锯齿路径)
+var _arc_regen: float = 0.0        # 路径重生计时器
+var _arc_flash: float = 0.0        # 闪烁强度
 
 # ── 数据更新 (由 pet._process 调用) ──
 
@@ -73,6 +76,13 @@ func update(delta: float) -> bool:
 					break
 	if arc_nearby or was_nearby:
 		has_visual_change = true
+	
+	# 弧线路径重生计时器 + 闪烁衰减
+	_arc_regen -= delta
+	if _arc_flash > 0:
+		_arc_flash = maxf(_arc_flash - delta * 6.0, 0.0)
+	if not arc_nearby:
+		_arc_paths.clear()
 	
 	return has_visual_change
 
@@ -145,7 +155,15 @@ func render_arcs(canvas: CanvasItem) -> void:
 	var my_idx = pets.find(pet)
 	if my_idx < 0:
 		return
-	# 只由 index 较小的宠物绘制，避免重复
+	
+	# 路径重生: 每 0.07 秒更新锯齿轮廓
+	var need_regen = _arc_regen <= 0
+	if need_regen:
+		_arc_regen = 0.07
+		# 8% 概率闪烁突变
+		if randf() < 0.08:
+			_arc_flash = 1.0
+	
 	var my_hue = pet.palette.effective_hue()
 	for i in range(my_idx + 1, pets.size()):
 		var other = pets[i]
@@ -153,19 +171,29 @@ func render_arcs(canvas: CanvasItem) -> void:
 			continue
 		var dist = pet.global_position.distance_to(other.global_position)
 		if dist >= ARC_RANGE:
+			_arc_paths.erase(i)
 			continue
 		var other_local = canvas.to_local(other.global_position)
 		var intensity = 1.0 - (dist / ARC_RANGE)
 		var other_hue = other.palette.effective_hue()
-		_draw_lightning(canvas, Vector2.ZERO, other_local, intensity, my_hue, other_hue)
+		
+		# 缓存或重生路径
+		if need_regen or not _arc_paths.has(i):
+			_arc_paths[i] = _gen_lightning_path(Vector2.ZERO, other_local, intensity)
+		else:
+			# 路径已缓存，但端点需跟随实时位置更新
+			var cached = _arc_paths[i] as PackedVector2Array
+			if cached.size() > 1:
+				cached[0] = Vector2.ZERO
+				cached[cached.size() - 1] = other_local
+		
+		_draw_lightning_cached(_arc_paths[i], canvas, intensity, my_hue, other_hue)
 
-func _draw_lightning(canvas: CanvasItem, from: Vector2, to: Vector2, intensity: float, hue_a: float, hue_b: float) -> void:
+func _gen_lightning_path(from: Vector2, to: Vector2, intensity: float) -> PackedVector2Array:
 	var seg_count := 10
 	var dir = to - from
 	var perp = Vector2(-dir.y, dir.x).normalized()
 	var jitter_strength = 14.0 * intensity
-	
-	# 生成锯齿状闪电路径
 	var points = PackedVector2Array()
 	points.append(from)
 	for i in range(1, seg_count):
@@ -174,11 +202,13 @@ func _draw_lightning(canvas: CanvasItem, from: Vector2, to: Vector2, intensity: 
 		var jitter = perp * randf_range(-jitter_strength, jitter_strength)
 		points.append(base + jitter)
 	points.append(to)
+	return points
+
+func _draw_lightning_cached(points: PackedVector2Array, canvas: CanvasItem, intensity: float, hue_a: float, hue_b: float) -> void:
+	if points.size() < 2:
+		return
 	
-	# 随机放电闪烁 (8% 概率突然变亮)
-	var alpha = intensity * 0.85
-	if randf() < 0.08:
-		alpha = minf(alpha + 0.2, 1.0)
+	var alpha = intensity * 0.85 + _arc_flash * 0.15
 	
 	# 第1层: 双色渐变辉光 (宠物A色→宠物B色)
 	var glow_colors = PackedColorArray()
@@ -193,6 +223,6 @@ func _draw_lightning(canvas: CanvasItem, from: Vector2, to: Vector2, intensity: 
 		glow_colors.append(Color.from_hsv(h, 0.75, 1.0, alpha * 0.55))
 	canvas.draw_polyline_colors(points, glow_colors, 7.0 * intensity + 5.0, true)
 	
-	# 第2层: 白色闪电内核 (真实闪电色)
+	# 第2层: 白色闪电内核
 	var core = Color(0.9, 0.95, 1.0, alpha)
 	canvas.draw_polyline(points, core, 2.5 * intensity + 1.5, true)
