@@ -1,6 +1,7 @@
-# theme_panel.gd — 外观主题面板
+# theme_panel.gd — 外观主题面板 (独立窗口模式)
 # 管理: 宠物颜色 + UI 主题色的自定义
-# 包含: 色轮(Canvas绘制) + 目标选择器 + S/V 滑块 + 预设色
+# 包含: 可拖拽标题栏 + 色轮(Canvas绘制) + 目标选择器 + S/V 滑块 + 预设色
+# 不跟随宠物，打开后可自由拖拽到任意位置
 extends CanvasLayer
 
 const _PetColorPalette = preload("res://entities/pet/pet_color_palette.gd")
@@ -8,6 +9,11 @@ const _PetColorPalette = preload("res://entities/pet/pet_color_palette.gd")
 var panel: PanelContainer
 var _pet: Node2D
 var _guard_frames := 0
+
+# ── 拖拽相关 ──
+var _dragging_panel: bool = false
+var _drag_offset: Vector2 = Vector2.ZERO
+var _title_bar: HBoxContainer  # 标题栏区域 (拖拽句柄)
 
 # ── 当前编辑状态 ──
 var _target_index: int = 0   # 0=原体, 1~5=分身, -1=UI主题
@@ -37,12 +43,7 @@ func _ready() -> void:
 
 # ── 主循环 ──
 
-func _process(delta: float) -> void:
-	if panel.visible and is_instance_valid(_pet):
-		var pet_pos = _pet.get_global_transform_with_canvas().get_origin()
-		var target_pos = pet_pos + Vector2(-panel.size.x / 2, -panel.size.y - 50)
-		target_pos = _clamp_pos(target_pos)
-		panel.position = panel.position.lerp(target_pos, delta * 10.0)
+func _process(_delta: float) -> void:
 	if _guard_frames > 0:
 		_guard_frames -= 1
 
@@ -80,13 +81,35 @@ func _build_ui() -> void:
 	vbox.add_theme_constant_override("separation", 10)
 	margin.add_child(vbox)
 	
-	# 标题
+	# 标题栏 (可拖拽区域 + 关闭按钮)
+	_title_bar = HBoxContainer.new()
+	_title_bar.add_theme_constant_override("separation", 4)
+	_title_bar.mouse_filter = Control.MOUSE_FILTER_STOP
+	_title_bar.gui_input.connect(_on_title_bar_input)
+	_title_bar.mouse_default_cursor_shape = Control.CURSOR_MOVE
+	vbox.add_child(_title_bar)
+	
 	_title_label = Label.new()
 	_title_label.text = "外观主题"
 	_title_label.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.5, 1.0, 0.9))
 	_title_label.add_theme_font_size_override("font_size", 20)
 	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(_title_label)
+	_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_title_bar.add_child(_title_label)
+	
+	# 关闭按钮 (标题栏右侧)
+	var close_btn = Button.new()
+	close_btn.text = "x"
+	close_btn.add_theme_font_size_override("font_size", 16)
+	close_btn.add_theme_color_override("font_color", Color(0.6, 0.65, 0.75, 0.6))
+	close_btn.add_theme_color_override("font_hover_color", Color(1.0, 0.4, 0.35, 1.0))
+	close_btn.flat = true
+	close_btn.custom_minimum_size = Vector2(28, 28)
+	close_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	close_btn.mouse_default_cursor_shape = Control.CURSOR_ARROW
+	close_btn.pressed.connect(_close_panel)
+	_title_bar.add_child(close_btn)
 	
 	# 分割线
 	vbox.add_child(_make_sep())
@@ -495,7 +518,7 @@ func _open_panel() -> void:
 	_load_target_color()
 	# 刷新目标选择器 (分身可能变了)
 	var parent_vbox = panel.get_child(0).get_child(0)
-	var old_selector = parent_vbox.get_child(2)  # 目标选择器在 title, sep 之后
+	var old_selector = parent_vbox.get_child(2)  # 目标选择器在 title_bar, sep 之后
 	old_selector.queue_free()
 	await get_tree().process_frame
 	var new_hbox = HBoxContainer.new()
@@ -519,9 +542,11 @@ func _open_panel() -> void:
 	_refresh_target_highlight()
 	
 	EventBus.context_menu_toggled.emit(true)
-	if is_instance_valid(_pet):
-		var pet_pos = _pet.get_global_transform_with_canvas().get_origin()
-		panel.position = pet_pos + Vector2(-140, -panel.size.y - 50)
+	get_window().grab_focus()  # 确保 OS 窗口获得键盘焦点
+	# 独立窗口: 在屏幕中心偏上打开
+	var vp = get_viewport().get_visible_rect().size
+	panel.position = Vector2(vp.x / 2.0 - 140, vp.y / 2.0 - 250)
+	panel.position = _clamp_pos(panel.position)
 	panel.modulate.a = 0.0
 	panel.scale = Vector2(0.6, 0.6)
 	panel.show()
@@ -535,6 +560,7 @@ func _open_panel() -> void:
 		.set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
 
 func _close_panel() -> void:
+	_dragging_panel = false
 	panel.pivot_offset = panel.size / 2.0
 	var tween = create_tween().set_parallel(true)
 	tween.tween_property(panel, "modulate:a", 0.0, 0.15)
@@ -553,10 +579,26 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not panel.visible or _guard_frames > 0:
 		return
 	if event is InputEventMouseButton and event.pressed:
+		# 拖拽中不处理外部点击关闭
+		if _dragging_panel:
+			return
 		var local_mouse = panel.get_local_mouse_position()
 		var rect = Rect2(Vector2.ZERO, panel.size)
 		if not rect.has_point(local_mouse):
 			_close_panel()
+
+# ── 标题栏拖拽 ──
+
+func _on_title_bar_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			_dragging_panel = true
+			_drag_offset = get_viewport().get_mouse_position() - panel.position
+		else:
+			_dragging_panel = false
+	elif event is InputEventMouseMotion and _dragging_panel:
+		panel.position = get_viewport().get_mouse_position() - _drag_offset
+		panel.position = _clamp_pos(panel.position)
 
 # ── 工具 ──
 
