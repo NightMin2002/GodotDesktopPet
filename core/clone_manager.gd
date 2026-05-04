@@ -15,6 +15,7 @@ func setup(main: Node2D) -> void:
 	EventBus.clone_pet.connect(_on_clone_pet_requested)
 	EventBus.behavior_mode_changed.connect(_on_behavior_mode_changed)
 	EventBus.setting_toggled.connect(_on_setting_toggled)
+	EventBus.nighttime_mode_changed.connect(_on_nighttime_mode_changed)
 
 ## 启动时从持久化恢复克隆体
 func restore_clones() -> void:
@@ -91,9 +92,21 @@ func _on_setting_toggled(setting_id: String, _is_on: bool) -> void:
 	if setting_id == "anti_gravity":
 		reorganize_quiet_queue()
 
+func _on_nighttime_mode_changed(active: bool) -> void:
+	if active:
+		reorganize_quiet_queue()
+
 ## 动态重新评估所有克隆体在屏幕上的水平位置，重新分配车位
 func reorganize_quiet_queue() -> void:
-	if _main.behavior_mode != 1: return
+	# 安静待命 OR 深夜模式 时才需要排队
+	var any_quiet: bool = _main.behavior_mode == 1
+	if not any_quiet:
+		for p in _main.pet_instances:
+			if is_instance_valid(p) and p.nighttime_mode:
+				any_quiet = true
+				break
+	if not any_quiet:
+		return
 	
 	# 反重力: 目标 Y 在天花板附近；正常: 目标 Y 在地面附近
 	var ag = SettingsManager.get_bool("anti_gravity", false)
@@ -155,6 +168,3 @@ func _generate_distinct_hue() -> float:
 	
 	# 如果尝试次数耗尽 (宠物太多)，直接返回随机值
 	return randf()
-
-
-

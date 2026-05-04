@@ -46,11 +46,16 @@ var window_mode: int = 0  # 0=FREE, 1=CONFINED, 2=REPELLED
 
 # ── 行为指令 ──
 var behavior_mode: int = 0  # 0=FREE(自由行动), 1=QUIET(安静待命)
+var nighttime_mode: bool = false  # 深夜模式: 23:00~6:00 自动归位 + 半闭眼
 @warning_ignore("unused_private_class_variable")
 var _was_dragged_in_quiet: bool = false  # 安静模式下被拖拽的标记 (drag.gd写/fall.gd读)
 var _quiet_drag_count: int = 0           # 安静模式下被拖拽的累计次数
 var _last_quiet_drag_line: String = ""   # 上次显示的话术 (防连续重复)
 var is_strolling: bool = false  # 是否正在滚动漫步 (供其他宠物检测让路)
+
+## 统一判断: 宠物是否应处于安静排队行为 (手动安静待命 OR 深夜模式)
+func is_quiet_behavior() -> bool:
+	return behavior_mode == 1 or nighttime_mode
 
 # ── 戳一戳交互系统 (委托给 PokeSystem) ──
 var poke_system: PokeSystem
@@ -157,6 +162,7 @@ func _ready() -> void:
 	EventBus.pet_scanning_changed.connect(_on_pet_scanning_changed)
 	EventBus.pet_show_eye_icon.connect(_on_pet_show_eye_icon)
 	EventBus.trigger_squash_test.connect(_on_trigger_squash_test)
+	EventBus.nighttime_mode_changed.connect(_on_nighttime_mode_changed)
 
 func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 	if setting_id == "eye_track":
@@ -194,8 +200,16 @@ func _on_behavior_mode_changed(mode: int) -> void:
 	behavior_mode = mode
 	_was_dragged_in_quiet = false  # 清除残留标记
 
+func _on_nighttime_mode_changed(active: bool) -> void:
+	nighttime_mode = active
+	_was_dragged_in_quiet = false
+
 func _on_trigger_idle_behavior(behavior: String) -> void:
 	if is_clone:
+		return
+	# 深夜模式: 拒绝执行指令 (宠物正在休眠，不接受命令)
+	if nighttime_mode:
+		show_local_bubble("休眠周期中。指令已搁置。")
 		return
 	# 解析风格参数 (格式: "hibernate:1" → behavior="hibernate", style=1)
 	var style := -1

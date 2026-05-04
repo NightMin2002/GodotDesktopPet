@@ -26,7 +26,7 @@ func process(delta: float) -> void:
 	if pet.linear_velocity.length() < SETTLE_THRESHOLD:
 		settle_timer += delta
 		if settle_timer >= SETTLE_TIME:
-			if pet.behavior_mode == 1:
+			if pet.is_quiet_behavior():
 				# 落地停稳后，获取真实的地表 X 坐标并触发全局分身排队计算
 				var main_node = pet.get_tree().root.get_node_or_null("Main")
 				if main_node and main_node.has_method("reorganize_quiet_queue"):

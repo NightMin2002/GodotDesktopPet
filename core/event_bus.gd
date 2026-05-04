@@ -31,6 +31,7 @@ signal window_mode_changed(mode: int)  # 0=FREE, 1=CONFINED, 2=REPELLED
 signal behavior_mode_changed(mode: int)  # 0=FREE(自由行动), 1=QUIET(安静待命)
 signal trigger_idle_behavior(behavior: String)  # 调试: 强制触发 idle 微行为
 signal trigger_free_roam  # 调试: 触发自由移动 (透明踏板跳跃)
+signal nighttime_mode_changed(active: bool)  # 深夜模式: 23:00~6:00 自动归位+半闭眼
 signal pet_scanning_changed(state: String)  # 检索动画: "scanning"/"done"/"idle"
 signal pet_show_eye_icon(icon_type: String)  # 瞳孔图标覆盖: "mail"/"alert"/"question"/""(清除)
 signal trigger_squash_test(style: int)  # 弹性形变测试: -1=关闭, 0=果冻, 1=弹力球, 2=水滴

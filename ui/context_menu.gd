@@ -1197,6 +1197,13 @@ func _on_debug_behavior_pressed(behavior: String) -> void:
 	EventBus.context_menu_toggled.emit(false)
 	# 延迟一帧让菜单关闭完毕
 	await get_tree().process_frame
+	# 深夜模式: 拒绝所有指令序列 (宠物正在休眠)
+	var main_ref = get_tree().root.get_node_or_null("Main")
+	if main_ref and "pet_instance" in main_ref:
+		var pet = main_ref.pet_instance
+		if is_instance_valid(pet) and pet.nighttime_mode:
+			pet.show_local_bubble("休眠周期中。指令已搁置。")
+			return
 	if behavior == "_scan_done":
 		# 特殊处理: 完成对勾测试 (直接进入 done 状态, 5秒后自动恢复)
 		EventBus.pet_scanning_changed.emit("done")

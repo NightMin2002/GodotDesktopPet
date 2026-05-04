@@ -15,7 +15,7 @@ func enter() -> void:
 	if pet:
 		pet.linear_damp = 0.8
 		pet.angular_damp = 1.0
-		if pet.behavior_mode == 1:
+		if pet.is_quiet_behavior():
 			pet.linear_damp = 5.0
 			pet.angular_damp = 8.0
 
@@ -33,7 +33,7 @@ func process(delta: float) -> void:
 		return
 	
 	# ── 安静模式位置锁定：持续微校正物理漂移 ──
-	if pet.behavior_mode == 1 and pet.has_meta("retreat_target_x"):
+	if pet.is_quiet_behavior() and pet.has_meta("retreat_target_x"):
 		var target_x: float = pet.get_meta("retreat_target_x")
 		var drift := pet.global_position.x - target_x
 		if absf(drift) > 2.0:
@@ -42,7 +42,7 @@ func process(delta: float) -> void:
 			pet.linear_velocity.x *= 0.8  # 同步衰减水平速度
 	
 	if idle_timer >= idle_duration:
-		if pet.behavior_mode == 1:
+		if pet.is_quiet_behavior():
 			if not _is_at_slot():
 				pet.transition_to("retreat")
 				return
@@ -94,7 +94,7 @@ func physics_process(delta: float) -> void:
 	
 	# ── 跳绳让路：近距离检测到滚动中的同伴 → 跳起让路 ──
 	# 纯滚动模式不跳跃 (对方的 _has_pet_ahead 会让它主动停下)
-	if pet.behavior_mode == 0 and pet.move_style != 1:
+	if not pet.is_quiet_behavior() and pet.move_style != 1:
 		_dodge_cooldown -= delta
 		if _dodge_cooldown <= 0.0:
 			var stroller = _find_approaching_stroller()

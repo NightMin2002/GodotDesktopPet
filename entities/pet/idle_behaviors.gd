@@ -1,5 +1,5 @@
 # idle_behaviors.gd — Idle 微行为管理器
-# 管理待机状态下的微行为子阶段: 低功耗休眠 / 系统自检
+# 管理待机状态下的微行为子阶段: 低功耗休眠 / 系统自检 / 深夜模式
 # 从 idle.gd 拆分，与 poke_system.gd 同为 RefCounted 轻量挂载
 class_name IdleBehaviors
 extends RefCounted
@@ -17,6 +17,14 @@ var _hibernate_anim_time := 0.0    # 累计动画时间 (跨阶段不重置, 用
 
 var _hibernate_bubble_shown := false
 var _hibernate_done := false        # 本轮离席已休眠过 (鼠标活动后重置)
+var _idle_notice_shown := false     # 白天 5 分钟话术已显示 (鼠标活动后重置)
+
+# ── 深夜模式 (23:00~6:00 强制归位 + 半闭眼) ──
+var _nighttime_active := false      # 当前是否处于深夜模式
+var _nighttime_check_timer := 0.0   # 系统时间检查节流 (每 30 秒检查一次)
+const NIGHTTIME_START_HOUR := 23    # 深夜模式开始 (23:00)
+const NIGHTTIME_END_HOUR :=6       # 深夜模式结束 (6:00)
+const NIGHTTIME_CHECK_INTERVAL := 30.0  # 时间检查间隔 (秒)
 
 # ── 自检调度 (真实时钟驱动) ──
 var _scan_clock := 0.0             # 距上次自检的累计秒数
@@ -25,8 +33,9 @@ var _scan_count_3h := 0            # 3小时窗口内已执行自检次数
 var _window_clock := 0.0           # 3小时窗口计时器
 const SCAN_MAX_PER_3H := 3         # 3小时内最多自检次数
 
-# ── 休眠条件 ──
-const MOUSE_IDLE_FOR_HIBERNATE := 300.0  # 鼠标静止 5 分钟后允许触发休眠
+# ── 白天待机分级条件 ──
+const MOUSE_IDLE_FOR_NOTICE := 300.0     # 鼠标静止 5 分钟 → 说一句话
+const MOUSE_IDLE_FOR_STANDBY := 1800.0   # 鼠标静止 30 分钟 → 进入待机动画
 
 # ── 话术池 ──
 const HIBERNATE_ENTER_LINES := [
@@ -34,6 +43,13 @@ const HIBERNATE_ENTER_LINES := [
 	"进入待机...",
 	"节能模式启动...",
 	"...休眠中。",
+]
+
+const IDLE_NOTICE_LINES := [
+	"似乎未检测到活动现象。持续执行监控...",
+	"操作员已离席。本机维持观测。",
+	"外部输入信号中断。待机监控中。",
+	"无活动检测。系统进入低负荷巡航。",
 ]
 
 const HIBERNATE_WAKE_LINES := [
@@ -53,34 +69,65 @@ const SCAN_DONE_LINES := [
 func _init() -> void:
 	# 首次自检间隔: 启动后 40~80 分钟
 	_next_scan_interval = randf_range(2400.0, 4800.0)
+	# 启动时立即触发首次深夜时段检测 (不等 30 秒)
+	_nighttime_check_timer = NIGHTTIME_CHECK_INTERVAL
 
 # ── 主循环 ──
 
 func update(delta: float) -> void:
-	# 分身不运行微行为系统 (不需要自检/休眠)
+	# ── 深夜模式自动休眠: 原体和克隆体都需要 (到位后进入半闭眼) ──
+	if pet.nighttime_mode and active_behavior == "":
+		if pet.current_state_name == "idle" and _is_pet_at_nighttime_slot():
+			hibernate_style = 0  # 深夜专属: 机械挡板半闭眼
+			trigger("hibernate")
+	
+	# ── 深夜休眠中: 持续更新 (原体和克隆体都需要) ──
+	if pet.nighttime_mode and active_behavior == "hibernate":
+		_behavior_timer += delta
+		_hibernate_anim_time += delta
+		_update_hibernate(delta)
+		return
+	
+	# 分身不运行其余微行为系统 (不需要自检/白天休眠/深夜时钟检测)
 	if pet.is_clone:
 		return
 	
 	# 自检时钟始终运转 (无论是否在 idle)
 	_scan_clock += delta
 	_window_clock += delta
-	# 鼠标活动后重置休眠标志 (用户回来了)
-	if _hibernate_done and pet.eye_behavior._mouse_idle_time < 5.0:
-		_hibernate_done = false
+	# 鼠标活动后重置标志 (用户回来了)
+	if pet.eye_behavior._mouse_idle_time < 5.0:
+		if _hibernate_done:
+			_hibernate_done = false
+		if _idle_notice_shown:
+			_idle_notice_shown = false
 	# 3小时窗口重置
 	if _window_clock >= 10800.0:  # 3 * 60 * 60
 		_window_clock = 0.0
 		_scan_count_3h = 0
 	
-	# ── 主动触发休眠: 持续监控，不依赖 idle.gd 的 try_random() ──
-	if active_behavior == "" and not _hibernate_done:
-		if pet.eye_behavior._mouse_idle_time >= MOUSE_IDLE_FOR_HIBERNATE:
+	# ── 深夜时段检测 (每 30 秒检查一次系统时间, 仅原体负责发信号) ──
+	_nighttime_check_timer += delta
+	if _nighttime_check_timer >= NIGHTTIME_CHECK_INTERVAL:
+		_nighttime_check_timer = 0.0
+		_check_nighttime()
+	
+	# ── 白天待机分级: 5分钟说话 → 30分钟进入待机动画 ──
+	if not _nighttime_active and active_behavior == "" and not _hibernate_done:
+		var idle_time = pet.eye_behavior._mouse_idle_time
+		# 第一级: 5 分钟 → 说一句话 (不改变视觉)
+		if idle_time >= MOUSE_IDLE_FOR_NOTICE and not _idle_notice_shown:
+			_idle_notice_shown = true
+			pet.show_local_bubble(_pick(IDLE_NOTICE_LINES))
+		# 第二级: 30 分钟 → 进入待机动画 (加载旋转器, 不是半闭眼)
+		if idle_time >= MOUSE_IDLE_FOR_STANDBY:
 			var state = pet.current_state_name
 			if state == "idle":
+				hibernate_style = 1  # 白天待机: 加载旋转器风格
 				trigger("hibernate")
 			elif state == "walk":
-				# 正在散步 → 先回到 idle 再进入休眠
 				pet.transition_to("idle")
+				hibernate_style = 1
 				trigger("hibernate")
 	
 	if active_behavior == "":
@@ -118,12 +165,7 @@ func try_random(_idle_elapsed: float) -> bool:
 		trigger("scan")
 		return true
 	
-	# ── 休眠: 鼠标长时间未移动 (用户离开了) ──
-	# 本轮离席已休眠过则跳过，等用户回来再重置
-	if not _hibernate_done:
-		if pet.eye_behavior._mouse_idle_time >= MOUSE_IDLE_FOR_HIBERNATE:
-			trigger("hibernate")
-			return true
+	# 休眠触发已迁移至 update() 的白天分级逻辑 / 深夜模式自动触发
 	
 	return false
 
@@ -140,8 +182,52 @@ func trigger(behavior: String) -> void:
 func cancel() -> void:
 	_cancel_current()
 
+# ── 深夜模式检测 ──
+
+## 检查系统时间，判断是否进入/退出深夜模式
+func _check_nighttime() -> void:
+	var time_dict = Time.get_datetime_dict_from_system()
+	var hour: int = time_dict.hour
+	var is_night = hour >= NIGHTTIME_START_HOUR or hour < NIGHTTIME_END_HOUR
+	
+	if is_night and not _nighttime_active:
+		_enter_nighttime()
+	elif not is_night and _nighttime_active:
+		_exit_nighttime()
+
+## 进入深夜模式
+func _enter_nighttime() -> void:
+	_nighttime_active = true
+	print("[DesktopPet] 深夜模式启动 (", NIGHTTIME_START_HOUR, ":00~", NIGHTTIME_END_HOUR, ":00)")
+	# 通知所有系统: 深夜模式激活 → pet.nighttime_mode = true + 排队
+	EventBus.nighttime_mode_changed.emit(true)
+	# 如果当前在自由行动中的 idle/walk 状态，主动发起 retreat
+	var state = pet.current_state_name
+	if state == "idle" or state == "walk":
+		pet.transition_to("retreat")
+
+## 退出深夜模式
+func _exit_nighttime() -> void:
+	_nighttime_active = false
+	print("[DesktopPet] 深夜模式结束，恢复正常行为")
+	# 通知所有系统: 深夜模式关闭
+	EventBus.nighttime_mode_changed.emit(false)
+	# 取消正在进行的深夜休眠
+	if active_behavior == "hibernate":
+		_cancel_current()
+	# 如果用户原本就是自由行动模式，恢复正常行为
+	if pet.behavior_mode == 0:
+		pet.transition_to("idle")
+
+## 检查宠物是否已到达分配的排队槽位 (用于深夜模式自动休眠判定)
+func _is_pet_at_nighttime_slot() -> bool:
+	if not pet.has_meta("retreat_target_x"):
+		return false
+	var target_x: float = pet.get_meta("retreat_target_x")
+	return absf(pet.global_position.x - target_x) < 25.0
+
 # ── 休眠 (低功耗模式) ──
-# 触发条件: 鼠标静止 5 分钟以上 (用户离开电脑)
+# 触发条件: 鼠标静止 5 分钟以上 (用户离开电脑) 或 深夜模式到位
 
 func _enter_hibernate() -> void:
 	_hibernate_phase = 0  # 进入阶段
@@ -159,12 +245,15 @@ func _enter_hibernate() -> void:
 	pet.angular_velocity = 0.0  # 立即停止旋转
 
 func _update_hibernate(_delta: float) -> void:
-	# 鼠标恢复活动 → 唤醒 (最低持续5秒，防止调试触发后因刚点菜单立即退出)
-	if pet.eye_behavior._mouse_idle_time < 2.0 and _hibernate_phase == 1 and _behavior_timer > 5.0:
-		_hibernate_phase = 2
-		_behavior_timer = 0.0
-		_hibernate_bubble_shown = false  # 重置标志，供退出阶段一次性守卫
-		return
+	# ── 唤醒条件 ──
+	# 深夜模式: 只有退出深夜时段才唤醒 (由 _exit_nighttime 处理)
+	# 白天模式: 鼠标恢复活动 → 唤醒 (最低持续5秒，防止调试触发后因刚点菜单立即退出)
+	if not pet.nighttime_mode:
+		if pet.eye_behavior._mouse_idle_time < 2.0 and _hibernate_phase == 1 and _behavior_timer > 5.0:
+			_hibernate_phase = 2
+			_behavior_timer = 0.0
+			_hibernate_bubble_shown = false  # 重置标志，供退出阶段一次性守卫
+			return
 	
 	match _hibernate_phase:
 		0:  # 进入阶段: 等虹膜收缩完毕 (~1.5s) + 身体回正
@@ -176,7 +265,7 @@ func _update_hibernate(_delta: float) -> void:
 				if not _hibernate_bubble_shown:
 					_hibernate_bubble_shown = true
 					pet.show_local_bubble(_pick(HIBERNATE_ENTER_LINES))
-		1:  # 持续阶段: 无限期等待，直到鼠标活动唤醒
+		1:  # 持续阶段: 无限期等待，直到唤醒条件满足
 			pet.rotation = lerpf(pet.rotation, 0.0, _delta * 3.0)
 			if hibernate_style == 0:
 				# 挡板呼吸

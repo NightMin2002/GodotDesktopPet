@@ -33,7 +33,7 @@ func exit() -> void:
 	if pet:
 		pet.gravity_scale = original_gravity_scale
 		# 安静模式下：只有宠物真正被拖离原位时才记录 (poke 原地点击不触发吐槽)
-		if pet.behavior_mode == 1:
+		if pet.is_quiet_behavior():
 			var moved = pet.global_position.distance_to(_init_pet_pos)
 			if moved > 30.0:
 				pet._was_dragged_in_quiet = true
