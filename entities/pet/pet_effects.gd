@@ -65,11 +65,14 @@ func update(delta: float) -> bool:
 	# 检测近距离宠物 (静电弧)
 	var was_nearby = arc_nearby
 	arc_nearby = false
-	if arc_enabled:
+	if arc_enabled and not pet.freeze:
 		var main_node = pet.get_tree().root.get_node_or_null("Main")
 		if main_node and "pet_instances" in main_node:
 			for other in main_node.pet_instances:
 				if other == pet or not is_instance_valid(other):
+					continue
+				# 跳过正在退场的宠物 (freeze=true 表示退场动画中)
+				if other.freeze:
 					continue
 				if _arc_distance(other.global_position) < ARC_RANGE:
 					arc_nearby = true
@@ -170,6 +173,10 @@ func render_arcs(canvas: CanvasItem) -> void:
 	for i in range(my_idx + 1, pets.size()):
 		var other = pets[i]
 		if not is_instance_valid(other) or not other.palette:
+			continue
+		# 跳过正在退场的宠物
+		if other.freeze:
+			_arc_paths.erase(i)
 			continue
 		var dist = _arc_distance(other.global_position)
 		if dist >= ARC_RANGE:

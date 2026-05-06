@@ -389,8 +389,10 @@ func _process(delta: float) -> void:
 	var squash_changed = squash.update(delta)
 	
 	# 屏幕穿越: 传送 + 幽灵偏移计算
-	if screen_wrap:
+	if screen_wrap and not freeze:
 		_update_screen_wrap()
+	elif freeze and _wrap_ghost_offset != Vector2.ZERO:
+		_wrap_ghost_offset = Vector2.ZERO
 	
 	# 按需重绘
 	if has_visual_change or linear_velocity.length() > 1.0 or eye_behavior.is_animating() or squash_changed or _wrap_ghost_offset != Vector2.ZERO:
