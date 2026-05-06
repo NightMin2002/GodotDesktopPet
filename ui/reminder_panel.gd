@@ -1,5 +1,5 @@
 # reminder_panel.gd — 提醒管理面板 (独立窗口模式)
-# 屏幕中心弹出，可拖拽到任意位置
+# 宠物附近弹出，可拖拽到任意位置
 # 支持每日重复和一次性两种模式
 extends CanvasLayer
 
@@ -629,15 +629,27 @@ func _toggle_panel() -> void:
 func _open_panel() -> void:
 	_refresh_list()
 	EventBus.context_menu_toggled.emit(true)
-	get_window().grab_focus()  # 确保 OS 窗口获得键盘焦点
-	# 独立窗口: 在屏幕中心打开
+	get_window().grab_focus()
+	# 定位: 在宠物附近弹出
 	var vp = get_viewport().get_visible_rect().size
-	panel.position = Vector2(vp.x / 2.0 - 170, vp.y / 2.0 - 200)
-	panel.position = _clamp_pos(panel.position)
+	var pet_pos := Vector2(vp.x / 2.0, vp.y / 2.0)  # 默认居中
+	if is_instance_valid(_pet):
+		pet_pos = _pet.get_global_transform_with_canvas().get_origin()
+	var panel_w := panel.size.x if panel.size.x > 0 else 340.0
+	var panel_h := panel.size.y if panel.size.y > 0 else 400.0
+	var gap := 60.0
+	var x: float
+	if pet_pos.x > vp.x * 0.5:
+		x = pet_pos.x - panel_w - gap  # 宠物在右→面板在左
+	else:
+		x = pet_pos.x + gap              # 宠物在左→面板在右
+	var y = pet_pos.y - panel_h * 0.4   # 偏上对齐
+	panel.position = _clamp_pos(Vector2(x, y))
 	panel.modulate.a = 0.0
 	panel.scale = Vector2(0.6, 0.6)
 	panel.show()
 	await get_tree().process_frame
+	panel.position = _clamp_pos(panel.position)  # 布局后用真实尺寸重新钳制
 	panel.pivot_offset = panel.size / 2.0
 	_guard_frames = 5
 	var tween = create_tween().set_parallel(true)
