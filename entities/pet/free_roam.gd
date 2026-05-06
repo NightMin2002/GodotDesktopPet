@@ -399,7 +399,8 @@ func _schedule_removal(body: Node, delay: float) -> void:
 # ── 踏板破碎效果 ──
 
 func _shatter_platform(plat: StaticBody2D) -> void:
-	var pos = plat.position
+	# 碎片从宠物起跳位置飞散 (X=宠物当前位置, Y=踏板高度)
+	var pos = Vector2(pet.global_position.x, plat.position.y)
 	var parent_node = plat.get_parent()
 	
 	for child in plat.get_children():
@@ -415,6 +416,7 @@ func _shatter_platform(plat: StaticBody2D) -> void:
 	
 	if not parent_node: return
 	var g_dir = pet.gravity_sign
+	var frag_color = pet.palette.shift_color(Color(0.25, 0.55, 1.0, 0.75))
 	for i in range(6):
 		var frag = Polygon2D.new()
 		var fw = randf_range(8.0, 16.0)
@@ -423,7 +425,7 @@ func _shatter_platform(plat: StaticBody2D) -> void:
 			Vector2(-fw/2, -fh/2), Vector2(fw/2, -fh/2),
 			Vector2(fw/2, fh/2), Vector2(-fw/2, fh/2)
 		])
-		frag.color = Color(0.25, 0.55, 1.0, 0.75)
+		frag.color = frag_color
 		frag.position = pos + Vector2(randf_range(-35, 35), randf_range(-3, 3))
 		frag.rotation = randf_range(-0.3, 0.3)
 		frag.z_index = -1
