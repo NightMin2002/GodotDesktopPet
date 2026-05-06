@@ -8,6 +8,7 @@ const InfoSidebar = preload("res://ui/context_menu/info_sidebar.gd")
 const SysinfoBubble = preload("res://ui/context_menu/sysinfo_bubble.gd")
 const MenuTooltip = preload("res://ui/context_menu/menu_tooltip.gd")
 const SubmenuSystem = preload("res://ui/context_menu/submenu_system.gd")
+const EffectPreview = preload("res://ui/context_menu/effect_preview.gd")
 
 # ── 主菜单分区入口按钮 ──
 @onready var hud: PanelContainer = $HUDPanel
@@ -23,6 +24,7 @@ var _submenu: SubmenuSystem
 var _sidebar: InfoSidebar
 var _sysinfo_bubble: SysinfoBubble
 var _tooltip: MenuTooltip
+var _fx_preview: EffectPreview
 var target: Node2D = null
 
 ## 菜单展开方向: 1=菜单在宠物右侧, -1=菜单在宠物左侧
@@ -48,10 +50,7 @@ var _reminder_btn: Button
 # ── 特效配色内嵌按钮 ──
 var _effect_color_btns: Array[Button] = []
 
-# ── 弧线预览 ──
-var _arc_preview_panel: PanelContainer
-var _arc_preview_ctrl: Control
-var _arc_preview_btn: Button
+
 
 func _ready() -> void:
 	hud.hide()
@@ -62,6 +61,7 @@ func _ready() -> void:
 	_tooltip = MenuTooltip.new(self)
 	_tooltip.build()
 	_submenu = SubmenuSystem.new(self)
+	_fx_preview = EffectPreview.new(self)
 
 	# 构建所有分区面板 (L2) + 选项面板 (L3)
 	_build_all_sections()
@@ -256,7 +256,7 @@ func _build_sec_visual() -> void:
 	], 3)
 	_submenu._l3_parent_map["effects"] = "sec_visual"
 	_append_effect_color_radio()
-	_setup_arc_fx_preview()
+	_fx_preview.build()
 
 	# L3: 弹性形变单选
 	_submenu.create_radio("elastic", [
@@ -480,8 +480,7 @@ func _process(delta: float) -> void:
 	_sysinfo_bubble.process_tick()
 	if _tooltip.panel.visible:
 		_tooltip.update_position()
-	if is_instance_valid(_arc_preview_panel) and _arc_preview_panel.visible:
-		_update_arc_preview_position()
+	_fx_preview.update_positions()
 	_submenu.process_timers(delta)
 
 func _clamp_to_viewport(pos: Vector2) -> Vector2:
@@ -775,160 +774,7 @@ func _on_radio_effect_color(value: int) -> void:
 	for i in range(_effect_color_btns.size()):
 		_effect_color_btns[i].text = labels[i] + (" [●]" if i == value else " [○]")
 
-# ═══════════════════════════════════════════
-# 弧线预览 tooltip
-# ═══════════════════════════════════════════
 
-func _setup_arc_fx_preview() -> void:
-	var arc_btn = _submenu.l3_items.get("arc_fx") as Button
-	if not arc_btn:
-		return
-
-	_arc_preview_panel = PanelContainer.new()
-	_arc_preview_panel.visible = false
-	var style = StyleBoxFlat.new()
-	style.bg_color = Color(0.02, 0.04, 0.1, 0.95)
-	style.border_color = Color.from_hsv(EventBus.ui_hue, 0.7, 1.0, 0.6)
-	style.set_border_width_all(1)
-	style.set_corner_radius_all(10)
-	style.content_margin_left = 10
-	style.content_margin_right = 10
-	style.content_margin_top = 8
-	style.content_margin_bottom = 8
-	_arc_preview_panel.add_theme_stylebox_override("panel", style)
-
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 4)
-	_arc_preview_panel.add_child(vbox)
-
-	_arc_preview_ctrl = _ArcPreview.new()
-	_arc_preview_ctrl.custom_minimum_size = Vector2(160, 80)
-	_arc_preview_ctrl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(_arc_preview_ctrl)
-
-	var desc = Label.new()
-	desc.text = "宠物间的能量弧线"
-	desc.add_theme_font_size_override("font_size", 12)
-	desc.add_theme_color_override("font_color", Color(0.45, 0.6, 0.8, 0.7))
-	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(desc)
-
-	add_child(_arc_preview_panel)
-
-	arc_btn.mouse_entered.connect(_show_arc_preview.bind(arc_btn))
-	arc_btn.mouse_exited.connect(_hide_arc_preview)
-
-func _show_arc_preview(btn: Button) -> void:
-	_arc_preview_btn = btn
-	_arc_preview_ctrl.set_process(true)
-	_arc_preview_panel.modulate.a = 0.0
-	_arc_preview_panel.scale = Vector2(0.7, 0.7)
-	_arc_preview_panel.show()
-	await get_tree().process_frame
-	_update_arc_preview_position()
-	var tween = create_tween().set_parallel(true)
-	tween.tween_property(_arc_preview_panel, "modulate:a", 1.0, 0.15)
-	tween.tween_property(_arc_preview_panel, "scale", Vector2.ONE, 0.2) \
-		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-
-func _update_arc_preview_position() -> void:
-	if not is_instance_valid(_arc_preview_btn):
-		return
-	var effects_panel = _submenu.l3_panels.get("effects")
-	var ref_pos: Vector2
-	var ref_w: float
-	if is_instance_valid(effects_panel) and effects_panel.visible:
-		ref_pos = effects_panel.global_position
-		ref_w = effects_panel.size.x
-	else:
-		ref_pos = _arc_preview_btn.global_position
-		ref_w = _arc_preview_btn.size.x
-	var btn_pos = _arc_preview_btn.global_position
-	var btn_size = _arc_preview_btn.size
-	var vp_size = get_viewport().get_visible_rect().size
-	var panel_w = _arc_preview_panel.size.x
-	var gap := 16.0
-	var x: float
-	if _menu_side == 1:
-		x = ref_pos.x + ref_w + gap
-		if x + panel_w > vp_size.x - 10: x = ref_pos.x - panel_w - gap
-		_arc_preview_panel.pivot_offset = Vector2(0, _arc_preview_panel.size.y / 2.0)
-	else:
-		x = ref_pos.x - panel_w - gap
-		if x < 10: x = ref_pos.x + ref_w + gap
-		_arc_preview_panel.pivot_offset = Vector2(panel_w, _arc_preview_panel.size.y / 2.0)
-	var y = btn_pos.y + btn_size.y / 2.0 - _arc_preview_panel.size.y / 2.0
-	y = clampf(y, 8.0, vp_size.y - _arc_preview_panel.size.y - 8.0)
-	_arc_preview_panel.position = Vector2(x, y)
-
-func _hide_arc_preview() -> void:
-	_arc_preview_ctrl.set_process(false)
-	var tween = create_tween().set_parallel(true)
-	tween.tween_property(_arc_preview_panel, "modulate:a", 0.0, 0.1)
-	tween.tween_property(_arc_preview_panel, "scale", Vector2(0.7, 0.7), 0.1)
-	tween.finished.connect(func(): _arc_preview_panel.hide())
-
-# 内嵌类: 共鸣弧动画预览
-class _ArcPreview extends Control:
-	var _time: float = 0.0
-	var _regen_timer: float = 0.0
-	var _path_cache: PackedVector2Array = []
-	var _flash: float = 0.0
-
-	func _process(delta: float) -> void:
-		_time += delta
-		_regen_timer -= delta
-		if _flash > 0: _flash = maxf(_flash - delta * 6.0, 0.0)
-		queue_redraw()
-
-	func _draw() -> void:
-		var cx = size.x / 2.0
-		var cy = size.y / 2.0
-		var hue = EventBus.ui_hue
-		var r = 8.0
-		var dist = 50.0
-		var left_c = Vector2(cx - dist, cy)
-		var right_c = Vector2(cx + dist, cy)
-		var body_color = Color.from_hsv(hue, 0.5, 0.8, 0.6)
-		draw_circle(left_c, r, body_color, true, -1.0, true)
-		draw_circle(right_c, r, body_color, true, -1.0, true)
-		var pupil_c = Color.from_hsv(hue, 0.3, 1.0, 0.9)
-		draw_circle(left_c + Vector2(2, -1), 3.0, pupil_c, true, -1.0, true)
-		draw_circle(right_c + Vector2(-2, -1), 3.0, pupil_c, true, -1.0, true)
-		if _regen_timer <= 0:
-			_regen_timer = 0.07
-			_path_cache = _gen_lightning(left_c + Vector2(r, 0), right_c - Vector2(r, 0))
-			if randf() < 0.08:
-				_flash = 1.0
-		if _path_cache.size() < 2:
-			return
-		var alpha = 0.85 + _flash * 0.15
-		var hue_a = hue
-		var hue_b = fmod(hue + 0.3, 1.0)
-		var glow_colors = PackedColorArray()
-		for i in range(_path_cache.size()):
-			var t = float(i) / float(_path_cache.size() - 1)
-			var h = lerpf(hue_a, hue_b, t)
-			glow_colors.append(Color.from_hsv(h, 0.75, 1.0, alpha * 0.55))
-		draw_polyline_colors(_path_cache, glow_colors, 7.0, true)
-		var core = Color(0.9, 0.95, 1.0, alpha)
-		draw_polyline(_path_cache, core, 2.0, true)
-
-	func _gen_lightning(from: Vector2, to: Vector2) -> PackedVector2Array:
-		var seg_count := 10
-		var dir = to - from
-		var perp = Vector2(-dir.y, dir.x).normalized()
-		var jitter_strength = 14.0
-		var points = PackedVector2Array()
-		points.append(from)
-		for i in range(1, seg_count):
-			var t = float(i) / seg_count
-			var base = from.lerp(to, t)
-			var jitter = perp * randf_range(-jitter_strength, jitter_strength)
-			points.append(base + jitter)
-		points.append(to)
-		return points
 
 # ═══════════════════════════════════════════
 # 踏板外观胶囊
