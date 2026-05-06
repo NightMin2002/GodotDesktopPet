@@ -18,6 +18,7 @@ var _current_plat: StaticBody2D = null  # 当前站立的踏板引用
 var _elevator_vanish_dist: float = 10.0  # 电梯消失距地面距离 (px)
 var _walk_min_x: float = 0.0             # 横移踏板左边界
 var _walk_max_x: float = 0.0             # 横移踏板右边界
+var _last_pet_x: float = 0.0             # 上帧宠物X (屏幕穿越检测)
 
 const PLATFORM_WIDTH := 65.0             # 踏板基础宽度 (宠物是老手，不需要很宽)
 
@@ -69,6 +70,7 @@ func update(delta: float) -> void:
 			_current_plat = _spawn_platform(Vector2(pet.global_position.x, platform_y))
 			_walk_min_x = pet.global_position.x
 			_walk_max_x = pet.global_position.x
+			_last_pet_x = pet.global_position.x
 			# 不人为制动，让宠物保持惯性自然落地
 			pet.linear_damp = 0.8
 			pet.angular_damp = 1.5
@@ -78,6 +80,10 @@ func update(delta: float) -> void:
 	
 	elif phase == 2:
 		# ── 踏板已生成，跟踪宠物滑行 + 等落稳 ──
+		# 屏幕穿越检测: 宠物坐标突变时在新位置重建踏板
+		if pet.screen_wrap and _detect_wrap():
+			_respawn_platform_at_pet()
+		_last_pet_x = pet.global_position.x
 		if is_instance_valid(_current_plat):
 			# 踏板本体不动，碰撞体局部偏移追踪宠物
 			var plat_x = _current_plat.position.x
@@ -136,6 +142,10 @@ func update(delta: float) -> void:
 	elif phase == 4:
 		# ── 横移中：踏板本体不动，碰撞体+视觉单向延伸 ──
 		_airtime += delta
+		# 屏幕穿越检测: 宠物坐标突变时在新位置重建踏板
+		if pet.screen_wrap and _detect_wrap():
+			_respawn_platform_at_pet()
+		_last_pet_x = pet.global_position.x
 		if is_instance_valid(_current_plat):
 			var pet_x = pet.global_position.x
 			var plat_x = _current_plat.position.x
@@ -225,6 +235,7 @@ func _walk_sideways() -> void:
 	
 	phase = 4
 	_airtime = 0.0
+	_last_pet_x = pet.global_position.x
 	pet.linear_damp = 0.1
 	pet.angular_damp = 0.3
 	# 直接设定水平速度，确保宠物真正滚动位移
@@ -301,6 +312,21 @@ func _begin_descent() -> void:
 	phase = 3
 
 # ── 物理辅助 ──
+
+## 检测屏幕穿越: 单帧水平位移超过 40% 屏幕宽度 = 穿越发生
+func _detect_wrap() -> bool:
+	return absf(pet.global_position.x - _last_pet_x) > pet.boundary_size.x * 0.4
+
+## 穿越后在宠物新位置重建踏板 (旧踏板保留原状自然淡出)
+func _respawn_platform_at_pet() -> void:
+	var platform_y: float
+	if is_instance_valid(_current_plat):
+		platform_y = _current_plat.position.y
+	else:
+		platform_y = pet.global_position.y + pet.PET_RADIUS * pet.gravity_sign
+	_current_plat = _spawn_platform(Vector2(pet.global_position.x, platform_y))
+	_walk_min_x = pet.global_position.x
+	_walk_max_x = pet.global_position.x
 
 func _full_stop() -> void:
 	pet.linear_velocity.x = 0
