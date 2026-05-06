@@ -52,7 +52,6 @@ func finish() -> void:
 	_elevator = null
 	_current_plat = null
 	pet.physics_material_override.friction = 0.6  # 确保摩擦力恢复
-	pet.eye_behavior.forced_look_dir = Vector2.ZERO
 
 ## 每帧更新 (由 pet._process 调用)
 func update(delta: float) -> void:
@@ -202,6 +201,7 @@ func do_jump() -> void:
 
 ## 落稳后的决策: 继续跳 / 横移 / 跳下 / 电梯
 func _decide_next() -> void:
+	pet.eye_behavior.forced_look_dir = Vector2.ZERO  # 落稳后恢复自然追踪
 	var pause = randf_range(0.6, 1.5)
 	await pet.get_tree().create_timer(pause).timeout
 	if not active:
