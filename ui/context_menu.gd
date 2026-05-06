@@ -95,14 +95,22 @@ func _bind_section_trigger(btn: Button, menu_id: String) -> void:
 	_submenu.register_trigger(menu_id, btn)
 	btn.mouse_entered.connect(func(): _submenu.on_trigger_hover(menu_id))
 	btn.mouse_exited.connect(func(): _submenu.on_trigger_exit())
-	btn.pressed.connect(func(): _submenu.toggle(menu_id))
+	_make_hover_only(btn)
 
 ## 绑定 L2 面板中的按钮到 L3 子菜单
 func _bind_l3_trigger(btn: Button, l3_id: String, parent_l2_id: String) -> void:
 	_submenu.register_l3_trigger(l3_id, btn, parent_l2_id)
 	btn.mouse_entered.connect(func(): _submenu.on_l3_trigger_hover(l3_id))
 	btn.mouse_exited.connect(func(): _submenu.on_l3_trigger_exit())
-	btn.pressed.connect(func(): _submenu.toggle_l3(l3_id))
+	_make_hover_only(btn)
+
+## 子菜单触发按钮: 只响应 hover，不响应点击 (去掉手型光标 + pressed 视觉与 hover 一致)
+func _make_hover_only(btn: Button) -> void:
+	btn.mouse_default_cursor_shape = Control.CURSOR_ARROW
+	btn.add_theme_color_override("font_pressed_color", btn.get_theme_color("font_hover_color"))
+	var hover_bg = btn.get_theme_stylebox("hover")
+	if hover_bg:
+		btn.add_theme_stylebox_override("pressed", hover_bg)
 # ═══════════════════════════════════════════
 # 分区面板构建 (L2 + L3)
 # ═══════════════════════════════════════════

@@ -180,13 +180,7 @@ func hide_all_instant() -> void:
 	_hover_timer = -1.0
 	_close_timer = -1.0
 
-func toggle(menu_id: String) -> void:
-	_hover_timer = -1.0
-	_close_timer = -1.0
-	if active == menu_id:
-		hide_all()
-	else:
-		show(menu_id)
+
 
 # ── L2 位置 ──
 
@@ -289,13 +283,7 @@ func hide_l3_all_instant() -> void:
 	_l3_hover_timer = -1.0
 	_l3_close_timer = -1.0
 
-func toggle_l3(menu_id: String) -> void:
-	_l3_hover_timer = -1.0
-	_l3_close_timer = -1.0
-	if l3_active == menu_id:
-		hide_l3_all()
-	else:
-		show_l3(menu_id)
+
 
 # ── L3 位置: 基于 L2 面板边缘继续级联 ──
 
