@@ -26,10 +26,11 @@ var effect_color_mode: int = 0
 
 # ── 静电弧 ──
 const ARC_RANGE := 150.0    # 触发距离
+const ARC_SEGMENTS := 10    # 锯齿线段数
 var arc_enabled: bool = true
 var arc_nearby: bool = false # 是否有近距离宠物 (用于按需重绘)
-var _arc_paths: Dictionary = {}    # pet_index -> PackedVector2Array (缓存锯齿路径)
-var _arc_regen: float = 0.0        # 路径重生计时器
+var _arc_jitters: Dictionary = {}  # pet_index -> PackedFloat32Array (归一化噪声 -1~1)
+var _arc_regen: float = 0.0        # 噪声重生计时器
 var _arc_flash: float = 0.0        # 闪烁强度
 
 # ── 数据更新 (由 pet._process 调用) ──
@@ -85,7 +86,7 @@ func update(delta: float) -> bool:
 	if _arc_flash > 0:
 		_arc_flash = maxf(_arc_flash - delta * 6.0, 0.0)
 	if not arc_nearby:
-		_arc_paths.clear()
+		_arc_jitters.clear()
 	
 	return has_visual_change
 
@@ -147,8 +148,9 @@ func _render_trail(canvas: CanvasItem) -> void:
 	canvas.draw_polyline_colors(points, colors, pet.PET_RADIUS * 0.5, true)
 
 # ── 静电弧 (近距离宠物间的放电弧) ──
+# 架构: 只缓存归一化噪声值 (-1~1)，每帧从实时位置重建路径
 # 注意: _draw() 中调用前已设置 draw_set_transform(V2.ZERO, -rotation, V2.ONE)
-# 因此绘图坐标系 = 以宠物中心为原点的世界对齐空间，需用世界差值而非 to_local()
+# 因此绘图坐标系 = 以宠物中心为原点的世界对齐空间
 
 func render_arcs(canvas: CanvasItem) -> void:
 	if not arc_nearby:
@@ -161,7 +163,7 @@ func render_arcs(canvas: CanvasItem) -> void:
 	if my_idx < 0:
 		return
 	
-	# 路径重生: 每 0.07 秒更新锯齿轮廓
+	# 噪声重生: 每 0.07 秒刷新锯齿形状
 	var need_regen = _arc_regen <= 0
 	if need_regen:
 		_arc_regen = 0.07
@@ -176,45 +178,48 @@ func render_arcs(canvas: CanvasItem) -> void:
 			continue
 		# 跳过正在退场的宠物
 		if other.freeze:
-			_arc_paths.erase(i)
+			_arc_jitters.erase(i)
 			continue
 		var dist = _arc_distance(other.global_position)
 		if dist >= ARC_RANGE:
-			_arc_paths.erase(i)
+			_arc_jitters.erase(i)
 			continue
 		# 世界对齐空间: 取最短路径的偏移 (屏幕穿越时可能跨边界)
 		var other_offset = _arc_offset(other.global_position)
 		var intensity = 1.0 - (dist / ARC_RANGE)
 		var other_hue = other.palette.effective_hue()
 		
-		# 缓存或重生路径
-		if need_regen or not _arc_paths.has(i):
-			_arc_paths[i] = _gen_lightning_path(Vector2.ZERO, other_offset, intensity)
-		else:
-			# 路径已缓存，但端点需跟随实时位置更新
-			var cached = _arc_paths[i] as PackedVector2Array
-			if cached.size() > 1:
-				cached[0] = Vector2.ZERO
-				cached[cached.size() - 1] = other_offset
+		# 缓存或重生噪声
+		if need_regen or not _arc_jitters.has(i):
+			_arc_jitters[i] = _gen_arc_jitters()
 		
-		_draw_lightning_cached(_arc_paths[i], canvas, intensity, my_hue, other_hue)
+		# 每帧从实时位置 + 缓存噪声重建路径
+		var path = _build_arc_path(Vector2.ZERO, other_offset, _arc_jitters[i], intensity)
+		_draw_lightning(path, canvas, intensity, my_hue, other_hue)
 
-func _gen_lightning_path(from: Vector2, to: Vector2, intensity: float) -> PackedVector2Array:
-	var seg_count := 10
+## 生成归一化锯齿噪声 (只是 -1~1 随机值，与位置无关)
+func _gen_arc_jitters() -> PackedFloat32Array:
+	var jitters = PackedFloat32Array()
+	jitters.append(0.0)  # 起点: 无偏移，锚定宠物中心
+	for i in range(1, ARC_SEGMENTS):
+		jitters.append(randf_range(-1.0, 1.0))
+	jitters.append(0.0)  # 终点: 无偏移，锚定对方中心
+	return jitters
+
+## 从实时端点 + 缓存噪声构建路径 (每帧调用)
+func _build_arc_path(from: Vector2, to: Vector2, jitters: PackedFloat32Array, intensity: float) -> PackedVector2Array:
 	var dir = to - from
 	var perp = Vector2(-dir.y, dir.x).normalized()
-	var jitter_strength = 14.0 * intensity
+	var jitter_scale = 14.0 * intensity
 	var points = PackedVector2Array()
-	points.append(from)
-	for i in range(1, seg_count):
-		var t = float(i) / seg_count
+	var n = jitters.size()
+	for i in range(n):
+		var t = float(i) / float(n - 1)
 		var base = from.lerp(to, t)
-		var jitter = perp * randf_range(-jitter_strength, jitter_strength)
-		points.append(base + jitter)
-	points.append(to)
+		points.append(base + perp * jitters[i] * jitter_scale)
 	return points
 
-func _draw_lightning_cached(points: PackedVector2Array, canvas: CanvasItem, intensity: float, hue_a: float, hue_b: float) -> void:
+func _draw_lightning(points: PackedVector2Array, canvas: CanvasItem, intensity: float, hue_a: float, hue_b: float) -> void:
 	if points.size() < 2:
 		return
 	
