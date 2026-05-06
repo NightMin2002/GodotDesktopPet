@@ -32,7 +32,7 @@ func _clone_pet(source: Node2D, with_bubble: bool) -> void:
 	var clone_count = _main.pet_instances.size() - 1
 	if clone_count >= MAX_CLONES:
 		if with_bubble:
-			EventBus.show_reminder_bubble.emit("分身实例已达上限 (" + str(MAX_CLONES) + "/" + str(MAX_CLONES) + ")。无法继续部署。")
+			EventBus.show_reminder_bubble.emit("实例池已满 (" + str(MAX_CLONES) + "/" + str(MAX_CLONES) + ")。拒绝新建。")
 		return
 	
 	var clone = _main.clone_scene.instantiate()
@@ -72,7 +72,7 @@ func _clone_pet(source: Node2D, with_bubble: bool) -> void:
 	SettingsManager.set_int("clone_count", _main.pet_instances.size() - 1)
 	
 	if with_bubble:
-		var greetings = ["分身实例化完成。", "新单元已部署。", "编队扩充。", "信号同步中。", "...又多了一个。"]
+		var greetings = ["分身已部署。信号同步中。", "新单元上线。", "编队扩充。", "...又多了一个。", "部署完毕。"]
 		EventBus.force_show_bubble.emit(greetings[clone_count % greetings.size()])
 	
 	print("[DesktopPet] 克隆体 #", pet_index, " 已生成 (hue=", clone.palette.get_hue_degrees(), "°)")

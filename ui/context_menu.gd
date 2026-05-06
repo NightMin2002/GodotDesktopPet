@@ -126,6 +126,10 @@ func _build_sec_pet() -> void:
 	vbox.add_child(_chatter_btn)
 	_bind_l3_trigger(_chatter_btn, "chatter", "sec_pet")
 
+	_clone_btn = _make_menu_btn("分身 (0/5) [+]", Color(0.2, 0.85, 1.0, 1))
+	vbox.add_child(_clone_btn)
+	_bind_l3_trigger(_clone_btn, "clone", "sec_pet")
+
 	panel.mouse_entered.connect(func(): _submenu.on_panel_enter())
 	panel.mouse_exited.connect(func(): _submenu.on_panel_exit())
 	add_child(panel)
@@ -138,6 +142,9 @@ func _build_sec_pet() -> void:
 		{"value": 2, "label": "每60分钟", "desc": "每到整点，冒泡说点什么"},
 	], _on_radio_chatter_mode, 3)
 	_submenu._l3_parent_map["chatter"] = "sec_pet"
+
+	# L3: 分身操作面板 (手动构建，因为是操作按钮而非开关/单选)
+	_build_clone_l3_panel()
 
 ## 构建显示分区
 func _build_sec_display() -> void:
@@ -270,15 +277,6 @@ func _build_sec_play() -> void:
 		_close_and_emit(EventBus.show_reminder_panel)
 	)
 	vbox.add_child(_reminder_btn)
-
-	_clone_btn = _make_menu_btn("召唤分身 (0/5)", Color(0.3, 1.0, 0.7, 1))
-	_clone_btn.pressed.connect(_on_clone_btn_pressed)
-	vbox.add_child(_clone_btn)
-
-	_dismiss_btn = _make_menu_btn("遣散所有分身", Color(0.5, 1.0, 0.6, 1))
-	_dismiss_btn.add_theme_color_override("font_color", Color(0.45, 0.6, 0.45, 0.7))
-	_dismiss_btn.pressed.connect(_on_dismiss_btn_pressed)
-	vbox.add_child(_dismiss_btn)
 
 	panel.mouse_entered.connect(func(): _submenu.on_panel_enter())
 	panel.mouse_exited.connect(func(): _submenu.on_panel_exit())
@@ -647,9 +645,34 @@ func _on_radio_gait(value: int) -> void:
 func _update_gait_label(mode: int) -> void:
 	_gait_btn.text = GAIT_LABELS[mode]
 
-# ── 克隆 ──
+# ── 分身 ──
 
-func _on_clone_btn_pressed() -> void:
+## 构建分身操作 L3 面板 (操作按钮，非开关/单选)
+func _build_clone_l3_panel() -> void:
+	var panel = _submenu._make_panel()
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 6)
+	panel.add_child(vbox)
+
+	var deploy_btn = _make_menu_btn("部署分身 (0/5)", Color(0.2, 0.85, 1.0, 1))
+	deploy_btn.pressed.connect(_on_deploy_clone_pressed)
+	vbox.add_child(deploy_btn)
+	_deploy_clone_btn = deploy_btn
+
+	_dismiss_btn = _make_menu_btn("回收全部分身", Color(0.2, 0.85, 1.0, 1))
+	_dismiss_btn.add_theme_color_override("font_color", Color(0.55, 0.7, 0.75, 0.7))
+	_dismiss_btn.pressed.connect(_on_dismiss_btn_pressed)
+	vbox.add_child(_dismiss_btn)
+
+	panel.mouse_entered.connect(func(): _submenu.on_l3_panel_enter())
+	panel.mouse_exited.connect(func(): _submenu.on_l3_panel_exit())
+	add_child(panel)
+	_submenu.l3_panels["clone"] = panel
+	_submenu._l3_parent_map["clone"] = "sec_pet"
+
+var _deploy_clone_btn: Button
+
+func _on_deploy_clone_pressed() -> void:
 	if is_instance_valid(target):
 		EventBus.clone_pet.emit(target)
 	await get_tree().process_frame
@@ -664,7 +687,9 @@ func _update_clone_label() -> void:
 	if main_node and "pet_instances" in main_node:
 		var count: int = (main_node.pet_instances as Array).size() - 1
 		var max_c: int = main_node.clone_mgr.MAX_CLONES if main_node.clone_mgr else 5
-		_clone_btn.text = "召唤分身 (" + str(count) + "/" + str(max_c) + ")"
+		_clone_btn.text = "分身 (" + str(count) + "/" + str(max_c) + ") [+]"
+		if _deploy_clone_btn:
+			_deploy_clone_btn.text = "部署分身 (" + str(count) + "/" + str(max_c) + ")"
 
 # ── 退出 ──
 

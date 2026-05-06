@@ -15,25 +15,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	# 不响应右键菜单 (菜单仅限原体)
 
 func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
-	# 只响应通用视觉设置，忽略时钟等原体专属功能
-	if setting_id == "eye_track":
-		eye_behavior.tracking_enabled = is_on
-	elif setting_id == "shockwave":
-		pet_effects.shockwave_enabled = is_on
-	elif setting_id == "trail_fx":
-		pet_effects.trail_enabled = is_on
-	elif setting_id == "arc_fx":
-		pet_effects.arc_enabled = is_on
-	elif setting_id == "move_style":
-		move_style = SettingsManager.get_int("move_style", 0)
-	elif setting_id == "stroll":
-		stroll_enabled = is_on
-	elif setting_id == "anti_gravity":
-		_set_anti_gravity(is_on)
-	elif setting_id == "screen_wrap":
-		screen_wrap = is_on
-		if not is_on:
-			_wrap_ghost_offset = Vector2.ZERO
-	elif setting_id == "effect_color_mode":
-		pet_effects.effect_color_mode = SettingsManager.get_int("effect_color_mode", 0)
-	# hud_clock: 克隆体永远不显示，无需处理
+	# 克隆体不支持的功能: 直接忽略
+	if setting_id in ["hud_clock", "hud_wifi", "hud_pin"]:
+		return
+	# 其余全部复用原体逻辑
+	super._on_setting_toggled(setting_id, is_on)

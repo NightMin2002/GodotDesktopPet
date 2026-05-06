@@ -44,7 +44,7 @@ func _on_dismiss_clones_requested() -> void:
 			clones_to_remove.append(p)
 	
 	if clones_to_remove.is_empty():
-		EventBus.show_reminder_bubble.emit("当前无活跃分身实例。")
+		EventBus.show_reminder_bubble.emit("当前无活跃分身。")
 		return
 	
 	var farewells := ["撤离。", "断开。", "离线。", "任务结束。", "告退。", "...再见。", "本体，后续交给你。"]
@@ -72,7 +72,7 @@ func _on_dismiss_clones_requested() -> void:
 			await get_tree().create_timer(0.35).timeout
 	
 	SettingsManager.set_int("clone_count", 0)
-	EventBus.force_show_bubble.emit("分身实例已全部回收。现在由本机执行独立行动任务。")
+	EventBus.force_show_bubble.emit("分身已全部回收。独立运行模式恢复。")
 	# 通知 clone_manager 重新排队
 	_main.clone_mgr.reorganize_quiet_queue()
 
