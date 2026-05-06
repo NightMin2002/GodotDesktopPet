@@ -130,6 +130,13 @@ func _build_sec_pet() -> void:
 	vbox.add_child(_clone_btn)
 	_bind_l3_trigger(_clone_btn, "clone", "sec_pet")
 
+	_reminder_btn = _make_menu_btn("提醒管理", Color(0.2, 0.85, 1.0, 1))
+	_apply_capsule_style(_reminder_btn, Color(0.12, 0.22, 0.42, 0.7), Color(0.4, 0.6, 0.9, 0.5))
+	_reminder_btn.pressed.connect(func():
+		_close_and_emit(EventBus.show_reminder_panel)
+	)
+	vbox.add_child(_reminder_btn)
+
 	panel.mouse_entered.connect(func(): _submenu.on_panel_enter())
 	panel.mouse_exited.connect(func(): _submenu.on_panel_exit())
 	add_child(panel)
@@ -271,12 +278,6 @@ func _build_sec_play() -> void:
 	vbox.add_child(_entertain_btn)
 	_bind_l3_trigger(_entertain_btn, "entertain", "sec_play")
 
-	_reminder_btn = _make_menu_btn("提醒管理", Color(0.3, 1.0, 0.7, 1))
-	_apply_capsule_style(_reminder_btn, Color(0.12, 0.22, 0.42, 0.7), Color(0.4, 0.6, 0.9, 0.5))
-	_reminder_btn.pressed.connect(func():
-		_close_and_emit(EventBus.show_reminder_panel)
-	)
-	vbox.add_child(_reminder_btn)
 
 	panel.mouse_entered.connect(func(): _submenu.on_panel_enter())
 	panel.mouse_exited.connect(func(): _submenu.on_panel_exit())
