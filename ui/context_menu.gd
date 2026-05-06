@@ -29,7 +29,6 @@ var target: Node2D = null
 var _menu_side: int = 1
 
 # ── L2 分区面板中动态创建的按钮引用 (供回调/状态刷新用) ──
-var _eye_track_btn: Button
 var _chatter_btn: Button
 var _window_mode_btn: Button
 var _behavior_mode_btn: Button
@@ -115,10 +114,6 @@ func _build_sec_pet() -> void:
 	vbox.add_theme_constant_override("separation", 6)
 	panel.add_child(vbox)
 
-	_eye_track_btn = _make_menu_btn("眼球追踪 [●]", Color(0.2, 0.85, 1.0, 1))
-	_eye_track_btn.pressed.connect(_on_track_btn_pressed)
-	vbox.add_child(_eye_track_btn)
-
 	_chatter_btn = _make_menu_btn("碎碎念 · 每30分钟 [+]", Color(0.2, 0.85, 1.0, 1))
 	vbox.add_child(_chatter_btn)
 	_bind_l3_trigger(_chatter_btn, "chatter", "sec_pet")
@@ -195,6 +190,7 @@ func _build_sec_behavior() -> void:
 	_submenu._l3_parent_map["gait"] = "sec_behavior"
 
 	_submenu.create_toggle("mode", [
+		{"id": "eye_track", "on": "指针跟踪 [●]", "off": "指针跟踪 [○]", "key": "eye_track", "default": true},
 		{"id": "anti_gravity", "on": "反重力 [●]", "off": "反重力 [○]", "key": "anti_gravity", "default": false},
 		{"id": "free_roam", "on": "空间跳跃 [●]", "off": "空间跳跃 [○]", "key": "free_roam", "default": false},
 		{"id": "screen_wrap", "on": "屏幕穿越 [●]", "off": "屏幕穿越 [○]", "key": "screen_wrap", "default": false},
@@ -393,7 +389,7 @@ func _close_and_emit(sig: Signal) -> void:
 
 func _load_saved_settings() -> void:
 	var eye = SettingsManager.get_bool("eye_track", true)
-	_set_toggle(_eye_track_btn, eye, "眼球追踪 [●]", "眼球追踪 [○]")
+	# 指针跟踪已迁移到行为分区的模式 L3 toggle
 
 	_refresh_submenu_states()
 
@@ -437,6 +433,7 @@ func _refresh_submenu_states() -> void:
 	_submenu.refresh_toggle("trail_fx", SettingsManager.get_bool("trail_fx", true), "粒子尾流 [●]", "粒子尾流 [○]")
 	_submenu.refresh_toggle("arc_fx", SettingsManager.get_bool("arc_fx", true), "静电弧 [●]", "静电弧 [○]")
 	_submenu.refresh_toggle("stroll", SettingsManager.get_bool("stroll", true), "自主巡航 [●]", "自主巡航 [○]")
+	_submenu.refresh_toggle("eye_track", SettingsManager.get_bool("eye_track", true), "指针跟踪 [●]", "指针跟踪 [○]")
 	_submenu.refresh_toggle("anti_gravity", SettingsManager.get_bool("anti_gravity", false), "反重力 [●]", "反重力 [○]")
 	_submenu.refresh_toggle("free_roam", SettingsManager.get_bool("free_roam", false), "空间跳跃 [●]", "空间跳跃 [○]")
 	_submenu.refresh_toggle("screen_wrap", SettingsManager.get_bool("screen_wrap", false), "屏幕穿越 [●]", "屏幕穿越 [○]")
@@ -578,11 +575,6 @@ func _close_hud() -> void:
 # ═══════════════════════════════════════════
 # 按钮回调
 # ═══════════════════════════════════════════
-
-func _on_track_btn_pressed() -> void:
-	var on = _flip_toggle(_eye_track_btn, "眼球追踪 [●]", "眼球追踪 [○]")
-	SettingsManager.set_bool("eye_track", on)
-	EventBus.setting_toggled.emit("eye_track", on)
 
 func _on_autostart_btn_pressed() -> void:
 	var win_mgr = _get_win_manager()

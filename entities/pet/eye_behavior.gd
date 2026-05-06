@@ -20,6 +20,7 @@ var _wander_timer := 0.0
 var _pupil_pos := Vector2.ZERO  # 当前瞳孔偏移 (世界坐标系)
 var _prev_pupil_pos := Vector2.ZERO  # 上帧瞳孔位置 (按需重绘检测用)
 var _look_at_pet: RigidBody2D = null  # 当前注视的同伴 (动态追踪)
+var _glance_mouse: bool = false       # 好奇观察指针中 (偶尔盯一眷)
 
 # ── 强制注视方向 (由状态机设定，非零时覆盖一切) ──
 var forced_look_dir := Vector2.ZERO
@@ -166,11 +167,12 @@ func _update_pupil(delta: float) -> void:
 	if forced_look_dir != Vector2.ZERO:
 		target = forced_look_dir.normalized() * max_offset
 		lerp_speed = 18.0
-	# 追踪关闭 或 鼠标闲置 → 游走/社交模式
+	# 追踪关闭 或 鼠标闲置 → 游走/社交/好奇观察模式
 	elif not tracking_enabled or _mouse_idle_time > MOUSE_IDLE_THRESHOLD:
 		_wander_timer -= delta
 		if _wander_timer <= 0:
 			_look_at_pet = null
+			_glance_mouse = false
 			
 			# ── 有同伴在看我？35% 概率回看 ──
 			var gazer = _find_pet_looking_at_me()
@@ -180,9 +182,13 @@ func _update_pupil(delta: float) -> void:
 			else:
 				var other = _find_nearest_pet()
 				if other != null and randf() < 0.10:
-					# 10% 概率主动瞟一眼同伴
+					# 10% 概率主动瞄一眼同伴
 					_look_at_pet = other
 					_wander_timer = randf_range(1.5, 3.0)
+				elif _mouse_idle_time < MOUSE_IDLE_THRESHOLD and randf() < 0.15:
+					# 15% 概率好奇盯一眼指针 (仅当鼠标活跃时)
+					_glance_mouse = true
+					_wander_timer = randf_range(2.0, 4.0)
 				elif randf() > 0.3:
 					# 随机方向好奇张望
 					var angle = randf() * TAU
@@ -194,8 +200,13 @@ func _update_pupil(delta: float) -> void:
 					_wander_target = Vector2.ZERO
 					_wander_timer = randf_range(2.0, 5.0)
 		
+		# 好奇观察指针: 动态跟踪鼠标位置 (缓慢跟随，像是不经意的观察)
+		if _glance_mouse:
+			var to_mouse = (pet.get_global_mouse_position() - pet.global_position).normalized()
+			target = to_mouse * max_offset
+			lerp_speed = 4.0
 		# 注视同伴：动态追踪对方位置 (每帧更新方向)
-		if is_instance_valid(_look_at_pet):
+		elif is_instance_valid(_look_at_pet):
 			var to_other = (_look_at_pet.global_position - pet.global_position).normalized()
 			target = to_other * max_offset
 			lerp_speed = 2.0
