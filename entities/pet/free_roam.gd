@@ -52,6 +52,11 @@ func finish() -> void:
 	_elevator = null
 	_current_plat = null
 	pet.physics_material_override.friction = 0.6  # 确保摩擦力恢复
+	# 重置 idle 计时器 (roam 期间 idle_timer 持续累加，不重置会导致
+	# finish() 后第一帧 idle 立刻满足转换条件，walk 抢走瞳孔方向)
+	if pet.current_state and pet.current_state is StateIdle:
+		pet.current_state.idle_timer = 0.0
+		pet.current_state.idle_duration = randf_range(0.8, 1.5)
 
 ## 每帧更新 (由 pet._process 调用)
 func update(delta: float) -> void:

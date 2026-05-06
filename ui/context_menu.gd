@@ -967,6 +967,7 @@ func _build_debug_behavior_submenu() -> void:
 		{"label": "待解标识", "behavior": "_icon:question", "desc": "显示问号疑问图标"},
 		{"label": "错误标识", "behavior": "_icon:error", "desc": "显示操作失败交叉图标"},
 		{"label": "碎碎念", "behavior": "_chatter", "desc": "立即触发一次碎碎念气泡"},
+		{"label": "空间跳跃", "behavior": "_free_roam", "desc": "触发一次空间跳跃踏板序列"},
 	]
 
 	for item in debug_items:
@@ -1022,6 +1023,8 @@ func _on_debug_behavior_pressed(behavior: String) -> void:
 					child._trigger_chatter()
 					return
 		EventBus.show_reminder_bubble.emit("碎碎念系统未就绪。")
+	elif behavior == "_free_roam":
+		EventBus.trigger_free_roam.emit()
 	else:
 		EventBus.trigger_idle_behavior.emit(behavior)
 

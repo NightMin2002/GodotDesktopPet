@@ -15,6 +15,7 @@ func enter() -> void:
 	if pet:
 		pet.linear_damp = 0.8
 		pet.angular_damp = 1.0
+		pet.eye_behavior.forced_look_dir = Vector2.ZERO  # 落稳后恢复自然追踪
 		if pet.is_quiet_behavior():
 			pet.linear_damp = 5.0
 			pet.angular_damp = 8.0

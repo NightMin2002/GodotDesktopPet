@@ -12,8 +12,6 @@ func enter() -> void:
 	if pet:
 		pet.linear_damp = 0.5
 		pet.gravity_scale = pet.gravity_sign  # 尊重反重力模式
-		# 清除移动状态的残留注视方向 (滚动/撤退中被推飞等边缘情况)
-		pet.eye_behavior.forced_look_dir = Vector2.ZERO
 
 func exit() -> void:
 	pass
