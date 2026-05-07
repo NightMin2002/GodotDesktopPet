@@ -234,9 +234,8 @@ func _enter_hibernate() -> void:
 	_hibernate_bubble_shown = false
 	_hibernate_anim_time = 0.0
 	match hibernate_style:
-		0:  # 挡板半闭
+		0:  # 挡板半闭 (瞳孔保持自由追踪，眯着眼偶尔看你)
 			pet.eye_behavior.start_drowsy(0.6)
-			pet.eye_behavior.forced_look_dir = Vector2(0, pet.gravity_sign)
 		1, 2:  # 加载指示 / 电池图标: 抑制眨眼即可
 			pet.eye_behavior._drowsy_target = 0.35
 	# 增大阻尼，让它"沉下去"
