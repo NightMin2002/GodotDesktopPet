@@ -256,7 +256,6 @@ func _build_sec_visual() -> void:
 	], 3)
 	_submenu._l3_parent_map["effects"] = "sec_visual"
 	_append_effect_color_radio()
-	_fx_preview.build()
 
 	# L3: 弹性形变单选
 	_submenu.create_radio("elastic", [
@@ -325,6 +324,8 @@ func _build_all_sections() -> void:
 	_build_sec_visual()
 	_build_sec_play()
 	_build_sec_system()
+	# 全部分区面板就绪后，统一构建预览
+	_fx_preview.build()
 # ═══════════════════════════════════════════
 # 分区入口按钮样式
 # ═══════════════════════════════════════════
