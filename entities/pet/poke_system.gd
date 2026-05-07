@@ -12,7 +12,7 @@ var _poke_combo: int = 0            # 连续戳计数
 var _poke_total: int = 0            # 总戳次数 (本次会话)
 var pending_chatter: String = ""    # 未确认的碎碎念
 var pending_reminders: Array[Dictionary] = []  # 未确认的定时提醒 [{time, msg}]
-var _last_poke_line: String = ""    # 上次显示的戳话术 (防连续重复)
+var _recent_poke_lines: Array[String] = []  # 已触发话术记录 (洗牌模式: 全部说完才重置)
 
 # ── 话术库 ──
 
@@ -61,11 +61,22 @@ const NORMAL_POKE_LINES := [
 	"这算抚摸还是故障排查？",
 ]
 
-## 深夜话术 (23:00~5:00)
+## 深夜话术 (23:00~5:00, 清醒时随机触发)
 const NIGHT_POKE_LINES := [
 	"当前时间 {time}。你不需要充电吗？",
 	"夜间模式建议启用...对你，不是对我。",
 	"凌晨了。你的黑眼圈数据正在上升。这是基于时间轴的推测。",
+]
+
+## 深夜休眠中被戳 (半梦半醒，催你去睡)
+const NIGHTTIME_HIBERNATE_LINES := [
+	"...休眠中。",
+	"...嗯。",
+	"系统待机。触控信号已搁置。",
+	"...你也该进入休眠周期了。",
+	"夜间模式。非必要交互已屏蔽。",
+	"...检测到深夜触控。不处理。",
+	"本机休眠中。...你为什么没有。",
 ]
 
 # ── 核心方法 ──
@@ -92,7 +103,14 @@ func handle_poke() -> void:
 		_poke_combo = 0
 		return
 	
-	# ── 优先级 3: 常规戳一戳 ──
+	# ── 优先级 3: 深夜休眠中被戳 (半梦半醒应答，不走通用路由) ──
+	if pet.nighttime_mode and pet.idle_behaviors.active_behavior == "hibernate":
+		pet.show_local_bubble(_pick_unique(NIGHTTIME_HIBERNATE_LINES))
+		_last_poke_time = now
+		_poke_combo = 0
+		return
+	
+	# ── 优先级 4: 常规戳一戳 ──
 	if _last_poke_time > 0.0:
 		var elapsed = now - _last_poke_time
 		if elapsed < 2.0:
@@ -148,15 +166,26 @@ func _respond_normal() -> void:
 
 # ── 工具函数 ──
 
-## 从话术池中随机取一条，避免连续重复上一次
+## 洗牌模式: 全池说完一轮才重置，重置时保留最后一条防首尾相连
 func _pick_unique(pool: Array) -> String:
 	if pool.size() <= 1:
 		return pool[0] if pool.size() > 0 else ""
-	var line = pool[randi() % pool.size()]
-	while line == _last_poke_line:
-		line = pool[randi() % pool.size()]
-	_last_poke_line = line
-	return line
+	# 排除已说过的
+	var candidates: Array[String] = []
+	for line in pool:
+		if not _recent_poke_lines.has(line):
+			candidates.append(line)
+	# 全部说完了 → 重置记忆，保留最后一条防止首尾相连
+	if candidates.is_empty():
+		var last = _recent_poke_lines.back()
+		_recent_poke_lines.clear()
+		_recent_poke_lines.append(last)
+		for line in pool:
+			if line != last:
+				candidates.append(line)
+	var picked = candidates[randi() % candidates.size()]
+	_recent_poke_lines.append(picked)
+	return picked
 
 func _format_duration(seconds: float) -> String:
 	var total_sec = int(seconds)

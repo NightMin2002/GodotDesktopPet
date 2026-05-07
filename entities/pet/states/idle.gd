@@ -23,8 +23,10 @@ func enter() -> void:
 func exit() -> void:
 	if pet:
 		pet.linear_damp = 0.5
-		# 离开 idle 时取消任何活跃的微行为 (被拖拽/状态切换等打断)
-		pet.idle_behaviors.cancel()
+		# 离开 idle 时取消活跃微行为 (被拖拽/状态切换等打断)
+		# 但深夜休眠例外: 它是持续性的，只有退出深夜时段才中断
+		if not (pet.nighttime_mode and pet.idle_behaviors.active_behavior == "hibernate"):
+			pet.idle_behaviors.cancel()
 
 func process(delta: float) -> void:
 	idle_timer += delta
