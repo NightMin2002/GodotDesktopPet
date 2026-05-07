@@ -37,18 +37,30 @@ func process(delta: float) -> void:
 					var dist_px = pet.global_position.distance_to(Vector2(pet.get_meta("retreat_target_x", pet.global_position.x), pet.global_position.y))
 					var dist_m = snapped(dist_px / 100.0, 0.1)
 					var n = pet._quiet_drag_count
-					var lines := [
-						"偏移量已记录。正在修正坐标...",
-						"计算待命位置... %.1f米。返航中。" % dist_m,
-						"位置异常。执行归位协议。",
-						"重新校准中... 请勿再次干预。",
-						"坐标偏差 %dpx。回滚中。" % int(dist_px),
-						"未授权的位移操作。已标记。",
-						"警告：手动干预次数 +1。",
-						"...记录：第%d次被拖离岗位。" % n,
-						"桌面坐标偏移过大。启动纠偏程序。",
-						"这里不是我的待命区。正在滚回去。",
-					]
+					var lines: Array[String] = []
+					if pet.nighttime_mode:
+						# 深夜专属归位话术 — 暗示"该睡觉了"
+						lines.assign([
+							"休眠周期中。请勿移动休眠中的装置。",
+							"...深夜坐标偏移。归位中。你也该休眠了。",
+							"夜间模式。非必要位移已拒绝。",
+							"当前时段不接受重定位指令。回滚中。",
+							"...第%d次深夜干预。你的作息数据正在恶化。" % n,
+							"休眠区坐标锁定。偏移无效。",
+						])
+					else:
+						lines.assign([
+							"偏移量已记录。正在修正坐标...",
+							"计算待命位置... %.1f米。返航中。" % dist_m,
+							"位置异常。执行归位协议。",
+							"重新校准中... 请勿再次干预。",
+							"坐标偏差 %dpx。回滚中。" % int(dist_px),
+							"未授权的位移操作。已标记。",
+							"警告：手动干预次数 +1。",
+							"...记录：第%d次被拖离岗位。" % n,
+							"桌面坐标偏移过大。启动纠偏程序。",
+							"这里不是我的待命区。正在滚回去。",
+						])
 					var line = lines[randi() % lines.size()]
 					while line == pet._last_quiet_drag_line and lines.size() > 1:
 						line = lines[randi() % lines.size()]
