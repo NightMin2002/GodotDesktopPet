@@ -46,5 +46,9 @@ signal ui_theme_changed(hue: float)
 signal show_theme_panel
 signal show_platform_style_panel
 
+# ── 游戏系统 ──
+signal launch_game(game_id: String)  # 请求启动指定游戏
+signal game_panel_requested  # 请求显示游戏列表/面板
+
 ## UI 主题色 Hue (全局可读，默认 0.537 ≈ 当前青色)
 var ui_hue: float = 0.537

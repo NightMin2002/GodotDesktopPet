@@ -23,6 +23,7 @@ var ghost_wall_mgr: Node
 var hit_region_mgr: Node
 var clone_mgr: Node
 var farewell_mgr: Node
+var game_mgr: CanvasLayer
 
 
 func _ready() -> void:
@@ -82,6 +83,7 @@ func _ready() -> void:
 	_setup_pet_chatter()
 	_setup_theme_panel()
 	_setup_platform_style_panel()
+	_setup_game_system()
 	
 	# 监听屏幕穿越开关
 	EventBus.setting_toggled.connect(_on_main_setting_toggled)
@@ -310,6 +312,20 @@ func _setup_pet_chatter() -> void:
 		if pet_instance and chatter_node.has_method("link_pet"):
 			chatter_node.link_pet(pet_instance)
 		print("[DesktopPet] 宠物碎碎念系统已启动 (30分钟间隔)")
+
+# ── 游戏系统 ──
+
+func _setup_game_system() -> void:
+	var gm_script = load("res://core/game_manager.gd")
+	if gm_script:
+		game_mgr = CanvasLayer.new()
+		game_mgr.set_script(gm_script)
+		add_child(game_mgr)
+		EventBus.launch_game.connect(func(game_id: String):
+			if game_mgr and game_mgr.has_method("launch_game"):
+				game_mgr.launch_game(game_id, pet_instance)
+		)
+		print("[DesktopPet] 游戏系统已就绪 (", game_mgr.get_installed_games().size(), " 个游戏)")
 
 # ── 任务栏样式守护 ──
 

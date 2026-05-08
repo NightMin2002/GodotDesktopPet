@@ -47,6 +47,9 @@ var _debug_behavior_btn: Button
 var _theme_btn: Button
 var _reminder_btn: Button
 
+# ── 小游戏容器 ──
+var _game_container: VBoxContainer
+
 # ── 特效配色内嵌按钮 ──
 var _effect_color_btns: Array[Button] = []
 
@@ -277,6 +280,10 @@ func _build_sec_play() -> void:
 	vbox.add_child(_entertain_btn)
 	_bind_l3_trigger(_entertain_btn, "entertain", "sec_play")
 
+	# 小游戏入口容器 (菜单打开时动态填充，因为 game_mgr 初始化晚于菜单构建)
+	_game_container = VBoxContainer.new()
+	_game_container.add_theme_constant_override("separation", 6)
+	vbox.add_child(_game_container)
 
 	panel.mouse_entered.connect(func(): _submenu.on_panel_enter())
 	panel.mouse_exited.connect(func(): _submenu.on_panel_exit())
@@ -288,6 +295,48 @@ func _build_sec_play() -> void:
 		{"id": "stroll", "on": "自主巡航 [●]", "off": "自主巡航 [○]", "key": "stroll", "default": true},
 	], 3)
 	_submenu._l3_parent_map["entertain"] = "sec_play"
+
+## 动态更新小游戏列表 (每次菜单打开时调用)
+func _update_game_list() -> void:
+	if not _game_container:
+		return
+	# 清空旧内容
+	for child in _game_container.get_children():
+		child.queue_free()
+
+	var main_node = get_tree().root.get_node_or_null("Main")
+	if not main_node or not ("game_mgr" in main_node) or not main_node.game_mgr:
+		return
+	var games: Array = main_node.game_mgr.get_installed_games()
+	if games.size() == 0:
+		return
+
+	var sep = HSeparator.new()
+	sep.add_theme_constant_override("separation", 3)
+	var s = StyleBoxFlat.new()
+	s.bg_color = Color(0.3, 0.85, 0.55, 0.15)
+	s.set_content_margin_all(0)
+	sep.add_theme_stylebox_override("separator", s)
+	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_game_container.add_child(sep)
+
+	var label = Label.new()
+	label.text = "小游戏"
+	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_color_override("font_color", Color(0.4, 0.65, 0.5, 0.5))
+	_game_container.add_child(label)
+
+	for game_meta in games:
+		var gid: String = game_meta.get("id", "")
+		var gname: String = game_meta.get("name", gid)
+		var gdesc: String = game_meta.get("desc", "")
+		var btn = _make_menu_btn(gname, Color(0.3, 1.0, 0.7, 1))
+		btn.pressed.connect(func():
+			_close_hud()
+			EventBus.launch_game.emit(gid)
+		)
+		btn.tooltip_text = gdesc
+		_game_container.add_child(btn)
 
 ## 构建系统分区
 func _build_sec_system() -> void:
@@ -520,6 +569,7 @@ func _on_show_context_menu(target_node: Node2D) -> void:
 
 	EventBus.context_menu_toggled.emit(true)
 	_update_clone_label()
+	_update_game_list()
 
 	var pet_pos = target.get_global_transform_with_canvas().get_origin()
 	var vp = get_viewport().get_visible_rect().size
