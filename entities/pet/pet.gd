@@ -68,6 +68,12 @@ var idle_behaviors: IdleBehaviors
 # ── 弹性形变系统 (委托给 PetSquash) ──
 var squash: PetSquash
 
+# ── 游戏状态 (全息迷你屏) ──
+var _gaming: bool = false
+var _gaming_game: RefCounted = null  # 当前游戏引用 (BaseGame)
+var _gaming_holo_side: float = 1.0  # 全息屏方向: 1=右侧, -1=左侧
+var _gaming_saved_damp: float = 0.5 # 游戏前的原始阻尼
+
 func _ready() -> void:
 	# 初始化调色板 (必须在所有子系统之前)
 	if palette == null:
@@ -166,6 +172,7 @@ func _ready() -> void:
 	EventBus.pet_show_eye_icon.connect(_on_pet_show_eye_icon)
 	EventBus.trigger_squash_test.connect(_on_trigger_squash_test)
 	EventBus.nighttime_mode_changed.connect(_on_nighttime_mode_changed)
+	EventBus.pet_gaming_changed.connect(_on_pet_gaming_changed)
 
 func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 	if setting_id == "eye_track":
@@ -259,6 +266,32 @@ func _on_pet_color_changed(pet_index: int, hue: float, sat: float, val: float) -
 	palette.val_scale = val
 	queue_redraw()
 
+func _on_pet_gaming_changed(active: bool, game: RefCounted) -> void:
+	if is_clone:
+		return
+	_gaming = active
+	_gaming_game = game
+	if active:
+		# 决定全息屏在宠物哪边
+		if global_position.x > boundary_size.x * 0.5:
+			_gaming_holo_side = -1.0
+		else:
+			_gaming_holo_side = 1.0
+		# 高阻尼停下来 (保留重力，在空中会自然落地)
+		_gaming_saved_damp = linear_damp
+		linear_damp = 20.0
+		linear_velocity = Vector2.ZERO
+		# 切到 idle 状态
+		if current_state_name != "idle":
+			transition_to("idle")
+	else:
+		# 恢复阻尼
+		linear_damp = _gaming_saved_damp
+		eye_behavior.forced_look_dir = Vector2.ZERO
+		# 切到 fall 状态自然过渡 (防止解冻后突然起飞)
+		transition_to("fall")
+	queue_redraw()
+
 func _init_states() -> void:
 	states = {
 		"idle": preload("res://entities/pet/states/idle.gd").new(),
@@ -274,6 +307,9 @@ func _init_states() -> void:
 
 func transition_to(state_name: String) -> void:
 	if state_name == current_state_name:
+		return
+	# 游戏中: 只允许 idle 和 fall (落地), 阻止 walk/jump 等
+	if _gaming and state_name not in ["idle", "fall"]:
 		return
 	var old_name = current_state_name
 	if current_state:
@@ -383,6 +419,15 @@ func _process(delta: float) -> void:
 		hud_panel.set_hover(is_mouse_on_pet())
 	hud_panel.update(delta)
 	eye_behavior.update(delta)
+
+	# 游戏状态: 每帧强制瞳孔盯全息屏 + 锁定位置
+	if _gaming:
+		eye_behavior.forced_look_dir = Vector2(_gaming_holo_side, 0.15)
+		linear_velocity = Vector2.ZERO
+		# 落地后锁 idle
+		if current_state_name != "idle" and is_settled():
+			transition_to("idle")
+
 	var has_visual_change = pet_effects.update(delta)
 	idle_behaviors.update(delta)
 	_roam_update(delta)
@@ -395,7 +440,7 @@ func _process(delta: float) -> void:
 		_wrap_ghost_offset = Vector2.ZERO
 	
 	# 按需重绘
-	if has_visual_change or linear_velocity.length() > 1.0 or eye_behavior.is_animating() or squash_changed or _wrap_ghost_offset != Vector2.ZERO:
+	if has_visual_change or linear_velocity.length() > 1.0 or eye_behavior.is_animating() or squash_changed or _wrap_ghost_offset != Vector2.ZERO or _gaming:
 		queue_redraw()
 
 func _physics_process(delta: float) -> void:
@@ -425,6 +470,55 @@ func _unhandled_input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 				EventBus.show_context_menu.emit(self)
 
+# ── 游戏全息屏渲染 ──
+
+func _draw_gaming_hologram() -> void:
+	var hue = EventBus.ui_hue
+	# 在世界坐标系中绘制 (反旋转刚体旋转)
+	draw_set_transform(Vector2.ZERO, -rotation, Vector2.ONE)
+
+	var side = _gaming_holo_side
+	var gap = PET_RADIUS + 8.0
+	var holo_w = PET_RADIUS * 1.2
+	var holo_h = PET_RADIUS * 1.2
+
+	# 全息屏中心
+	var cx = side * (gap + holo_w * 0.5)
+	var cy = 0.0  # 垂直居中于宠物中心
+
+	# 投影支架线
+	var beam_start = Vector2(side * PET_RADIUS * 0.6, 0)
+	var beam_end = Vector2(cx - side * holo_w * 0.5, cy)
+	draw_line(beam_start, beam_end, Color.from_hsv(hue, 0.3, 0.8, 0.2), 0.8, true)
+	draw_circle(beam_start, 1.5, Color.from_hsv(hue, 0.4, 1.0, 0.4), true, -1.0, true)
+
+	# 透视变换: 靠近宠物的边稍窄，远离的边稍宽 (模拟 3D 倾斜)
+	var skew_amt = -side * 0.15  # 朝宠物方向收缩
+	var persp_xform = Transform2D.IDENTITY
+	persp_xform.origin = Vector2(cx, cy)
+	persp_xform.y = Vector2(skew_amt, 1.0)  # Y 轴倾斜 → 透视感
+	draw_set_transform_matrix(Transform2D(
+		Vector2(cos(-rotation), sin(-rotation)),
+		Vector2(-sin(-rotation), cos(-rotation)),
+		Vector2.ZERO
+	) * persp_xform)
+
+	# 在变换后的本地空间绘制 (原点=全息屏中心)
+	var half_w = holo_w / 2.0
+	var half_h = holo_h / 2.0
+	var local_rect = Rect2(-half_w, -half_h, holo_w, holo_h)
+
+	# 背景 + 边框
+	var glow_rect = Rect2(-half_w - 1.5, -half_h - 1.5, holo_w + 3, holo_h + 3)
+	draw_rect(glow_rect, Color.from_hsv(hue, 0.3, 0.8, 0.1), false, 2.0, true)
+	draw_rect(local_rect, Color.from_hsv(hue, 0.4, 0.9, 0.35), false, 0.6, true)
+
+	# 调用游戏绘制内容
+	_gaming_game.draw_hologram(self, local_rect)
+
+	# 恢复变换
+	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+
 # ── 视觉系统 ──
 
 func _draw() -> void:
@@ -449,6 +543,10 @@ func _draw() -> void:
 	if _wrap_ghost_offset != Vector2.ZERO:
 		_draw_body(_wrap_ghost_offset)
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+
+	# ── 游戏全息迷你屏 (在宠物侧面渲染) ──
+	if _gaming and _gaming_game and _gaming_game.has_method("draw_hologram"):
+		_draw_gaming_hologram()
 	
 ## 绘制宠物本体 (外壳+眼球+覆盖层), world_offset 用于屏幕穿越双重渲染
 func _draw_body(world_offset: Vector2) -> void:

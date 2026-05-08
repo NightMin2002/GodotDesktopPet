@@ -28,3 +28,8 @@ func start(host: CanvasLayer, pet: Node2D) -> void:
 ## 清理资源: 移除所有 UI 节点、断开信号
 func cleanup() -> void:
 	pass
+
+## 在宠物身旁绘制全息迷你屏 (子类覆写)
+## pet 是宠物 CanvasItem (用其 draw_* 方法), rect 是绘制区域
+func draw_hologram(pet_ci: CanvasItem, rect: Rect2) -> void:
+	pass

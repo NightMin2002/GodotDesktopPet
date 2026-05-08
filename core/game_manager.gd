@@ -108,6 +108,7 @@ func launch_game(game_id: String, pet: Node2D) -> bool:
 	_current_game.game_finished.connect(_on_game_finished)
 	_current_game.start(self, pet)
 	EventBus.context_menu_toggled.emit(true)  # 阻止穿透
+	EventBus.pet_gaming_changed.emit(true, _current_game)
 	return true
 
 func _on_game_finished(_result: BaseGame.Result) -> void:
@@ -118,6 +119,7 @@ func _cleanup_current_game() -> void:
 	if _current_game:
 		_current_game.cleanup()
 		_current_game = null
+	EventBus.pet_gaming_changed.emit(false, null)
 	EventBus.context_menu_toggled.emit(false)  # 恢复穿透
 
 func close_game() -> void:

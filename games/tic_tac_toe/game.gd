@@ -7,6 +7,7 @@ extends BaseGame
 var _board: Array[int] = [0,0,0, 0,0,0, 0,0,0]  # 0=空, 1=玩家(X), 2=AI(O)
 var _game_over: bool = false
 var _player_turn: bool = true
+var _last_move: int = -1
 
 # ── UI 引用 ──
 var _host: CanvasLayer = null
@@ -14,6 +15,7 @@ var _pet: Node2D = null
 var _panel: PanelContainer = null
 var _grid: Control = null
 var _status_label: Label = null
+var _speech_panel: PanelContainer = null  # 宠物发言容器
 var _score_label: Label = null
 var _title_bar: HBoxContainer = null
 var _restart_btn: Button = null
@@ -114,6 +116,49 @@ func cleanup() -> void:
 		_panel.queue_free()
 	_panel = null
 
+func draw_hologram(pet_ci: CanvasItem, rect: Rect2) -> void:
+	var hue = EventBus.ui_hue
+	var cw = rect.size.x / 3.0
+	var ch = rect.size.y / 3.0
+	var ox = rect.position.x
+	var oy = rect.position.y
+
+	# 背景
+	pet_ci.draw_rect(rect, Color(0.02, 0.05, 0.12, 0.6), true)
+	# 边框
+	pet_ci.draw_rect(rect, Color.from_hsv(hue, 0.4, 0.9, 0.5), false, 0.8, true)
+
+	# 网格线
+	var line_c = Color.from_hsv(hue, 0.3, 0.7, 0.3)
+	for i in range(1, 3):
+		pet_ci.draw_line(Vector2(ox + cw * i, oy + 1), Vector2(ox + cw * i, oy + rect.size.y - 1), line_c, 0.5, true)
+		pet_ci.draw_line(Vector2(ox + 1, oy + ch * i), Vector2(ox + rect.size.x - 1, oy + ch * i), line_c, 0.5, true)
+
+	# 棋子
+	var ai_hue = fmod(hue + 0.45, 1.0)
+	for idx in range(9):
+		if _board[idx] == 0:
+			continue
+		var cx = ox + (float(idx % 3) + 0.5) * cw
+		var cy = oy + (float(idx / 3) + 0.5) * ch
+		var r = minf(cw, ch) * 0.3
+		var is_last = (idx == _last_move)
+		if _board[idx] == 1: # 玩家 X
+			var xc = Color.from_hsv(hue, 0.5, 1.0, 0.8 if not is_last else 1.0)
+			var d = r * 0.6
+			pet_ci.draw_line(Vector2(cx - d, cy - d), Vector2(cx + d, cy + d), xc, 1.0, true)
+			pet_ci.draw_line(Vector2(cx + d, cy - d), Vector2(cx - d, cy + d), xc, 1.0, true)
+		else: # AI O
+			var oc = Color.from_hsv(ai_hue, 0.5, 1.0, 0.8 if not is_last else 1.0)
+			pet_ci.draw_arc(Vector2(cx, cy), r * 0.55, 0, TAU, 16, oc, 1.0, true)
+
+		# 最新落子高亮
+		if is_last:
+			var gx = ox + float(idx % 3) * cw
+			var gy = oy + float(idx / 3) * ch
+			pet_ci.draw_rect(Rect2(gx + 0.5, gy + 0.5, cw - 1, ch - 1),
+				Color.from_hsv(hue, 0.3, 1.0, 0.12), true)
+
 # ══════════════════════════════════════════════
 # UI 构建
 # ══════════════════════════════════════════════
@@ -131,7 +176,7 @@ func _build_ui() -> void:
 	bg.content_margin_left = 0
 	bg.content_margin_right = 0
 	bg.content_margin_top = 0
-	bg.content_margin_bottom = 14
+	bg.content_margin_bottom = 6
 	_panel.add_theme_stylebox_override("panel", bg)
 
 	var outer = MarginContainer.new()
@@ -180,13 +225,30 @@ func _build_ui() -> void:
 	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(sep)
 
-	# ── 状态栏 ──
+	# ── 宠物发言区 (带背景 + 引用竖线) ──
+	_speech_panel = PanelContainer.new()
+	var speech_bg = StyleBoxFlat.new()
+	speech_bg.bg_color = Color(0.06, 0.10, 0.20, 0.7)
+	speech_bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.5)
+	speech_bg.border_width_left = 2
+	speech_bg.border_width_top = 0
+	speech_bg.border_width_right = 0
+	speech_bg.border_width_bottom = 0
+	speech_bg.set_corner_radius_all(6)
+	speech_bg.content_margin_left = 10
+	speech_bg.content_margin_right = 8
+	speech_bg.content_margin_top = 5
+	speech_bg.content_margin_bottom = 5
+	_speech_panel.add_theme_stylebox_override("panel", speech_bg)
+
 	_status_label = Label.new()
 	_status_label.text = "操作员先手"
 	_status_label.add_theme_font_size_override("font_size", 13)
-	_status_label.add_theme_color_override("font_color", Color(0.5, 0.65, 0.8, 0.8))
-	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(_status_label)
+	_status_label.add_theme_color_override("font_color", Color(0.55, 0.75, 0.95, 0.9))
+	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_speech_panel.add_child(_status_label)
+	vbox.add_child(_speech_panel)
 
 	# ── 棋盘 ──
 	_grid = _BoardRenderer.new()
@@ -216,14 +278,16 @@ func _build_ui() -> void:
 	# ── 输入处理 (拖拽 + 点击外部关闭) ──
 	_panel.gui_input.connect(_on_panel_input)
 
-	# 定位到宠物附近
+	# 定位到宠物附近 (先挂载→等布局→用实际尺寸定位)
 	_host.add_child(_panel)
+	await _host.get_tree().process_frame  # 等 UI 布局完成
+
+	# 用实际面板尺寸定位，确保不超出屏幕
 	_position_near_pet()
 
 	# 弹入动画
 	_panel.modulate.a = 0.0
 	_panel.scale = Vector2(0.6, 0.6)
-	await _host.get_tree().process_frame
 	_panel.pivot_offset = _panel.size / 2.0
 	var tween = _host.create_tween().set_parallel(true)
 	tween.tween_property(_panel, "modulate:a", 1.0, 0.2)
@@ -235,18 +299,29 @@ func _position_near_pet() -> void:
 	var pet_pos := Vector2(vp.x / 2.0, vp.y / 2.0)
 	if is_instance_valid(_pet):
 		pet_pos = _pet.get_global_transform_with_canvas().get_origin()
-	var pw := _panel.custom_minimum_size.x
-	var ph := 400.0
-	var gap := 60.0
+	var pw := _panel.size.x if _panel.size.x > 10 else _panel.custom_minimum_size.x
+	var ph := _panel.size.y if _panel.size.y > 10 else 400.0
+	# 间距自适应
+	var pet_r := 30.0
+	var gap := pet_r + pet_r * 1.2 + pet_r * 1.5
 	var x: float
 	if pet_pos.x > vp.x * 0.5:
 		x = pet_pos.x - pw - gap
 	else:
 		x = pet_pos.x + gap
-	var y = pet_pos.y - ph * 0.4
+	var y = pet_pos.y - ph * 0.35
 	x = clampf(x, 8.0, vp.x - pw - 8.0)
 	y = clampf(y, 8.0, vp.y - ph - 8.0)
 	_panel.position = Vector2(x, y)
+
+func _clamp_panel_to_screen() -> void:
+	if not is_instance_valid(_panel) or not _host:
+		return
+	var vp = _host.get_viewport().get_visible_rect().size
+	var pos = _panel.position
+	pos.x = clampf(pos.x, 8.0, vp.x - _panel.size.x - 8.0)
+	pos.y = clampf(pos.y, 8.0, vp.y - _panel.size.y - 8.0)
+	_panel.position = pos
 
 # ══════════════════════════════════════════════
 # 游戏逻辑
@@ -260,6 +335,7 @@ func _reset_board() -> void:
 	_status_label.text = "操作员先手"
 	(_grid as _BoardRenderer).set_win_line([])
 	(_grid as _BoardRenderer).set_board(_board, -1)
+	_last_move = -1
 
 func _on_cell_clicked(index: int) -> void:
 	if _game_over or not _player_turn:
@@ -269,6 +345,7 @@ func _on_cell_clicked(index: int) -> void:
 	# 玩家落子
 	_board[index] = 1
 	_player_turn = false
+	_last_move = index
 	(_grid as _BoardRenderer).set_board(_board, index)
 	_say(_pick(_q_player_move, _POOL_PLAYER_MOVE))
 
@@ -287,6 +364,7 @@ func _on_cell_clicked(index: int) -> void:
 		return
 	var ai_move = _minimax_best_move()
 	_board[ai_move] = 2
+	_last_move = ai_move
 	(_grid as _BoardRenderer).set_board(_board, ai_move)
 	_say(_pick(_q_ai_move, _POOL_AI_MOVE))
 
@@ -319,6 +397,9 @@ func _end_game(result: Result, win_line: Array) -> void:
 			_say(_pick(_q_draw, _POOL_DRAW))
 	_update_score_label()
 	_restart_btn.show()
+	# 按钮显示后面板变高，重新确保不超出屏幕
+	await _host.get_tree().process_frame
+	_clamp_panel_to_screen()
 	game_finished.emit(result)
 
 func _on_restart() -> void:
@@ -344,9 +425,16 @@ func _update_score_label() -> void:
 	if _score_label:
 		_score_label.text = "胜 " + str(_wins) + "  负 " + str(_losses) + "  平 " + str(_draws)
 
-# ── 宠物说话 ──
+# ── 宠物发言 (通过游戏面板状态栏 + 淡入高亮，不走全局气泡) ──
 func _say(text: String) -> void:
-	EventBus.force_show_bubble.emit(text)
+	if not _status_label:
+		return
+	_status_label.text = text
+	# 淡入高亮动画
+	if is_instance_valid(_speech_panel) and _host:
+		_speech_panel.modulate = Color(1.4, 1.4, 1.4, 1.0)
+		var tween = _host.create_tween()
+		tween.tween_property(_speech_panel, "modulate", Color.WHITE, 0.5)
 
 # ══════════════════════════════════════════════
 # Minimax AI
