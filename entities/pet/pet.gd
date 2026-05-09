@@ -68,14 +68,8 @@ var idle_behaviors: IdleBehaviors
 # ── 弹性形变系统 (委托给 PetSquash) ──
 var squash: PetSquash
 
-# ── 游戏状态 (全息迷你屏) ──
-var _gaming: bool = false
-var _gaming_game: RefCounted = null  # 当前游戏引用 (BaseGame)
-var _gaming_holo_side: float = 1.0  # 全息屏方向: 1=右侧, -1=左侧
-var _gaming_holo_aspect: float = 0.0  # 全息屏宽高比 (初始化后固定)
-var _gaming_platform: StaticBody2D = null  # 游戏态悬浮踏板
-var _gaming_lift_phase: int = 0     # 0=空闲, 1=上升中, 2=已到位
-var _gaming_lift_target_y: float = 0.0  # 踏板目标高度
+# ── 游戏态管理器 (委托给 PetGaming) ──
+var gaming: PetGaming
 
 func _ready() -> void:
 	# 初始化调色板 (必须在所有子系统之前)
@@ -104,6 +98,10 @@ func _ready() -> void:
 	# 初始化眼球行为控制器 (必须在状态机之前，fall.enter() 会访问 eye_behavior)
 	eye_behavior = EyeBehavior.new()
 	eye_behavior.pet = self
+	
+	# 初始化游戏态管理器 (必须在状态机之前，transition_to() 会访问 gaming.active)
+	gaming = PetGaming.new()
+	gaming.pet = self
 	
 	# 初始化状态机
 	_init_states()
@@ -269,86 +267,8 @@ func _on_pet_color_changed(pet_index: int, hue: float, sat: float, val: float) -
 	palette.val_scale = val
 	queue_redraw()
 
-func _on_pet_gaming_changed(active: bool, game: RefCounted) -> void:
-	if is_clone:
-		return
-	_gaming = active
-	_gaming_game = game
-	if active:
-		_gaming_holo_aspect = 0.0  # 重置，让新游戏初始化自己的比例
-		# 决定全息屏在宠物哪边
-		if global_position.x > boundary_size.x * 0.5:
-			_gaming_holo_side = -1.0
-		else:
-			_gaming_holo_side = 1.0
-		# 高阻尼停下来 (保留重力，在空中会自然落地)
-		linear_damp = 20.0
-		linear_velocity = Vector2.ZERO
-		# 切到 idle 状态
-		if current_state_name != "idle":
-			transition_to("idle")
-		# 生成踏板，缓缓升起
-		_spawn_gaming_platform()
-	else:
-		eye_behavior.forced_look_dir = Vector2.ZERO
-		# 清除踏板
-		_remove_gaming_platform()
-		# 切到 fall 状态自然过渡 (fall.enter 会恢复阻尼)
-		transition_to("fall")
-	queue_redraw()
-
-## 游戏态踏板: 在宠物脚下生成踏板，缓缓升起把宠物托到空中
-func _spawn_gaming_platform() -> void:
-	var parent = get_parent()
-	if not parent:
-		return
-	# 踏板位置 = 宠物脚下
-	var plat_y = global_position.y + PET_RADIUS * gravity_sign
-	var body = StaticBody2D.new()
-	body.position = Vector2(global_position.x, plat_y)
-	# 碰撞体 (单向踏板)
-	var col = CollisionShape2D.new()
-	var shape = RectangleShape2D.new()
-	shape.size = Vector2(PET_RADIUS * 2.0, 8.0)
-	col.shape = shape
-	col.one_way_collision = true
-	if anti_gravity:
-		col.rotation = PI
-	body.add_child(col)
-	# 视觉效果 (复用 FreeRoamSystem 的 PlatformVisual)
-	var visual = FreeRoamSystem.PlatformVisual.new()
-	visual.platform_width = PET_RADIUS * 2.0
-	visual.platform_color = palette.shift_color(Color(0.2, 0.6, 1.0, 0.6))
-	body.add_child(visual)
-	parent.add_child(body)
-	# 淡入
-	body.modulate.a = 0.0
-	var tween = body.create_tween()
-	tween.tween_property(body, "modulate:a", 1.0, 0.3)
-	_gaming_platform = body
-	# 目标高度: 上升约 15px
-	_gaming_lift_target_y = plat_y - 15.0 * gravity_sign
-	_gaming_lift_phase = 1
-	# 关闭重力，让踏板完全控制宠物高度
-	gravity_scale = 0.0
-
-func _remove_gaming_platform() -> void:
-	_gaming_lift_phase = 0
-	gravity_scale = gravity_sign  # 恢复重力
-	if is_instance_valid(_gaming_platform):
-		# 立即禁用碰撞体，让宠物能马上下落
-		for child in _gaming_platform.get_children():
-			if child is CollisionShape2D:
-				child.disabled = true
-		# 淡出 + 移除
-		var plat = _gaming_platform
-		_gaming_platform = null
-		var tween = plat.create_tween()
-		tween.tween_property(plat, "modulate:a", 0.0, 0.3)
-		tween.finished.connect(func():
-			if is_instance_valid(plat):
-				plat.queue_free()
-		)
+func _on_pet_gaming_changed(active: bool, game_ref: RefCounted) -> void:
+	gaming.on_gaming_changed(active, game_ref)
 
 func _init_states() -> void:
 	states = {
@@ -367,7 +287,7 @@ func transition_to(state_name: String) -> void:
 	if state_name == current_state_name:
 		return
 	# 游戏中: 只允许 idle 和 fall (落地), 阻止 walk/jump 等
-	if _gaming and state_name not in ["idle", "fall"]:
+	if gaming.active and state_name not in ["idle", "fall"]:
 		return
 	var old_name = current_state_name
 	if current_state:
@@ -478,28 +398,8 @@ func _process(delta: float) -> void:
 	hud_panel.update(delta)
 	eye_behavior.update(delta)
 
-	# 游戏状态: 每帧强制瞳孔盯全息屏 + 锁定位置 + 驱动踏板上升
-	if _gaming:
-		eye_behavior.forced_look_dir = Vector2(_gaming_holo_side, 0.15)
-		linear_velocity = Vector2.ZERO
-		# 踏板上升驱动
-		if _gaming_lift_phase == 1 and is_instance_valid(_gaming_platform):
-			var lift_speed = 80.0
-			_gaming_platform.position.y -= lift_speed * delta * gravity_sign
-			# 宠物跟随踏板
-			global_position.y = _gaming_platform.position.y - PET_RADIUS * gravity_sign
-			# 检测抵达目标高度
-			var dist = (_gaming_platform.position.y - _gaming_lift_target_y) * gravity_sign
-			if dist <= 0.0:
-				_gaming_platform.position.y = _gaming_lift_target_y
-				global_position.y = _gaming_lift_target_y - PET_RADIUS * gravity_sign
-				_gaming_lift_phase = 2
-		elif _gaming_lift_phase == 2 and is_instance_valid(_gaming_platform):
-			# 已到位: 持续锁定宠物在踏板上
-			global_position.y = _gaming_platform.position.y - PET_RADIUS * gravity_sign
-		# 落地后锁 idle
-		if current_state_name != "idle" and is_settled():
-			transition_to("idle")
+	# 游戏态: 瞳孔锁定 + 位置锁定 + 踏板升降 (委托给 PetGaming)
+	gaming.update(delta)
 
 	var has_visual_change = pet_effects.update(delta)
 	idle_behaviors.update(delta)
@@ -513,7 +413,7 @@ func _process(delta: float) -> void:
 		_wrap_ghost_offset = Vector2.ZERO
 	
 	# 按需重绘
-	if has_visual_change or linear_velocity.length() > 1.0 or eye_behavior.is_animating() or squash_changed or _wrap_ghost_offset != Vector2.ZERO or _gaming:
+	if has_visual_change or linear_velocity.length() > 1.0 or eye_behavior.is_animating() or squash_changed or _wrap_ghost_offset != Vector2.ZERO or gaming.active:
 		queue_redraw()
 
 func _physics_process(delta: float) -> void:
@@ -543,85 +443,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 				EventBus.show_context_menu.emit(self)
 
-# ── 游戏全息屏渲染 ──
-
-func _draw_gaming_hologram() -> void:
-	var hue = EventBus.ui_hue
-	# 在世界坐标系中绘制 (反旋转刚体旋转)
-	draw_set_transform(Vector2.ZERO, -rotation, Vector2.ONE)
-
-	var side = _gaming_holo_side
-	var gap = PET_RADIUS + 5.0
-
-	# 获取 SubViewport 纹理，按比例计算全息屏尺寸
-	var viewport_tex: Texture2D = null
-	if _gaming_game and _gaming_game.game_viewport:
-		viewport_tex = _gaming_game.game_viewport.get_texture()
-	var holo_w: float
-	var holo_h: float
-	if viewport_tex and viewport_tex.get_size().y > 0:
-		var tex_size = viewport_tex.get_size()
-		# 首次获取时记录宽高比，后续固定 (防止面板大小变化导致跳变)
-		if _gaming_holo_aspect <= 0.0:
-			_gaming_holo_aspect = tex_size.x / tex_size.y
-		holo_h = PET_RADIUS * 2.5
-		holo_w = holo_h * _gaming_holo_aspect
-	else:
-		holo_w = PET_RADIUS * 1.6
-		holo_h = PET_RADIUS * 1.6
-
-	# 全息屏中心
-	var cx = side * (gap + holo_w * 0.5)
-	var cy = 0.0  # 垂直居中于宠物中心
-
-	# 投影支架线
-	var near_edge_x = cx - side * holo_w * 0.5  # 靠近宠物的边
-	var beam_start = Vector2(side * PET_RADIUS * 0.6, 0)
-	var beam_end = Vector2(near_edge_x, cy)
-	draw_line(beam_start, beam_end, Color.from_hsv(hue, 0.3, 0.8, 0.2), 0.8, true)
-	draw_circle(beam_start, 1.5, Color.from_hsv(hue, 0.4, 1.0, 0.4), true, -1.0, true)
-
-	# 梯形透视: 靠近宠物的边上下收缩，远离的边保持原高
-	# 模拟"侧面看投影屏幕"的真实感
-	var half_w = holo_w / 2.0
-	var half_h = holo_h / 2.0
-	var shrink = 0.15  # 近端收缩比例 (15%)
-	var near_half_h = half_h * (1.0 - shrink)  # 近端半高 (较短)
-	var far_half_h = half_h                     # 远端半高 (原高)
-
-	# 梯形 4 个顶点 (左上→右上→右下→左下)
-	var pts: PackedVector2Array
-	if side > 0:  # 全息屏在右侧: 左边(近端)窄，右边(远端)宽
-		pts = PackedVector2Array([
-			Vector2(cx - half_w, cy - near_half_h),  # 左上 (近)
-			Vector2(cx + half_w, cy - far_half_h),   # 右上 (远)
-			Vector2(cx + half_w, cy + far_half_h),   # 右下 (远)
-			Vector2(cx - half_w, cy + near_half_h),  # 左下 (近)
-		])
-	else:  # 全息屏在左侧: 右边(近端)窄，左边(远端)宽
-		pts = PackedVector2Array([
-			Vector2(cx - half_w, cy - far_half_h),   # 左上 (远)
-			Vector2(cx + half_w, cy - near_half_h),  # 右上 (近)
-			Vector2(cx + half_w, cy + near_half_h),  # 右下 (近)
-			Vector2(cx - half_w, cy + far_half_h),   # 左下 (远)
-		])
-	var uvs = PackedVector2Array([
-		Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)
-	])
-
-	# 外框光晕 (梯形轮廓)
-	var glow_pts = pts.duplicate()
-	glow_pts.append(pts[0])  # 闭合
-	draw_polyline(glow_pts, Color.from_hsv(hue, 0.3, 0.8, 0.1), 2.0, true)
-	draw_polyline(glow_pts, Color.from_hsv(hue, 0.4, 0.9, 0.35), 0.6, true)
-
-	# SubViewport 纹理映射到梯形 (自动镜像任何游戏面板)
-	if viewport_tex:
-		draw_polygon(pts, [Color(1, 1, 1, 0.75)], uvs, viewport_tex)
-
-	# 恢复变换
-	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
-
 # ── 视觉系统 ──
 
 func _draw() -> void:
@@ -647,9 +468,9 @@ func _draw() -> void:
 		_draw_body(_wrap_ghost_offset)
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 
-	# ── 游戏全息迷你屏 (SubViewport 纹理自动镜像) ──
-	if _gaming and _gaming_game:
-		_draw_gaming_hologram()
+	# ── 游戏全息迷你屏 (委托给 PetGaming) ──
+	if gaming.active and gaming.game:
+		gaming.render_hologram()
 	
 ## 绘制宠物本体 (外壳+眼球+覆盖层), world_offset 用于屏幕穿越双重渲染
 func _draw_body(world_offset: Vector2) -> void:

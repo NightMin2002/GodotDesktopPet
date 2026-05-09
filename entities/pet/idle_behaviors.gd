@@ -77,7 +77,7 @@ func _init() -> void:
 func update(delta: float) -> void:
 	# ── 游戏中: 跳过所有微行为 (深夜休眠/白天待机/自检) ──
 	# 深夜时钟检测保留运转，游戏结束后能立即感知深夜模式
-	if pet._gaming:
+	if pet.gaming.active:
 		if not pet.is_clone:
 			_nighttime_check_timer += delta
 			if _nighttime_check_timer >= NIGHTTIME_CHECK_INTERVAL:

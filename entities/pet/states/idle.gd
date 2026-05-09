@@ -31,6 +31,10 @@ func exit() -> void:
 func process(delta: float) -> void:
 	idle_timer += delta
 	
+	# ── 游戏态: 锁定 idle，不做任何转换/触发 ──
+	if pet.gaming.active:
+		return
+	
 	# ── 空间跳跃活跃时锁定 idle 状态，不做任何转换 ──
 	if pet._roam_active:
 		return
@@ -133,7 +137,7 @@ func input(event: InputEvent) -> void:
 			if pet.is_mouse_on_pet():
 				pet.get_viewport().set_input_as_handled()
 				# 游戏中: 不进入拖拽，给个专属回应
-				if pet._gaming:
+				if pet.gaming.active:
 					var lines := [
 						"推演中。请勿干扰处理器。",
 						"...对弈优先级高于触控响应。",
