@@ -132,6 +132,16 @@ func input(event: InputEvent) -> void:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			if pet.is_mouse_on_pet():
 				pet.get_viewport().set_input_as_handled()
+				# 游戏中: 不进入拖拽，给个专属回应
+				if pet._gaming:
+					var lines := [
+						"推演中。请勿干扰处理器。",
+						"...对弈优先级高于触控响应。",
+						"正在计算。稍后处理。",
+						"触控信号已搁置。",
+					]
+					pet.show_local_bubble(lines[randi() % lines.size()])
+					return
 				pet.transition_to("drag")
 
 ## 精确判定是否已停靠在分配的队列槽位上 (X + Y 双轴验证)

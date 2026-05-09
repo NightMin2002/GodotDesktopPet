@@ -72,7 +72,6 @@ var squash: PetSquash
 var _gaming: bool = false
 var _gaming_game: RefCounted = null  # 当前游戏引用 (BaseGame)
 var _gaming_holo_side: float = 1.0  # 全息屏方向: 1=右侧, -1=左侧
-var _gaming_saved_damp: float = 0.5 # 游戏前的原始阻尼
 
 func _ready() -> void:
 	# 初始化调色板 (必须在所有子系统之前)
@@ -278,17 +277,14 @@ func _on_pet_gaming_changed(active: bool, game: RefCounted) -> void:
 		else:
 			_gaming_holo_side = 1.0
 		# 高阻尼停下来 (保留重力，在空中会自然落地)
-		_gaming_saved_damp = linear_damp
 		linear_damp = 20.0
 		linear_velocity = Vector2.ZERO
 		# 切到 idle 状态
 		if current_state_name != "idle":
 			transition_to("idle")
 	else:
-		# 恢复阻尼
-		linear_damp = _gaming_saved_damp
 		eye_behavior.forced_look_dir = Vector2.ZERO
-		# 切到 fall 状态自然过渡 (防止解冻后突然起飞)
+		# 切到 fall 状态自然过渡 (fall.enter 会恢复阻尼)
 		transition_to("fall")
 	queue_redraw()
 
@@ -478,9 +474,9 @@ func _draw_gaming_hologram() -> void:
 	draw_set_transform(Vector2.ZERO, -rotation, Vector2.ONE)
 
 	var side = _gaming_holo_side
-	var gap = PET_RADIUS + 8.0
-	var holo_w = PET_RADIUS * 1.2
-	var holo_h = PET_RADIUS * 1.2
+	var gap = PET_RADIUS + 5.0
+	var holo_w = PET_RADIUS * 1.6
+	var holo_h = PET_RADIUS * 1.6
 
 	# 全息屏中心
 	var cx = side * (gap + holo_w * 0.5)

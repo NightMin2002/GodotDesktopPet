@@ -16,7 +16,7 @@ var _panel: PanelContainer = null
 var _grid: Control = null
 var _status_label: Label = null
 var _speech_panel: PanelContainer = null  # 宠物发言容器
-var _score_label: Label = null
+var _score_label: RichTextLabel = null
 var _title_bar: HBoxContainer = null
 var _restart_btn: Button = null
 
@@ -115,6 +115,12 @@ func cleanup() -> void:
 	if is_instance_valid(_panel):
 		_panel.queue_free()
 	_panel = null
+	_grid = null
+	_status_label = null
+	_speech_panel = null
+	_score_label = null
+	_title_bar = null
+	_restart_btn = null
 
 func draw_hologram(pet_ci: CanvasItem, rect: Rect2) -> void:
 	var hue = EventBus.ui_hue
@@ -205,14 +211,27 @@ func _build_ui() -> void:
 	_title_bar.add_child(title)
 
 	var close_btn = Button.new()
-	close_btn.text = "x"
-	close_btn.flat = true
-	close_btn.custom_minimum_size = Vector2(28, 28)
-	close_btn.add_theme_font_size_override("font_size", 16)
-	close_btn.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6, 0.6))
-	close_btn.add_theme_color_override("font_hover_color", Color(1, 0.3, 0.3, 0.9))
+	close_btn.text = "✕"
+	close_btn.custom_minimum_size = Vector2(26, 26)
+	close_btn.add_theme_font_size_override("font_size", 13)
+	close_btn.add_theme_color_override("font_color", Color(0.5, 0.55, 0.65, 0.7))
+	close_btn.add_theme_color_override("font_hover_color", Color(1.0, 0.35, 0.35, 1.0))
+	close_btn.add_theme_color_override("font_pressed_color", Color(1.0, 0.2, 0.2, 1.0))
+	var close_normal = StyleBoxFlat.new()
+	close_normal.bg_color = Color(0.08, 0.10, 0.18, 0.6)
+	close_normal.set_corner_radius_all(6)
+	close_normal.set_content_margin_all(0)
+	var close_hover = StyleBoxFlat.new()
+	close_hover.bg_color = Color(0.15, 0.08, 0.08, 0.8)
+	close_hover.set_corner_radius_all(6)
+	close_hover.set_content_margin_all(0)
+	close_btn.add_theme_stylebox_override("normal", close_normal)
+	close_btn.add_theme_stylebox_override("hover", close_hover)
+	close_btn.add_theme_stylebox_override("pressed", close_hover)
+	var close_focus = StyleBoxEmpty.new()
+	close_btn.add_theme_stylebox_override("focus", close_focus)
 	close_btn.mouse_default_cursor_shape = Control.CURSOR_ARROW
-	close_btn.pressed.connect(func(): game_finished.emit(Result.DRAW); _on_close())
+	close_btn.pressed.connect(func(): _on_close())
 	_title_bar.add_child(close_btn)
 
 	vbox.add_child(_title_bar)
@@ -256,21 +275,41 @@ func _build_ui() -> void:
 	(_grid as _BoardRenderer).cell_clicked.connect(_on_cell_clicked)
 	vbox.add_child(_grid)
 
-	# ── 战绩 ──
-	_score_label = Label.new()
-	_score_label.add_theme_font_size_override("font_size", 12)
-	_score_label.add_theme_color_override("font_color", Color(0.4, 0.5, 0.6, 0.6))
-	_score_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# ── 战绩 (RichTextLabel + BBCode 彩色) ──
+	var score_rich = RichTextLabel.new()
+	score_rich.bbcode_enabled = true
+	score_rich.fit_content = true
+	score_rich.scroll_active = false
+	score_rich.custom_minimum_size = Vector2(0, 20)
+	score_rich.add_theme_font_size_override("normal_font_size", 12)
+	score_rich.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_score_label = score_rich
 	_update_score_label()
-	vbox.add_child(_score_label)
+	vbox.add_child(score_rich)
 
 	# ── 再来一局 ──
 	_restart_btn = Button.new()
 	_restart_btn.text = "再来一局"
-	_restart_btn.flat = true
+	_restart_btn.custom_minimum_size = Vector2(0, 32)
 	_restart_btn.add_theme_font_size_override("font_size", 14)
-	_restart_btn.add_theme_color_override("font_color", Color(0.5, 0.65, 0.8, 0.7))
-	_restart_btn.add_theme_color_override("font_hover_color", Color.from_hsv(EventBus.ui_hue, 0.5, 1.0))
+	_restart_btn.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.35, 0.85, 0.8))
+	_restart_btn.add_theme_color_override("font_hover_color", Color.from_hsv(EventBus.ui_hue, 0.5, 1.0, 1.0))
+	var rst_normal = StyleBoxFlat.new()
+	rst_normal.bg_color = Color(0.06, 0.09, 0.18, 0.7)
+	rst_normal.border_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.7, 0.3)
+	rst_normal.set_border_width_all(1)
+	rst_normal.set_corner_radius_all(8)
+	var rst_hover = StyleBoxFlat.new()
+	rst_hover.bg_color = Color(0.08, 0.12, 0.25, 0.8)
+	rst_hover.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.9, 0.6)
+	rst_hover.set_border_width_all(1)
+	rst_hover.set_corner_radius_all(8)
+	var rst_focus = StyleBoxEmpty.new()
+	_restart_btn.add_theme_stylebox_override("normal", rst_normal)
+	_restart_btn.add_theme_stylebox_override("hover", rst_hover)
+	_restart_btn.add_theme_stylebox_override("pressed", rst_hover)
+	_restart_btn.add_theme_stylebox_override("focus", rst_focus)
+	_restart_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_restart_btn.pressed.connect(_on_restart)
 	_restart_btn.hide()
 	vbox.add_child(_restart_btn)
@@ -407,6 +446,14 @@ func _on_restart() -> void:
 	_say(_pick(_q_start, _POOL_START))
 
 func _on_close() -> void:
+	# 游戏进行中关闭 → 算认输 (不走 _end_game，面板要关了没必要更新 UI)
+	if not _game_over:
+		_game_over = true
+		_losses += 1
+		game_finished.emit(Result.LOSE)
+		# 吐槽通过宠物气泡显示 (面板即将关闭，_say 看不到)
+		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
+			_pet.show_local_bubble("对弈中断。...这算你认输。")
 	if is_instance_valid(_panel):
 		_panel.pivot_offset = _panel.size / 2.0
 		var tween = _host.create_tween().set_parallel(true)
@@ -415,15 +462,24 @@ func _on_close() -> void:
 		tween.finished.connect(func():
 			if is_instance_valid(_panel):
 				_panel.queue_free()
-			# 通知 GameManager 清理
-			var main_node = _host.get_tree().root.get_node_or_null("Main")
-			if main_node and "game_mgr" in main_node and main_node.game_mgr:
-				main_node.game_mgr.close_game()
+			EventBus.close_game_requested.emit()
 		)
 
 func _update_score_label() -> void:
-	if _score_label:
-		_score_label.text = "胜 " + str(_wins) + "  负 " + str(_losses) + "  平 " + str(_draws)
+	if not _score_label:
+		return
+	var hue = EventBus.ui_hue
+	# 胜=青绿调, 负=暗红调, 平=灰蓝调
+	var win_c = Color.from_hsv(fmod(hue + 0.15, 1.0), 0.45, 0.85).to_html(false)
+	var lose_c = Color(0.85, 0.35, 0.35).to_html(false)
+	var draw_c = Color(0.45, 0.55, 0.65).to_html(false)
+	var dim = Color(0.4, 0.5, 0.6, 0.5).to_html(false)
+	_score_label.text = (
+		"[center][color=#" + dim + "]胜 [/color][color=#" + win_c + "]" + str(_wins)
+		+ "[/color]    [color=#" + dim + "]负 [/color][color=#" + lose_c + "]" + str(_losses)
+		+ "[/color]    [color=#" + dim + "]平 [/color][color=#" + draw_c + "]" + str(_draws)
+		+ "[/color][/center]"
+	)
 
 # ── 宠物发言 (通过游戏面板状态栏 + 淡入高亮，不走全局气泡) ──
 func _say(text: String) -> void:
@@ -559,29 +615,38 @@ class _BoardRenderer extends Control:
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		set_process(false)  # 初始无动画，按需开启
 
 	func set_board(board: Array[int], last_move: int) -> void:
 		_board = board.duplicate()
 		_last_move = last_move
 		if last_move >= 0 and last_move < 9:
 			_cell_anims[last_move] = 0.0
+			set_process(true)  # 有新落子，启动动画
 		queue_redraw()
 
 	func set_win_line(line: Array) -> void:
 		_win_line = line
+		if line.size() > 0:
+			set_process(true)  # 胜利线脉冲动画
 		queue_redraw()
 
 	func _process(delta: float) -> void:
 		_anim_time += delta
 		var needs_redraw := false
+		var all_done := true
 		for i in range(9):
 			if _cell_anims[i] < 1.0:
 				_cell_anims[i] = minf(_cell_anims[i] + delta * 4.0, 1.0)
 				needs_redraw = true
+				all_done = false
 		if _win_line.size() > 0:
 			needs_redraw = true
+			all_done = false  # 胜利线持续动画
 		if needs_redraw:
 			queue_redraw()
+		elif all_done:
+			set_process(false)  # 所有动画完成，休眠
 
 	func _gui_input(event: InputEvent) -> void:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:

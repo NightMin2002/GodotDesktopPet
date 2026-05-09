@@ -10,6 +10,7 @@ var _pet_ref: Node2D = null
 func _ready() -> void:
 	layer = 110
 	_scan_local_games()
+	EventBus.close_game_requested.connect(close_game)
 
 # ══════════════════════════════════════════════
 # 游戏扫描 (本地已安装)

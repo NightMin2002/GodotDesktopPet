@@ -75,6 +75,15 @@ func _init() -> void:
 # ── 主循环 ──
 
 func update(delta: float) -> void:
+	# ── 游戏中: 跳过所有微行为 (深夜休眠/白天待机/自检) ──
+	# 深夜时钟检测保留运转，游戏结束后能立即感知深夜模式
+	if pet._gaming:
+		if not pet.is_clone:
+			_nighttime_check_timer += delta
+			if _nighttime_check_timer >= NIGHTTIME_CHECK_INTERVAL:
+				_nighttime_check_timer = 0.0
+				_check_nighttime()
+		return
 	# ── 深夜模式自动休眠: 原体和克隆体都需要 (到位后进入半闭眼) ──
 	if pet.nighttime_mode and active_behavior == "":
 		if pet.current_state_name == "idle" and _is_pet_at_nighttime_slot():

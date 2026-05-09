@@ -77,9 +77,9 @@ func physics_process(_delta: float) -> void:
 	pass
 
 func input(event: InputEvent) -> void:
-	# 即使在下落过程中也能被抓住
+	# 即使在下落过程中也能被抓住 (游戏中除外)
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-			if pet.is_mouse_on_pet():
+			if pet.is_mouse_on_pet() and not pet._gaming:
 				pet.get_viewport().set_input_as_handled()
 				pet.transition_to("drag")
