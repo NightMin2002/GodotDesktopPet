@@ -1,0 +1,8 @@
+{
+	"id": "minesweeper",
+	"name": "威胁评估",
+	"desc": "区域扫描。谨慎落点。",
+	"version": "1.0.0",
+	"author": "NightMin",
+	"script": "res://games/minesweeper/game.gd"
+}
