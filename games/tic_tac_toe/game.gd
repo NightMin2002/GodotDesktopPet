@@ -102,6 +102,15 @@ func get_game_id() -> String: return "tic_tac_toe"
 func get_game_name() -> String: return "策略矩阵"
 func get_game_desc() -> String: return "3x3 决策推演"
 
+func get_tutorial_steps() -> Array[Dictionary]:
+	return [
+		{"text": "这个游戏在你们人类世界叫\"井字棋\"。"},
+		{"text": "规则很简单。你点一个，本机点一个。"},
+		{"text": "三个标记连成一线即可。"},
+		{"text": "不过需要说明的是，先手胜率为 0%。"},
+		{"text": "...换一种说法，你是无法赢本机的。"},
+	]
+
 func start() -> void:
 	_build_ui()
 	_reset_board()
@@ -165,6 +174,10 @@ func _build_ui() -> void:
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_title_bar.add_child(title)
+
+	var help_btn = create_help_button()
+	if help_btn:
+		_title_bar.add_child(help_btn)
 
 	var close_btn = Button.new()
 	close_btn.text = "✕"
