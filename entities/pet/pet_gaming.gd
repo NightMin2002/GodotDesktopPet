@@ -123,21 +123,24 @@ func render_hologram() -> void:
 	var near_half_h = half_h * (1.0 - shrink)  # 近端半高 (较短)
 	var far_half_h = half_h                     # 远端半高 (原高)
 
+	# 微后仰: 顶部向远离宠物方向偏移，模拟屏幕微倾
+	var tilt = side * holo_w * 0.16
+
 	# 梯形 4 个顶点 (左上→右上→右下→左下)
 	var pts: PackedVector2Array
 	if side > 0:  # 全息屏在右侧: 左边(近端)窄，右边(远端)宽
 		pts = PackedVector2Array([
-			Vector2(cx - half_w, cy - near_half_h),  # 左上 (近)
-			Vector2(cx + half_w, cy - far_half_h),   # 右上 (远)
-			Vector2(cx + half_w, cy + far_half_h),   # 右下 (远)
-			Vector2(cx - half_w, cy + near_half_h),  # 左下 (近)
+			Vector2(cx - half_w + tilt, cy - near_half_h),  # 左上 (近, 后仰)
+			Vector2(cx + half_w + tilt, cy - far_half_h),   # 右上 (远, 后仰)
+			Vector2(cx + half_w, cy + far_half_h),           # 右下 (远)
+			Vector2(cx - half_w, cy + near_half_h),          # 左下 (近)
 		])
 	else:  # 全息屏在左侧: 右边(近端)窄，左边(远端)宽
 		pts = PackedVector2Array([
-			Vector2(cx - half_w, cy - far_half_h),   # 左上 (远)
-			Vector2(cx + half_w, cy - near_half_h),  # 右上 (近)
-			Vector2(cx + half_w, cy + near_half_h),  # 右下 (近)
-			Vector2(cx - half_w, cy + far_half_h),   # 左下 (远)
+			Vector2(cx - half_w + tilt, cy - far_half_h),   # 左上 (远, 后仰)
+			Vector2(cx + half_w + tilt, cy - near_half_h),  # 右上 (近, 后仰)
+			Vector2(cx + half_w, cy + near_half_h),          # 右下 (近)
+			Vector2(cx - half_w, cy + far_half_h),           # 左下 (远)
 		])
 	var uvs = PackedVector2Array([
 		Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)
