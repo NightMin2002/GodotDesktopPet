@@ -73,6 +73,9 @@ var _gaming: bool = false
 var _gaming_game: RefCounted = null  # 当前游戏引用 (BaseGame)
 var _gaming_holo_side: float = 1.0  # 全息屏方向: 1=右侧, -1=左侧
 var _gaming_holo_aspect: float = 0.0  # 全息屏宽高比 (初始化后固定)
+var _gaming_platform: StaticBody2D = null  # 游戏态悬浮踏板
+var _gaming_lift_phase: int = 0     # 0=空闲, 1=上升中, 2=已到位
+var _gaming_lift_target_y: float = 0.0  # 踏板目标高度
 
 func _ready() -> void:
 	# 初始化调色板 (必须在所有子系统之前)
@@ -284,11 +287,68 @@ func _on_pet_gaming_changed(active: bool, game: RefCounted) -> void:
 		# 切到 idle 状态
 		if current_state_name != "idle":
 			transition_to("idle")
+		# 生成踏板，缓缓升起
+		_spawn_gaming_platform()
 	else:
 		eye_behavior.forced_look_dir = Vector2.ZERO
+		# 清除踏板
+		_remove_gaming_platform()
 		# 切到 fall 状态自然过渡 (fall.enter 会恢复阻尼)
 		transition_to("fall")
 	queue_redraw()
+
+## 游戏态踏板: 在宠物脚下生成踏板，缓缓升起把宠物托到空中
+func _spawn_gaming_platform() -> void:
+	var parent = get_parent()
+	if not parent:
+		return
+	# 踏板位置 = 宠物脚下
+	var plat_y = global_position.y + PET_RADIUS * gravity_sign
+	var body = StaticBody2D.new()
+	body.position = Vector2(global_position.x, plat_y)
+	# 碰撞体 (单向踏板)
+	var col = CollisionShape2D.new()
+	var shape = RectangleShape2D.new()
+	shape.size = Vector2(PET_RADIUS * 2.0, 8.0)
+	col.shape = shape
+	col.one_way_collision = true
+	if anti_gravity:
+		col.rotation = PI
+	body.add_child(col)
+	# 视觉效果 (复用 FreeRoamSystem 的 PlatformVisual)
+	var visual = FreeRoamSystem.PlatformVisual.new()
+	visual.platform_width = PET_RADIUS * 2.0
+	visual.platform_color = palette.shift_color(Color(0.2, 0.6, 1.0, 0.6))
+	body.add_child(visual)
+	parent.add_child(body)
+	# 淡入
+	body.modulate.a = 0.0
+	var tween = body.create_tween()
+	tween.tween_property(body, "modulate:a", 1.0, 0.3)
+	_gaming_platform = body
+	# 目标高度: 上升约 15px
+	_gaming_lift_target_y = plat_y - 15.0 * gravity_sign
+	_gaming_lift_phase = 1
+	# 关闭重力，让踏板完全控制宠物高度
+	gravity_scale = 0.0
+
+func _remove_gaming_platform() -> void:
+	_gaming_lift_phase = 0
+	gravity_scale = gravity_sign  # 恢复重力
+	if is_instance_valid(_gaming_platform):
+		# 立即禁用碰撞体，让宠物能马上下落
+		for child in _gaming_platform.get_children():
+			if child is CollisionShape2D:
+				child.disabled = true
+		# 淡出 + 移除
+		var plat = _gaming_platform
+		_gaming_platform = null
+		var tween = plat.create_tween()
+		tween.tween_property(plat, "modulate:a", 0.0, 0.3)
+		tween.finished.connect(func():
+			if is_instance_valid(plat):
+				plat.queue_free()
+		)
 
 func _init_states() -> void:
 	states = {
@@ -418,10 +478,25 @@ func _process(delta: float) -> void:
 	hud_panel.update(delta)
 	eye_behavior.update(delta)
 
-	# 游戏状态: 每帧强制瞳孔盯全息屏 + 锁定位置
+	# 游戏状态: 每帧强制瞳孔盯全息屏 + 锁定位置 + 驱动踏板上升
 	if _gaming:
 		eye_behavior.forced_look_dir = Vector2(_gaming_holo_side, 0.15)
 		linear_velocity = Vector2.ZERO
+		# 踏板上升驱动
+		if _gaming_lift_phase == 1 and is_instance_valid(_gaming_platform):
+			var lift_speed = 80.0
+			_gaming_platform.position.y -= lift_speed * delta * gravity_sign
+			# 宠物跟随踏板
+			global_position.y = _gaming_platform.position.y - PET_RADIUS * gravity_sign
+			# 检测抵达目标高度
+			var dist = (_gaming_platform.position.y - _gaming_lift_target_y) * gravity_sign
+			if dist <= 0.0:
+				_gaming_platform.position.y = _gaming_lift_target_y
+				global_position.y = _gaming_lift_target_y - PET_RADIUS * gravity_sign
+				_gaming_lift_phase = 2
+		elif _gaming_lift_phase == 2 and is_instance_valid(_gaming_platform):
+			# 已到位: 持续锁定宠物在踏板上
+			global_position.y = _gaming_platform.position.y - PET_RADIUS * gravity_sign
 		# 落地后锁 idle
 		if current_state_name != "idle" and is_settled():
 			transition_to("idle")
@@ -489,7 +564,7 @@ func _draw_gaming_hologram() -> void:
 		# 首次获取时记录宽高比，后续固定 (防止面板大小变化导致跳变)
 		if _gaming_holo_aspect <= 0.0:
 			_gaming_holo_aspect = tex_size.x / tex_size.y
-		holo_h = minf(PET_RADIUS * 1.8, PET_RADIUS * 2.0)  # 不超过宠物直径
+		holo_h = PET_RADIUS * 2.5
 		holo_w = holo_h * _gaming_holo_aspect
 	else:
 		holo_w = PET_RADIUS * 1.6
