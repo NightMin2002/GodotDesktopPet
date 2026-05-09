@@ -60,6 +60,7 @@ var _losses: int = 0
 
 # ── 动画 ──
 var _exploded_cell: int = -1  # 爆炸格子索引
+var _hover_idx: int = -1       # 鼠标悬停格子
 
 # ── 话术池 (洗牌防重复) ──
 const _POOL_START := [
@@ -268,6 +269,19 @@ func _build_ui() -> void:
 	vbox.add_child(_speech_panel)
 
 	# ── 信息栏 (剩余雷数 + 计时) ──
+	var info_wrapper = PanelContainer.new()
+	info_wrapper.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var info_bg = StyleBoxFlat.new()
+	info_bg.bg_color = Color(0.05, 0.08, 0.16, 0.6)
+	info_bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.3, 0.5, 0.15)
+	info_bg.set_border_width_all(1)
+	info_bg.set_corner_radius_all(6)
+	info_bg.content_margin_left = 10
+	info_bg.content_margin_right = 10
+	info_bg.content_margin_top = 4
+	info_bg.content_margin_bottom = 4
+	info_wrapper.add_theme_stylebox_override("panel", info_bg)
+
 	var info_bar = HBoxContainer.new()
 	info_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	info_bar.add_theme_constant_override("separation", 8)
@@ -275,7 +289,7 @@ func _build_ui() -> void:
 	_mine_count_label = Label.new()
 	_mine_count_label.text = "残留: %d" % MINE_COUNT
 	_mine_count_label.add_theme_font_size_override("font_size", 13)
-	_mine_count_label.add_theme_color_override("font_color", Color.from_hsv(fmod(EventBus.ui_hue + 0.05, 1.0), 0.4, 0.85, 0.8))
+	_mine_count_label.add_theme_color_override("font_color", Color.from_hsv(fmod(EventBus.ui_hue + 0.05, 1.0), 0.5, 0.9, 0.9))
 	_mine_count_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_mine_count_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	info_bar.add_child(_mine_count_label)
@@ -283,12 +297,13 @@ func _build_ui() -> void:
 	_timer_label = Label.new()
 	_timer_label.text = "00:00"
 	_timer_label.add_theme_font_size_override("font_size", 13)
-	_timer_label.add_theme_color_override("font_color", Color(0.45, 0.55, 0.65, 0.7))
+	_timer_label.add_theme_color_override("font_color", Color(0.5, 0.6, 0.75, 0.8))
 	_timer_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_timer_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	info_bar.add_child(_timer_label)
 
-	vbox.add_child(info_bar)
+	info_wrapper.add_child(info_bar)
+	vbox.add_child(info_wrapper)
 
 	# ── 雷区格子 (Control 节点树方式) ──
 	var grid_wrapper = CenterContainer.new()
@@ -307,10 +322,11 @@ func _build_ui() -> void:
 		cell.custom_minimum_size = Vector2(CELL_SIZE, CELL_SIZE)
 		cell.mouse_filter = Control.MOUSE_FILTER_STOP
 		cell.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		# 格子背景 (未揭开状态)
+		# 格子背景 (棋盘式交替底色)
+		var is_light = ((i / COLS) + (i % COLS)) % 2 == 0
 		var cell_bg = StyleBoxFlat.new()
-		cell_bg.bg_color = Color(0.10, 0.14, 0.25, 0.9)
-		cell_bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.3, 0.5, 0.25)
+		cell_bg.bg_color = Color(0.12, 0.16, 0.28, 0.9) if is_light else Color(0.10, 0.13, 0.24, 0.9)
+		cell_bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.25, 0.45, 0.2)
 		cell_bg.set_border_width_all(1)
 		cell_bg.set_corner_radius_all(3)
 		cell_bg.set_content_margin_all(0)
@@ -323,9 +339,11 @@ func _build_ui() -> void:
 		lbl.add_theme_font_size_override("font_size", 15)
 		lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		cell.add_child(lbl)
-		# 交互信号
+		# 交互信号 + hover
 		var idx = i  # 闭包捕获
 		cell.gui_input.connect(func(event: InputEvent): _on_cell_input(idx, event))
+		cell.mouse_entered.connect(func(): _on_cell_hover(idx))
+		cell.mouse_exited.connect(func(): _on_cell_unhover(idx))
 		_grid_container.add_child(cell)
 		_cells.append(cell)
 		_cell_labels.append(lbl)
@@ -430,6 +448,7 @@ func _reset_game() -> void:
 	_remaining = ROWS * COLS - MINE_COUNT
 	_flag_count = 0
 	_exploded_cell = -1
+	_hover_idx = -1
 	_elapsed = 0.0
 	_timer_running = false
 	if _timer_label:
@@ -501,8 +520,9 @@ func _reveal_cell(idx: int) -> void:
 		_end_game(false)
 		return
 	# 安全
-	_flood_reveal(idx)
+	var newly = _flood_reveal(idx)
 	_refresh_all_cells()
+	_animate_reveal(newly)
 	if _remaining <= 0:
 		_end_game(true)
 	else:
@@ -510,8 +530,9 @@ func _reveal_cell(idx: int) -> void:
 		if randf() < 0.2:
 			_say(_pick(_q_safe, _POOL_SAFE))
 
-func _flood_reveal(idx: int) -> void:
-	# BFS 递归揭开
+func _flood_reveal(idx: int) -> Array[int]:
+	# BFS 递归揭开, 返回新揭开的格子列表
+	var newly: Array[int] = []
 	var queue: Array[int] = [idx]
 	while queue.size() > 0:
 		var cur = queue.pop_front()
@@ -523,6 +544,7 @@ func _flood_reveal(idx: int) -> void:
 			_flag_count -= 1
 		_revealed[cur] = true
 		_remaining -= 1
+		newly.append(cur)
 		# 如果是 0 (无邻雷)，展开周围
 		if _adjacent[cur] == 0:
 			var r = cur / COLS
@@ -537,6 +559,7 @@ func _flood_reveal(idx: int) -> void:
 						var ni = nr * COLS + nc
 						if not _revealed[ni] and not _mines[ni]:
 							queue.append(ni)
+	return newly
 
 func _toggle_flag(idx: int) -> void:
 	if _revealed[idx]:
@@ -630,68 +653,127 @@ func _refresh_cell(idx: int) -> void:
 		cell_bg = StyleBoxFlat.new()
 		cell.add_theme_stylebox_override("panel", cell_bg)
 
+	var is_light = ((idx / COLS) + (idx % COLS)) % 2 == 0
+	var is_hovered = (idx == _hover_idx)
+
 	if _revealed[idx]:
 		if _mines[idx]:
 			# 雷 (失败时揭开)
 			if idx == _exploded_cell:
-				cell_bg.bg_color = Color(0.45, 0.08, 0.08, 0.95)
-				cell_bg.border_color = Color(0.9, 0.2, 0.2, 0.7)
+				# 引爆格: 强红 + 粗边框 + 大符号
+				cell_bg.bg_color = Color(0.50, 0.05, 0.05, 0.95)
+				cell_bg.border_color = Color(1.0, 0.25, 0.25, 0.8)
+				cell_bg.set_border_width_all(2)
+				lbl.text = "◆"
+				lbl.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25, 1.0))
+				lbl.add_theme_font_size_override("font_size", 16)
 			else:
-				cell_bg.bg_color = Color(0.12, 0.06, 0.06, 0.85)
-				cell_bg.border_color = Color(0.5, 0.15, 0.15, 0.4)
-			cell_bg.set_border_width_all(1)
+				# 其他雷: 暗红
+				cell_bg.bg_color = Color(0.15, 0.06, 0.06, 0.85)
+				cell_bg.border_color = Color(0.55, 0.15, 0.15, 0.4)
+				cell_bg.set_border_width_all(1)
+				lbl.text = "✦"
+				lbl.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3, 0.7))
+				lbl.add_theme_font_size_override("font_size", 13)
 			cell_bg.set_corner_radius_all(3)
-			lbl.text = "✦"
-			lbl.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3, 0.9))
-			lbl.add_theme_font_size_override("font_size", 14)
 			cell.mouse_default_cursor_shape = Control.CURSOR_ARROW
 		else:
-			# 安全格子
-			cell_bg.bg_color = Color(0.05, 0.07, 0.14, 0.5)
-			cell_bg.border_color = Color.from_hsv(hue, 0.15, 0.3, 0.12)
+			# 安全格 (已揭开): 棋盘式交替
+			var base = Color(0.04, 0.06, 0.11, 0.4) if is_light else Color(0.05, 0.07, 0.13, 0.45)
+			cell_bg.bg_color = base
+			cell_bg.border_color = Color.from_hsv(hue, 0.12, 0.25, 0.08)
 			cell_bg.set_border_width_all(1)
 			cell_bg.set_corner_radius_all(3)
 			cell.mouse_default_cursor_shape = Control.CURSOR_ARROW
 			var num = _adjacent[idx]
 			if num > 0:
 				lbl.text = str(num)
-				var c = NUM_COLORS.get(num, Color.WHITE)
+				var c: Color = NUM_COLORS.get(num, Color.WHITE)
+				# 高危数字 (3+): 更亮更大
+				if num >= 3:
+					c = Color(minf(c.r * 1.25, 1.0), minf(c.g * 1.25, 1.0), minf(c.b * 1.25, 1.0), 1.0)
 				lbl.add_theme_color_override("font_color", c)
-				lbl.add_theme_font_size_override("font_size", 15)
+				lbl.add_theme_font_size_override("font_size", 15 if num < 3 else 16)
 			else:
 				lbl.text = ""
 	elif _flagged[idx]:
 		# 旗帜
-		var is_wrong = _game_over and not _game_won and not _mines[idx]  # 错误插旗
+		var is_wrong = _game_over and not _game_won and not _mines[idx]
 		if is_wrong:
-			# 错误标记: 暗红底 + 删除线效果
-			cell_bg.bg_color = Color(0.20, 0.08, 0.08, 0.85)
-			cell_bg.border_color = Color(0.6, 0.2, 0.2, 0.5)
+			# 误标: 暗红底 + 红叉
+			cell_bg.bg_color = Color(0.25, 0.06, 0.06, 0.9)
+			cell_bg.border_color = Color(0.7, 0.2, 0.2, 0.6)
+			cell_bg.set_border_width_all(1)
 			lbl.text = "✕"
-			lbl.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3, 0.8))
+			lbl.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3, 0.9))
 		else:
-			cell_bg.bg_color = Color(0.10, 0.14, 0.25, 0.9)
-			cell_bg.border_color = Color.from_hsv(hue, 0.5, 0.7, 0.4)
+			# 正常旗帜: 主题色边框
+			var flag_bg = Color(0.12, 0.14, 0.28, 0.9) if is_light else Color(0.10, 0.12, 0.25, 0.9)
+			cell_bg.bg_color = flag_bg
+			cell_bg.border_color = Color.from_hsv(hue, 0.6, 0.85, 0.5)
+			cell_bg.set_border_width_all(1)
 			lbl.text = "▸"
-			lbl.add_theme_color_override("font_color", Color.from_hsv(fmod(hue + 0.05, 1.0), 0.6, 1.0, 0.9))
-		cell_bg.set_border_width_all(1)
+			lbl.add_theme_color_override("font_color", Color.from_hsv(fmod(hue + 0.05, 1.0), 0.7, 1.0, 0.95))
 		cell_bg.set_corner_radius_all(3)
 		lbl.add_theme_font_size_override("font_size", 14)
 		cell.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	else:
-		# 未揭开
-		cell_bg.bg_color = Color(0.10, 0.14, 0.25, 0.9)
-		cell_bg.border_color = Color.from_hsv(hue, 0.3, 0.5, 0.25)
+		# 未揭开: 棋盘式交替 + hover 高亮
+		var base_c = Color(0.12, 0.16, 0.28, 0.9) if is_light else Color(0.10, 0.13, 0.24, 0.9)
+		if is_hovered and not _game_over:
+			base_c = Color(base_c.r + 0.05, base_c.g + 0.05, base_c.b + 0.08, 0.95)
+			cell_bg.border_color = Color.from_hsv(hue, 0.5, 0.85, 0.5)
+		else:
+			cell_bg.border_color = Color.from_hsv(hue, 0.25, 0.45, 0.2)
+		cell_bg.bg_color = base_c
 		cell_bg.set_border_width_all(1)
 		cell_bg.set_corner_radius_all(3)
 		lbl.text = ""
 		cell.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	# 胜利时高亮已标记的雷
+	# 胜利时: 已标记的雷高亮绿色
 	if _game_won and _mines[idx] and _flagged[idx]:
-		cell_bg.bg_color = Color(0.06, 0.12, 0.08, 0.85)
-		cell_bg.border_color = Color.from_hsv(hue, 0.6, 1.0, 0.7)
+		cell_bg.bg_color = Color(0.05, 0.15, 0.08, 0.9)
+		cell_bg.border_color = Color.from_hsv(fmod(hue + 0.15, 1.0), 0.6, 1.0, 0.7)
+		cell_bg.set_border_width_all(1)
 		lbl.text = "▸"
-		lbl.add_theme_color_override("font_color", Color.from_hsv(fmod(hue + 0.15, 1.0), 0.5, 1.0, 0.9))
+		lbl.add_theme_color_override("font_color", Color.from_hsv(fmod(hue + 0.15, 1.0), 0.5, 1.0, 1.0))
+		lbl.add_theme_font_size_override("font_size", 14)
+
+func _on_cell_hover(idx: int) -> void:
+	if _hover_idx == idx:
+		return
+	var old = _hover_idx
+	_hover_idx = idx
+	if old >= 0:
+		_refresh_cell(old)
+	_refresh_cell(idx)
+
+func _on_cell_unhover(idx: int) -> void:
+	if _hover_idx != idx:
+		return
+	_hover_idx = -1
+	_refresh_cell(idx)
+
+func _animate_reveal(cells: Array[int]) -> void:
+	if not is_instance_valid(game_viewport):
+		return
+	var hue = EventBus.ui_hue
+	var flash_color = Color.from_hsv(hue, 0.35, 0.55, 0.7)
+	for i in range(cells.size()):
+		var idx = cells[i]
+		if idx < 0 or idx >= _cells.size():
+			continue
+		var cell = _cells[idx]
+		var cell_bg = cell.get_theme_stylebox("panel") as StyleBoxFlat
+		if not cell_bg:
+			continue
+		var target_bg = cell_bg.bg_color
+		# 亮色闪光 → 渐变回正常暗色
+		cell_bg.bg_color = flash_color
+		var delay = minf(float(i) * 0.018, 0.35)
+		var tween = game_viewport.create_tween()
+		tween.tween_interval(delay)
+		tween.tween_property(cell_bg, "bg_color", target_bg, 0.45).set_ease(Tween.EASE_OUT)
 
 # ══════════════════════════════════════════════
 # 面板辅助
