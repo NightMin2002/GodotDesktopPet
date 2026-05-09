@@ -72,6 +72,7 @@ var squash: PetSquash
 var _gaming: bool = false
 var _gaming_game: RefCounted = null  # 当前游戏引用 (BaseGame)
 var _gaming_holo_side: float = 1.0  # 全息屏方向: 1=右侧, -1=左侧
+var _gaming_holo_aspect: float = 0.0  # 全息屏宽高比 (初始化后固定)
 
 func _ready() -> void:
 	# 初始化调色板 (必须在所有子系统之前)
@@ -271,6 +272,7 @@ func _on_pet_gaming_changed(active: bool, game: RefCounted) -> void:
 	_gaming = active
 	_gaming_game = game
 	if active:
+		_gaming_holo_aspect = 0.0  # 重置，让新游戏初始化自己的比例
 		# 决定全息屏在宠物哪边
 		if global_position.x > boundary_size.x * 0.5:
 			_gaming_holo_side = -1.0
@@ -475,42 +477,72 @@ func _draw_gaming_hologram() -> void:
 
 	var side = _gaming_holo_side
 	var gap = PET_RADIUS + 5.0
-	var holo_w = PET_RADIUS * 1.6
-	var holo_h = PET_RADIUS * 1.6
+
+	# 获取 SubViewport 纹理，按比例计算全息屏尺寸
+	var viewport_tex: Texture2D = null
+	if _gaming_game and _gaming_game.game_viewport:
+		viewport_tex = _gaming_game.game_viewport.get_texture()
+	var holo_w: float
+	var holo_h: float
+	if viewport_tex and viewport_tex.get_size().y > 0:
+		var tex_size = viewport_tex.get_size()
+		# 首次获取时记录宽高比，后续固定 (防止面板大小变化导致跳变)
+		if _gaming_holo_aspect <= 0.0:
+			_gaming_holo_aspect = tex_size.x / tex_size.y
+		holo_h = minf(PET_RADIUS * 1.8, PET_RADIUS * 2.0)  # 不超过宠物直径
+		holo_w = holo_h * _gaming_holo_aspect
+	else:
+		holo_w = PET_RADIUS * 1.6
+		holo_h = PET_RADIUS * 1.6
 
 	# 全息屏中心
 	var cx = side * (gap + holo_w * 0.5)
 	var cy = 0.0  # 垂直居中于宠物中心
 
 	# 投影支架线
+	var near_edge_x = cx - side * holo_w * 0.5  # 靠近宠物的边
 	var beam_start = Vector2(side * PET_RADIUS * 0.6, 0)
-	var beam_end = Vector2(cx - side * holo_w * 0.5, cy)
+	var beam_end = Vector2(near_edge_x, cy)
 	draw_line(beam_start, beam_end, Color.from_hsv(hue, 0.3, 0.8, 0.2), 0.8, true)
 	draw_circle(beam_start, 1.5, Color.from_hsv(hue, 0.4, 1.0, 0.4), true, -1.0, true)
 
-	# 透视变换: 靠近宠物的边稍窄，远离的边稍宽 (模拟 3D 倾斜)
-	var skew_amt = -side * 0.15  # 朝宠物方向收缩
-	var persp_xform = Transform2D.IDENTITY
-	persp_xform.origin = Vector2(cx, cy)
-	persp_xform.y = Vector2(skew_amt, 1.0)  # Y 轴倾斜 → 透视感
-	draw_set_transform_matrix(Transform2D(
-		Vector2(cos(-rotation), sin(-rotation)),
-		Vector2(-sin(-rotation), cos(-rotation)),
-		Vector2.ZERO
-	) * persp_xform)
-
-	# 在变换后的本地空间绘制 (原点=全息屏中心)
+	# 梯形透视: 靠近宠物的边上下收缩，远离的边保持原高
+	# 模拟"侧面看投影屏幕"的真实感
 	var half_w = holo_w / 2.0
 	var half_h = holo_h / 2.0
-	var local_rect = Rect2(-half_w, -half_h, holo_w, holo_h)
+	var shrink = 0.15  # 近端收缩比例 (15%)
+	var near_half_h = half_h * (1.0 - shrink)  # 近端半高 (较短)
+	var far_half_h = half_h                     # 远端半高 (原高)
 
-	# 背景 + 边框
-	var glow_rect = Rect2(-half_w - 1.5, -half_h - 1.5, holo_w + 3, holo_h + 3)
-	draw_rect(glow_rect, Color.from_hsv(hue, 0.3, 0.8, 0.1), false, 2.0, true)
-	draw_rect(local_rect, Color.from_hsv(hue, 0.4, 0.9, 0.35), false, 0.6, true)
+	# 梯形 4 个顶点 (左上→右上→右下→左下)
+	var pts: PackedVector2Array
+	if side > 0:  # 全息屏在右侧: 左边(近端)窄，右边(远端)宽
+		pts = PackedVector2Array([
+			Vector2(cx - half_w, cy - near_half_h),  # 左上 (近)
+			Vector2(cx + half_w, cy - far_half_h),   # 右上 (远)
+			Vector2(cx + half_w, cy + far_half_h),   # 右下 (远)
+			Vector2(cx - half_w, cy + near_half_h),  # 左下 (近)
+		])
+	else:  # 全息屏在左侧: 右边(近端)窄，左边(远端)宽
+		pts = PackedVector2Array([
+			Vector2(cx - half_w, cy - far_half_h),   # 左上 (远)
+			Vector2(cx + half_w, cy - near_half_h),  # 右上 (近)
+			Vector2(cx + half_w, cy + near_half_h),  # 右下 (近)
+			Vector2(cx - half_w, cy + far_half_h),   # 左下 (远)
+		])
+	var uvs = PackedVector2Array([
+		Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)
+	])
 
-	# 调用游戏绘制内容
-	_gaming_game.draw_hologram(self, local_rect)
+	# 外框光晕 (梯形轮廓)
+	var glow_pts = pts.duplicate()
+	glow_pts.append(pts[0])  # 闭合
+	draw_polyline(glow_pts, Color.from_hsv(hue, 0.3, 0.8, 0.1), 2.0, true)
+	draw_polyline(glow_pts, Color.from_hsv(hue, 0.4, 0.9, 0.35), 0.6, true)
+
+	# SubViewport 纹理映射到梯形 (自动镜像任何游戏面板)
+	if viewport_tex:
+		draw_polygon(pts, [Color(1, 1, 1, 0.75)], uvs, viewport_tex)
 
 	# 恢复变换
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
@@ -540,8 +572,8 @@ func _draw() -> void:
 		_draw_body(_wrap_ghost_offset)
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 
-	# ── 游戏全息迷你屏 (在宠物侧面渲染) ──
-	if _gaming and _gaming_game and _gaming_game.has_method("draw_hologram"):
+	# ── 游戏全息迷你屏 (SubViewport 纹理自动镜像) ──
+	if _gaming and _gaming_game:
 		_draw_gaming_hologram()
 	
 ## 绘制宠物本体 (外壳+眼球+覆盖层), world_offset 用于屏幕穿越双重渲染

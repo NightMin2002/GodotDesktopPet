@@ -10,8 +10,6 @@ var _player_turn: bool = true
 var _last_move: int = -1
 
 # ── UI 引用 ──
-var _host: CanvasLayer = null
-var _pet: Node2D = null
 var _panel: PanelContainer = null
 var _grid: Control = null
 var _status_label: Label = null
@@ -104,9 +102,7 @@ func get_game_id() -> String: return "tic_tac_toe"
 func get_game_name() -> String: return "策略矩阵"
 func get_game_desc() -> String: return "3x3 决策推演"
 
-func start(host: CanvasLayer, pet: Node2D) -> void:
-	_host = host
-	_pet = pet
+func start() -> void:
 	_build_ui()
 	_reset_board()
 	_say(_pick(_q_start, _POOL_START))
@@ -121,49 +117,6 @@ func cleanup() -> void:
 	_score_label = null
 	_title_bar = null
 	_restart_btn = null
-
-func draw_hologram(pet_ci: CanvasItem, rect: Rect2) -> void:
-	var hue = EventBus.ui_hue
-	var cw = rect.size.x / 3.0
-	var ch = rect.size.y / 3.0
-	var ox = rect.position.x
-	var oy = rect.position.y
-
-	# 背景
-	pet_ci.draw_rect(rect, Color(0.02, 0.05, 0.12, 0.6), true)
-	# 边框
-	pet_ci.draw_rect(rect, Color.from_hsv(hue, 0.4, 0.9, 0.5), false, 0.8, true)
-
-	# 网格线
-	var line_c = Color.from_hsv(hue, 0.3, 0.7, 0.3)
-	for i in range(1, 3):
-		pet_ci.draw_line(Vector2(ox + cw * i, oy + 1), Vector2(ox + cw * i, oy + rect.size.y - 1), line_c, 0.5, true)
-		pet_ci.draw_line(Vector2(ox + 1, oy + ch * i), Vector2(ox + rect.size.x - 1, oy + ch * i), line_c, 0.5, true)
-
-	# 棋子
-	var ai_hue = fmod(hue + 0.45, 1.0)
-	for idx in range(9):
-		if _board[idx] == 0:
-			continue
-		var cx = ox + (float(idx % 3) + 0.5) * cw
-		var cy = oy + (float(idx / 3) + 0.5) * ch
-		var r = minf(cw, ch) * 0.3
-		var is_last = (idx == _last_move)
-		if _board[idx] == 1: # 玩家 X
-			var xc = Color.from_hsv(hue, 0.5, 1.0, 0.8 if not is_last else 1.0)
-			var d = r * 0.6
-			pet_ci.draw_line(Vector2(cx - d, cy - d), Vector2(cx + d, cy + d), xc, 1.0, true)
-			pet_ci.draw_line(Vector2(cx + d, cy - d), Vector2(cx - d, cy + d), xc, 1.0, true)
-		else: # AI O
-			var oc = Color.from_hsv(ai_hue, 0.5, 1.0, 0.8 if not is_last else 1.0)
-			pet_ci.draw_arc(Vector2(cx, cy), r * 0.55, 0, TAU, 16, oc, 1.0, true)
-
-		# 最新落子高亮
-		if is_last:
-			var gx = ox + float(idx % 3) * cw
-			var gy = oy + float(idx / 3) * ch
-			pet_ci.draw_rect(Rect2(gx + 0.5, gy + 0.5, cw - 1, ch - 1),
-				Color.from_hsv(hue, 0.3, 1.0, 0.12), true)
 
 # ══════════════════════════════════════════════
 # UI 构建
@@ -190,16 +143,18 @@ func _build_ui() -> void:
 	outer.add_theme_constant_override("margin_right", 14)
 	outer.add_theme_constant_override("margin_top", 0)
 	outer.add_theme_constant_override("margin_bottom", 4)
+	outer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_panel.add_child(outer)
 
 	var vbox = VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 8)
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	outer.add_child(vbox)
 
 	# ── 标题栏 ──
 	_title_bar = HBoxContainer.new()
 	_title_bar.custom_minimum_size = Vector2(0, 34)
-	_title_bar.mouse_filter = Control.MOUSE_FILTER_STOP
+	_title_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 穿透到面板，支持拖拽
 
 	var title = Label.new()
 	title.text = "  策略矩阵"
@@ -246,6 +201,7 @@ func _build_ui() -> void:
 
 	# ── 宠物发言区 (带背景 + 引用竖线) ──
 	_speech_panel = PanelContainer.new()
+	_speech_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 穿透到面板，支持拖拽
 	var speech_bg = StyleBoxFlat.new()
 	speech_bg.bg_color = Color(0.06, 0.10, 0.20, 0.7)
 	speech_bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.5)
@@ -316,30 +272,32 @@ func _build_ui() -> void:
 
 	# ── 输入处理 (拖拽 + 点击外部关闭) ──
 	_panel.gui_input.connect(_on_panel_input)
+	_panel.resized.connect(sync_viewport_size)  # 面板大小变化时同步 SubViewport
 
-	# 定位到宠物附近 (先挂载→等布局→用实际尺寸定位)
-	_host.add_child(_panel)
-	await _host.get_tree().process_frame  # 等 UI 布局完成
+	# 挂载到 SubViewport (先挂载→等布局→同步大小→定位)
+	game_viewport.add_child(_panel)
+	await game_viewport.get_tree().process_frame  # 等 UI 布局完成
+	sync_viewport_size()  # 同步 SubViewport 大小到面板实际尺寸
 
 	# 用实际面板尺寸定位，确保不超出屏幕
 	_position_near_pet()
 
-	# 弹入动画
-	_panel.modulate.a = 0.0
-	_panel.scale = Vector2(0.6, 0.6)
-	_panel.pivot_offset = _panel.size / 2.0
-	var tween = _host.create_tween().set_parallel(true)
-	tween.tween_property(_panel, "modulate:a", 1.0, 0.2)
-	tween.tween_property(_panel, "scale", Vector2.ONE, 0.3) \
+	# 弹入动画 (作用于 Container，因为它是屏幕上的实际显示元素)
+	game_container.modulate.a = 0.0
+	game_container.scale = Vector2(0.6, 0.6)
+	game_container.pivot_offset = game_container.size / 2.0
+	var tween = game_container.create_tween().set_parallel(true)
+	tween.tween_property(game_container, "modulate:a", 1.0, 0.2)
+	tween.tween_property(game_container, "scale", Vector2.ONE, 0.3) \
 		.set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
 
 func _position_near_pet() -> void:
-	var vp = _host.get_viewport().get_visible_rect().size
+	var vp = screen_size
 	var pet_pos := Vector2(vp.x / 2.0, vp.y / 2.0)
 	if is_instance_valid(_pet):
 		pet_pos = _pet.get_global_transform_with_canvas().get_origin()
-	var pw := _panel.size.x if _panel.size.x > 10 else _panel.custom_minimum_size.x
-	var ph := _panel.size.y if _panel.size.y > 10 else 400.0
+	var pw := game_container.size.x if game_container.size.x > 10 else 280.0
+	var ph := game_container.size.y if game_container.size.y > 10 else 400.0
 	# 间距自适应
 	var pet_r := 30.0
 	var gap := pet_r + pet_r * 1.2 + pet_r * 1.5
@@ -351,16 +309,16 @@ func _position_near_pet() -> void:
 	var y = pet_pos.y - ph * 0.35
 	x = clampf(x, 8.0, vp.x - pw - 8.0)
 	y = clampf(y, 8.0, vp.y - ph - 8.0)
-	_panel.position = Vector2(x, y)
+	game_container.position = Vector2(x, y)
 
 func _clamp_panel_to_screen() -> void:
-	if not is_instance_valid(_panel) or not _host:
+	if not is_instance_valid(game_container):
 		return
-	var vp = _host.get_viewport().get_visible_rect().size
-	var pos = _panel.position
-	pos.x = clampf(pos.x, 8.0, vp.x - _panel.size.x - 8.0)
-	pos.y = clampf(pos.y, 8.0, vp.y - _panel.size.y - 8.0)
-	_panel.position = pos
+	var vp = screen_size
+	var pos = game_container.position
+	pos.x = clampf(pos.x, 8.0, vp.x - game_container.size.x - 8.0)
+	pos.y = clampf(pos.y, 8.0, vp.y - game_container.size.y - 8.0)
+	game_container.position = pos
 
 # ══════════════════════════════════════════════
 # 游戏逻辑
@@ -398,7 +356,7 @@ func _on_cell_clicked(index: int) -> void:
 
 	# AI 落子 (延迟模拟思考)
 	_status_label.text = "本机推演中..."
-	await _host.get_tree().create_timer(0.4 + randf() * 0.3).timeout
+	await game_viewport.get_tree().create_timer(0.4 + randf() * 0.3).timeout
 	if _game_over:
 		return
 	var ai_move = _minimax_best_move()
@@ -437,7 +395,7 @@ func _end_game(result: Result, win_line: Array) -> void:
 	_update_score_label()
 	_restart_btn.show()
 	# 按钮显示后面板变高，重新确保不超出屏幕
-	await _host.get_tree().process_frame
+	await game_viewport.get_tree().process_frame
 	_clamp_panel_to_screen()
 	game_finished.emit(result)
 
@@ -454,14 +412,12 @@ func _on_close() -> void:
 		# 吐槽通过宠物气泡显示 (面板即将关闭，_say 看不到)
 		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
 			_pet.show_local_bubble("对弈中断。...这算你认输。")
-	if is_instance_valid(_panel):
-		_panel.pivot_offset = _panel.size / 2.0
-		var tween = _host.create_tween().set_parallel(true)
-		tween.tween_property(_panel, "modulate:a", 0.0, 0.15)
-		tween.tween_property(_panel, "scale", Vector2(0.5, 0.5), 0.15)
+	if is_instance_valid(game_container):
+		game_container.pivot_offset = game_container.size / 2.0
+		var tween = game_container.create_tween().set_parallel(true)
+		tween.tween_property(game_container, "modulate:a", 0.0, 0.15)
+		tween.tween_property(game_container, "scale", Vector2(0.5, 0.5), 0.15)
 		tween.finished.connect(func():
-			if is_instance_valid(_panel):
-				_panel.queue_free()
 			EventBus.close_game_requested.emit()
 		)
 
@@ -487,9 +443,9 @@ func _say(text: String) -> void:
 		return
 	_status_label.text = text
 	# 淡入高亮动画
-	if is_instance_valid(_speech_panel) and _host:
+	if is_instance_valid(_speech_panel) and is_instance_valid(game_viewport):
 		_speech_panel.modulate = Color(1.4, 1.4, 1.4, 1.0)
-		var tween = _host.create_tween()
+		var tween = game_viewport.create_tween()
 		tween.tween_property(_speech_panel, "modulate", Color.WHITE, 0.5)
 
 # ══════════════════════════════════════════════
@@ -581,22 +537,22 @@ func _is_full() -> bool:
 # ══════════════════════════════════════════════
 
 func _on_panel_input(event: InputEvent) -> void:
-	if not is_instance_valid(_panel):
+	if not is_instance_valid(game_container):
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		# 只在标题栏区域启动拖拽
 		var local = _panel.get_local_mouse_position()
-		if event.pressed and local.y < 40.0:
+		if event.pressed and local.y < 120.0:  # 标题栏 + 发言区均可拖拽
 			_dragging = true
-			_drag_offset = _host.get_viewport().get_mouse_position() - _panel.position
+			_drag_offset = game_container.get_viewport().get_mouse_position() - game_container.position
 		else:
 			_dragging = false
 	elif event is InputEventMouseMotion and _dragging:
-		var vp = _host.get_viewport().get_visible_rect().size
-		var new_pos = _host.get_viewport().get_mouse_position() - _drag_offset
-		new_pos.x = clampf(new_pos.x, 8.0, vp.x - _panel.size.x - 8.0)
-		new_pos.y = clampf(new_pos.y, 8.0, vp.y - _panel.size.y - 8.0)
-		_panel.position = new_pos
+		var vp = screen_size
+		var new_pos = game_container.get_viewport().get_mouse_position() - _drag_offset
+		new_pos.x = clampf(new_pos.x, 8.0, vp.x - game_container.size.x - 8.0)
+		new_pos.y = clampf(new_pos.y, 8.0, vp.y - game_container.size.y - 8.0)
+		game_container.position = new_pos
 
 # ══════════════════════════════════════════════
 # 内嵌类: 棋盘渲染器

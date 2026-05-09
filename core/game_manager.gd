@@ -1,11 +1,15 @@
 # game_manager.gd — 小游戏生命周期管理器
-# 职责: 扫描/加载本地游戏、管理游戏 UI 层、处理游戏结果
+# 职责: 扫描/加载本地游戏、SubViewport 包装、管理游戏启动/清理
 # 由 main.gd 实例化并挂载
 extends CanvasLayer
 
 var _current_game: BaseGame = null
 var _installed_games: Array[Dictionary] = []  # [{id, name, desc, script_path}]
 var _pet_ref: Node2D = null
+
+# ── SubViewport 包装层 ──
+var _game_container: SubViewportContainer = null
+var _game_viewport: SubViewport = null
 
 func _ready() -> void:
 	layer = 110
@@ -81,6 +85,34 @@ func get_installed_games() -> Array[Dictionary]:
 func is_game_running() -> bool:
 	return _current_game != null
 
+## 获取当前游戏的 SubViewport (供 pet.gd 全息屏纹理)
+func get_game_viewport() -> SubViewport:
+	return _game_viewport
+
+# ══════════════════════════════════════════════
+# SubViewport 包装层
+# ══════════════════════════════════════════════
+
+func _create_viewport_wrapper() -> void:
+	_game_container = SubViewportContainer.new()
+	_game_container.stretch = false  # 不缩放，Container.size 跟随 SubViewport.size
+	_game_container.mouse_filter = Control.MOUSE_FILTER_STOP
+
+	_game_viewport = SubViewport.new()
+	_game_viewport.transparent_bg = true
+	_game_viewport.gui_disable_input = false
+	_game_viewport.handle_input_locally = true
+	_game_viewport.size = Vector2i(280, 400)  # 初始大小，后续由面板驱动
+
+	_game_container.add_child(_game_viewport)
+	add_child(_game_container)
+
+func _destroy_viewport_wrapper() -> void:
+	if is_instance_valid(_game_container):
+		_game_container.queue_free()
+	_game_container = null
+	_game_viewport = null
+
 # ══════════════════════════════════════════════
 # 启动 / 结束游戏
 # ══════════════════════════════════════════════
@@ -106,8 +138,18 @@ func launch_game(game_id: String, pet: Node2D) -> bool:
 	if not game is BaseGame:
 		return false
 	_current_game = game
+
+	# 创建 SubViewport 包装层
+	_create_viewport_wrapper()
+
+	# 注入运行时引用
+	_current_game.game_viewport = _game_viewport
+	_current_game.game_container = _game_container
+	_current_game.screen_size = get_viewport().get_visible_rect().size
+	_current_game._pet = pet
+
 	_current_game.game_finished.connect(_on_game_finished)
-	_current_game.start(self, pet)
+	_current_game.start()
 	EventBus.context_menu_toggled.emit(true)  # 阻止穿透
 	EventBus.pet_gaming_changed.emit(true, _current_game)
 	return true
@@ -120,6 +162,7 @@ func _cleanup_current_game() -> void:
 	if _current_game:
 		_current_game.cleanup()
 		_current_game = null
+	_destroy_viewport_wrapper()
 	EventBus.pet_gaming_changed.emit(false, null)
 	EventBus.context_menu_toggled.emit(false)  # 恢复穿透
 
