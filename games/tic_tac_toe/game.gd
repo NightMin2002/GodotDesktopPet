@@ -117,6 +117,7 @@ func cleanup() -> void:
 	_score_label = null
 	_title_bar = null
 	_restart_btn = null
+	super.cleanup()
 
 # ══════════════════════════════════════════════
 # UI 构建

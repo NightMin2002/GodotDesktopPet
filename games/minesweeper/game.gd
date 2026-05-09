@@ -126,6 +126,15 @@ func get_game_id() -> String: return "minesweeper"
 func get_game_name() -> String: return "威胁评估"
 func get_game_desc() -> String: return "区域扫描"
 
+func get_tutorial_steps() -> Array[Dictionary]:
+	return [
+		{"text": "左键点击格子 → 揭开该区域"},
+		{"text": "数字 = 周围 8 格内的威胁源数量"},
+		{"text": "右键点击 → 插旗标记疑似威胁源"},
+		{"text": "揭开所有安全区域即可通过评估"},
+		{"text": "首次点击保证安全，不会引爆"},
+	]
+
 func start() -> void:
 	_build_ui()
 	_reset_game()
@@ -146,6 +155,7 @@ func cleanup() -> void:
 	_restart_btn = null
 	_mine_count_label = null
 	_timer_label = null
+	super.cleanup()  # 清理教程面板
 
 # ══════════════════════════════════════════════
 # UI 构建
@@ -193,6 +203,10 @@ func _build_ui() -> void:
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_title_bar.add_child(title)
+
+	var help_btn = create_help_button()
+	if help_btn:
+		_title_bar.add_child(help_btn)
 
 	var close_btn = Button.new()
 	close_btn.text = "✕"
