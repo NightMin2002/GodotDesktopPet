@@ -150,7 +150,6 @@ func launch_game(game_id: String, pet: Node2D) -> bool:
 
 	_current_game.game_finished.connect(_on_game_finished)
 	_current_game.start()
-	EventBus.context_menu_toggled.emit(true)  # 阻止穿透
 	EventBus.pet_gaming_changed.emit(true, _current_game)
 	return true
 
@@ -164,7 +163,16 @@ func _cleanup_current_game() -> void:
 		_current_game = null
 	_destroy_viewport_wrapper()
 	EventBus.pet_gaming_changed.emit(false, null)
-	EventBus.context_menu_toggled.emit(false)  # 恢复穿透
 
 func close_game() -> void:
 	_cleanup_current_game()
+
+## 返回游戏面板 + 教程面板的屏幕矩形 (供 hit_region_manager 注册)
+func get_panel_rects() -> Array[Rect2]:
+	var result: Array[Rect2] = []
+	if is_instance_valid(_game_container) and _game_container.visible:
+		result.append(Rect2(_game_container.position, _game_container.size))
+	if _current_game and is_instance_valid(_current_game._tutorial_panel):
+		var tp = _current_game._tutorial_panel
+		result.append(Rect2(tp.position, tp.size))
+	return result

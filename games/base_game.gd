@@ -42,7 +42,7 @@ func cleanup() -> void:
 
 # ── 教程系统 (子类按需覆写) ──
 
-## 覆写: 返回教程步骤。空数组 = 不显示教程按钮
+## 覆写: 返回简报步骤。空数组 = 不显示简报按钮
 ## 格式: [{text: String}]
 func get_tutorial_steps() -> Array[Dictionary]:
 	return []
@@ -51,14 +51,14 @@ func get_tutorial_steps() -> Array[Dictionary]:
 func get_tutorial_preview() -> Control:
 	return null
 
-## 创建 "?" 帮助按钮 (游戏在 _build_ui 时添加到标题栏)
-## 如果没有教程内容则返回 null
+## 创建 "i" 简报按钮 (游戏在 _build_ui 时添加到标题栏)
+## 如果没有简报内容则返回 null
 func create_help_button() -> Button:
 	var steps = get_tutorial_steps()
 	if steps.is_empty():
 		return null
 	_help_btn = Button.new()
-	_help_btn.text = "?"
+	_help_btn.text = "i"
 	_help_btn.custom_minimum_size = Vector2(26, 26)
 	_help_btn.add_theme_font_size_override("font_size", 13)
 	_help_btn.add_theme_color_override("font_color", Color(0.5, 0.55, 0.65, 0.7))
@@ -162,7 +162,7 @@ func _build_tutorial_panel(steps: Array[Dictionary]) -> void:
 
 	# 标题
 	var title_label = Label.new()
-	title_label.text = "操作指南"
+	title_label.text = "任务简报"
 	title_label.add_theme_font_size_override("font_size", 14)
 	title_label.add_theme_color_override("font_color", Color.from_hsv(hue, 0.4, 1.0, 0.85))
 	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

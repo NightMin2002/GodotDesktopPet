@@ -109,6 +109,14 @@ func _collect_hit_regions() -> void:
 	_hit_circles = circles
 	_hit_rects = rects
 
+	# 游戏面板 (game_container + tutorial_panel)
+	if _main.game_mgr and _main.game_mgr.has_method("get_panel_rects"):
+		for r in _main.game_mgr.get_panel_rects():
+			_hit_rects.append(r.position.x)
+			_hit_rects.append(r.position.y)
+			_hit_rects.append(r.size.x)
+			_hit_rects.append(r.size.y)
+
 # ══════════════════════════════════════════
 #  模式A: 完美穿透 (WS_EX_TRANSPARENT 切换)
 # ══════════════════════════════════════════
@@ -225,6 +233,14 @@ func _update_hit_regions_fallback() -> void:
 				rects.append(_q(hud_r.position.y))
 				rects.append(_q(hud_r.size.x))
 				rects.append(_q(hud_r.size.y))
+
+	# 游戏面板
+	if _main.game_mgr and _main.game_mgr.has_method("get_panel_rects"):
+		for gr in _main.game_mgr.get_panel_rects():
+			rects.append(_q(gr.position.x))
+			rects.append(_q(gr.position.y))
+			rects.append(_q(gr.size.x))
+			rects.append(_q(gr.size.y))
 	
 	# 变化检测
 	if circles == _last_circles and rects == _last_rects:

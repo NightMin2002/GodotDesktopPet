@@ -837,7 +837,10 @@ func _on_panel_input(event: InputEvent) -> void:
 		if event.pressed and local.y < 120.0:
 			_dragging = true
 			_drag_offset = game_container.get_viewport().get_mouse_position() - game_container.position
+			EventBus.drag_started.emit()
 		else:
+			if _dragging:
+				EventBus.drag_ended.emit()
 			_dragging = false
 	elif event is InputEventMouseMotion and _dragging:
 		var vp = screen_size
@@ -845,3 +848,4 @@ func _on_panel_input(event: InputEvent) -> void:
 		new_pos.x = clampf(new_pos.x, 8.0, vp.x - game_container.size.x - 8.0)
 		new_pos.y = clampf(new_pos.y, 8.0, vp.y - game_container.size.y - 8.0)
 		game_container.position = new_pos
+		_position_tutorial()
