@@ -12,8 +12,6 @@ var _last_move: int = -1
 # ── UI 引用 ──
 var _panel: PanelContainer = null
 var _grid: Control = null
-var _status_label: Label = null
-var _speech_panel: PanelContainer = null  # 宠物发言容器
 var _score_label: RichTextLabel = null
 
 # ── 拖拽 ──
@@ -120,8 +118,6 @@ func cleanup() -> void:
 		_panel.queue_free()
 	_panel = null
 	_grid = null
-	_status_label = null
-	_speech_panel = null
 	_score_label = null
 	super.cleanup()
 
@@ -157,32 +153,6 @@ func _build_ui() -> void:
 	vbox.add_theme_constant_override("separation", 8)
 	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	outer.add_child(vbox)
-
-	# ── 宠物发言区 (带背景 + 引用竖线) ──
-	_speech_panel = PanelContainer.new()
-	_speech_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 穿透到面板，支持拖拽
-	var speech_bg = StyleBoxFlat.new()
-	speech_bg.bg_color = Color(0.06, 0.10, 0.20, 0.7)
-	speech_bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.5)
-	speech_bg.border_width_left = 2
-	speech_bg.border_width_top = 0
-	speech_bg.border_width_right = 0
-	speech_bg.border_width_bottom = 0
-	speech_bg.set_corner_radius_all(6)
-	speech_bg.content_margin_left = 10
-	speech_bg.content_margin_right = 8
-	speech_bg.content_margin_top = 5
-	speech_bg.content_margin_bottom = 5
-	_speech_panel.add_theme_stylebox_override("panel", speech_bg)
-
-	_status_label = Label.new()
-	_status_label.text = "操作员先手"
-	_status_label.add_theme_font_size_override("font_size", 13)
-	_status_label.add_theme_color_override("font_color", Color(0.55, 0.75, 0.95, 0.9))
-	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_speech_panel.add_child(_status_label)
-	vbox.add_child(_speech_panel)
 
 	# ── 棋盘 ──
 	_grid = _BoardRenderer.new()
@@ -233,17 +203,32 @@ func _position_near_pet() -> void:
 		pet_pos = _pet.get_global_transform_with_canvas().get_origin()
 	var pw := game_container.size.x if game_container.size.x > 10 else 280.0
 	var ph := game_container.size.y if game_container.size.y > 10 else 400.0
-	# 间距自适应
+	# 获取全息屏区域 (避让用)
+	var holo_rect := Rect2()
+	if is_instance_valid(_pet) and _pet.gaming and _pet.gaming.active:
+		holo_rect = _pet.gaming.get_holo_screen_rect()
+	# 间距: 面板在宠物对面 (和全息屏同侧), 但要避开全息屏
 	var pet_r := 30.0
-	var gap := pet_r + pet_r * 1.2 + pet_r * 1.5
+	var base_gap := pet_r + pet_r * 1.2 + pet_r * 1.5
 	var x: float
 	if pet_pos.x > vp.x * 0.5:
-		x = pet_pos.x - pw - gap
+		x = pet_pos.x - pw - base_gap
+		# 检查是否和全息屏重叠 (全息屏也在左侧)
+		if holo_rect.size.x > 0:
+			var panel_right = x + pw
+			if panel_right > holo_rect.position.x:
+				x = holo_rect.position.x - pw - 8.0
 	else:
-		x = pet_pos.x + gap
+		x = pet_pos.x + base_gap
+		# 检查是否和全息屏重叠 (全息屏也在右侧)
+		if holo_rect.size.x > 0:
+			var holo_right = holo_rect.position.x + holo_rect.size.x
+			if x < holo_right:
+				x = holo_right + 8.0
 	var y = pet_pos.y - ph * 0.35
+	var bottom_reserve := _RESTART_GAP + _RESTART_RESERVE.y + _RESTART_GAP
 	x = clampf(x, 8.0, vp.x - pw - 8.0)
-	y = clampf(y, 8.0, vp.y - ph - 8.0)
+	y = clampf(y, 8.0, vp.y - ph - bottom_reserve)
 	game_container.position = Vector2(x, y)
 
 func _clamp_panel_to_screen() -> void:
@@ -265,7 +250,7 @@ func _reset_board() -> void:
 	_game_over = false
 	_player_turn = true
 	_hide_restart_bubble()
-	_status_label.text = "操作员先手"
+	_say("操作员先手")
 	(_grid as _BoardRenderer).set_win_line([])
 	(_grid as _BoardRenderer).set_board(_board, -1)
 	_last_move = -1
@@ -291,7 +276,7 @@ func _on_cell_clicked(index: int) -> void:
 		return
 
 	# AI 落子 (延迟模拟思考)
-	_status_label.text = "本机推演中..."
+	_say("本机推演中...")
 	await game_viewport.get_tree().create_timer(0.4 + randf() * 0.3).timeout
 	if _game_over:
 		return
@@ -310,7 +295,7 @@ func _on_cell_clicked(index: int) -> void:
 		return
 
 	_player_turn = true
-	_status_label.text = "操作员回合"
+	_say("操作员回合")
 
 func _end_game(result: Result, win_line: Array) -> void:
 	_game_over = true
@@ -318,15 +303,12 @@ func _end_game(result: Result, win_line: Array) -> void:
 	match result:
 		Result.WIN:
 			_wins += 1
-			_status_label.text = "...异常分支"
 			_say(_pick(_q_player_win, _POOL_PLAYER_WIN))
 		Result.LOSE:
 			_losses += 1
-			_status_label.text = "预测到的结局"
 			_say(_pick(_q_ai_win, _POOL_AI_WIN))
 		Result.DRAW:
 			_draws += 1
-			_status_label.text = "均衡态"
 			_say(_pick(_q_draw, _POOL_DRAW))
 	_update_score_label()
 	_show_restart_bubble()
@@ -374,16 +356,7 @@ func _update_score_label() -> void:
 		+ "[/color][/center]"
 	)
 
-# ── 宠物发言 (通过游戏面板状态栏 + 淡入高亮，不走全局气泡) ──
-func _say(text: String) -> void:
-	if not _status_label:
-		return
-	_status_label.text = text
-	# 淡入高亮动画
-	if is_instance_valid(_speech_panel) and is_instance_valid(game_viewport):
-		_speech_panel.modulate = Color(1.4, 1.4, 1.4, 1.0)
-		var tween = game_viewport.create_tween()
-		tween.tween_property(_speech_panel, "modulate", Color.WHITE, 0.5)
+# ── 宠物发言 (已统一到 BaseGame._say()) ──
 
 # ══════════════════════════════════════════════
 # Minimax AI
@@ -479,7 +452,7 @@ func _on_panel_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		# 只在发言区域启动拖拽
 		var local = _panel.get_local_mouse_position()
-		if event.pressed and local.y < 80.0:  # 发言区可拖拽
+		if event.pressed and local.y < 50.0:  # 上部区域可拖拽
 			_dragging = true
 			_drag_offset = game_container.get_viewport().get_mouse_position() - game_container.position
 			EventBus.drag_started.emit()

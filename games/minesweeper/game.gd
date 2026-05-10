@@ -43,8 +43,6 @@ var _panel: PanelContainer = null
 var _grid_container: GridContainer = null
 var _cells: Array[PanelContainer] = []  # 81 个格子面板
 var _cell_labels: Array[Label] = []     # 81 个格子文字
-var _status_label: Label = null
-var _speech_panel: PanelContainer = null
 var _score_label: RichTextLabel = null
 var _mine_count_label: Label = null
 
@@ -147,8 +145,6 @@ func cleanup() -> void:
 	_grid_container = null
 	_cells.clear()
 	_cell_labels.clear()
-	_status_label = null
-	_speech_panel = null
 	_score_label = null
 	_mine_count_label = null
 	_timer_label = null
@@ -186,32 +182,6 @@ func _build_ui() -> void:
 	vbox.add_theme_constant_override("separation", 6)
 	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	outer.add_child(vbox)
-
-	# ── 宠物发言区 ──
-	_speech_panel = PanelContainer.new()
-	_speech_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var speech_bg = StyleBoxFlat.new()
-	speech_bg.bg_color = Color(0.06, 0.10, 0.20, 0.7)
-	speech_bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.5)
-	speech_bg.border_width_left = 2
-	speech_bg.border_width_top = 0
-	speech_bg.border_width_right = 0
-	speech_bg.border_width_bottom = 0
-	speech_bg.set_corner_radius_all(6)
-	speech_bg.content_margin_left = 10
-	speech_bg.content_margin_right = 8
-	speech_bg.content_margin_top = 5
-	speech_bg.content_margin_bottom = 5
-	_speech_panel.add_theme_stylebox_override("panel", speech_bg)
-
-	_status_label = Label.new()
-	_status_label.text = "区域就绪"
-	_status_label.add_theme_font_size_override("font_size", 13)
-	_status_label.add_theme_color_override("font_color", Color(0.55, 0.75, 0.95, 0.9))
-	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_speech_panel.add_child(_status_label)
-	vbox.add_child(_speech_panel)
 
 	# ── 信息栏 (剩余雷数 + 计时) ──
 	var info_wrapper = PanelContainer.new()
@@ -701,15 +671,6 @@ func _animate_reveal(cells: Array[int]) -> void:
 # 面板辅助
 # ══════════════════════════════════════════════
 
-func _say(text: String) -> void:
-	if not _status_label:
-		return
-	_status_label.text = text
-	if is_instance_valid(_speech_panel) and is_instance_valid(game_viewport):
-		_speech_panel.modulate = Color(1.4, 1.4, 1.4, 1.0)
-		var tween = game_viewport.create_tween()
-		tween.tween_property(_speech_panel, "modulate", Color.WHITE, 0.5)
-
 func _update_score_label() -> void:
 	if not _score_label:
 		return
@@ -730,16 +691,29 @@ func _position_near_pet() -> void:
 		pet_pos = _pet.get_global_transform_with_canvas().get_origin()
 	var pw := game_container.size.x if game_container.size.x > 10 else 310.0
 	var ph := game_container.size.y if game_container.size.y > 10 else 500.0
+	# 获取全息屏区域 (避让用)
+	var holo_rect := Rect2()
+	if is_instance_valid(_pet) and _pet.gaming and _pet.gaming.active:
+		holo_rect = _pet.gaming.get_holo_screen_rect()
 	var pet_r := 30.0
-	var gap := pet_r + pet_r * 1.2 + pet_r * 1.5
+	var base_gap := pet_r + pet_r * 1.2 + pet_r * 1.5
 	var x: float
 	if pet_pos.x > vp.x * 0.5:
-		x = pet_pos.x - pw - gap
+		x = pet_pos.x - pw - base_gap
+		if holo_rect.size.x > 0:
+			var panel_right = x + pw
+			if panel_right > holo_rect.position.x:
+				x = holo_rect.position.x - pw - 8.0
 	else:
-		x = pet_pos.x + gap
+		x = pet_pos.x + base_gap
+		if holo_rect.size.x > 0:
+			var holo_right = holo_rect.position.x + holo_rect.size.x
+			if x < holo_right:
+				x = holo_right + 8.0
 	var y = pet_pos.y - ph * 0.35
+	var bottom_reserve := _RESTART_GAP + _RESTART_RESERVE.y + _RESTART_GAP
 	x = clampf(x, 8.0, vp.x - pw - 8.0)
-	y = clampf(y, 8.0, vp.y - ph - 8.0)
+	y = clampf(y, 8.0, vp.y - ph - bottom_reserve)
 	game_container.position = Vector2(x, y)
 
 func _clamp_panel_to_screen() -> void:
@@ -757,7 +731,7 @@ func _on_panel_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		var local = _panel.get_local_mouse_position()
-		if event.pressed and local.y < 80.0:  # 发言区 + 信息栏可拖拽
+		if event.pressed and local.y < 50.0:  # 上部区域可拖拽
 			_dragging = true
 			_drag_offset = game_container.get_viewport().get_mouse_position() - game_container.position
 			EventBus.drag_started.emit()

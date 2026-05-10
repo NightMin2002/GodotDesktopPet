@@ -8,6 +8,10 @@ enum Result { WIN, LOSE, DRAW }
 ## 游戏结束信号 (GameManager 监听)
 signal game_finished(result: Result)
 
+# ── 重开按钮布局预留常量 (防止显隐跳动) ──
+const _RESTART_RESERVE := Vector2(100, 32)  # 和 custom_minimum_size 保持一致
+const _RESTART_GAP := 8.0
+
 # ── GameManager 注入的运行时引用 (start 前自动设置) ──
 var game_viewport: SubViewport            # 游戏 UI 渲染到的 SubViewport
 var game_container: SubViewportContainer   # 屏幕上的容器 (定位/拖拽用)
@@ -24,10 +28,13 @@ var _title_bubble: PanelContainer = null   # 悬浮标题气泡
 var _side_container: VBoxContainer = null  # 侧边按钮组
 var _connector: ColorRect = null           # 标题-面板连接线
 var _restart_bubble: Button = null         # 悬浮重开按钮 (game over 后显示)
+var _speech_bubble: Control = null         # 悬浮发言气泡 (面板侧面)
+var _speech_label: Label = null            # 发言文字
 var _chrome_close_btn: Button = null       # 悬浮关闭按钮
 var _chrome_side: int = 1                  # 按钮朝向 (1=右侧, -1=左侧)
 var _chrome_dragging: bool = false
 var _chrome_drag_offset: Vector2 = Vector2.ZERO
+var _pending_speech: String = ""                 # _say() 在气泡创建前调用时暂存
 
 # ── 全息合成视口 (合成面板+悬浮组件的完整画面) ──
 var _holo_viewport: SubViewport = null
@@ -36,6 +43,7 @@ var _holo_title: Control = null
 var _holo_connector: Control = null
 var _holo_side: Control = null
 var _holo_restart: Control = null
+var _holo_speech: Control = null
 
 # ── 元数据 (子类覆写) ──
 
@@ -71,6 +79,29 @@ func get_tutorial_preview() -> Control:
 	return null
 
 # ── 辅助方法 ──
+
+## 宠物发言 (通过悬浮气泡 + 淡入高亮动画)
+func _say(text: String) -> void:
+	if not _speech_label:
+		# 气泡尚未创建，暂存文本
+		_pending_speech = text
+		return
+	_speech_label.text = text
+	# 同步全息克隆体的文字
+	if is_instance_valid(_holo_speech):
+		var holo_bubble = _holo_speech.get_meta("_bubble") as PanelContainer
+		if holo_bubble and holo_bubble.get_child_count() > 0:
+			var holo_label = holo_bubble.get_child(0) as Label
+			if holo_label:
+				holo_label.text = text
+	if is_instance_valid(_speech_bubble):
+		_speech_bubble.modulate = Color(1.4, 1.4, 1.4, 1.0)
+		var owner_node: Node = null
+		if is_instance_valid(game_container): owner_node = game_container
+		elif game_viewport: owner_node = game_viewport
+		if owner_node:
+			var tween = owner_node.create_tween()
+			tween.tween_property(_speech_bubble, "modulate", Color.WHITE, 0.5)
 
 ## 同步 SubViewport 大小到面板内容 (面板 resized 时调用)
 func sync_viewport_size() -> void:
@@ -153,12 +184,22 @@ func _setup_floating_chrome(game_name: String, on_close: Callable, on_restart: C
 	# 确定按钮朝向
 	_chrome_side = _determine_chrome_side()
 
-	# 等布局完成后定位 + 入场动画
+	# ── 发言气泡 (在侧边按钮对面, 靠近宠物的一侧) ──
+	_speech_bubble = _create_speech_bubble()
+	parent.add_child(_speech_bubble)
+
+	# 如果 start() 中的 _say() 先于气泡创建，立即显示暂存文本
+	if _pending_speech != "":
+		_speech_label.text = _pending_speech
+		_pending_speech = ""
+
+	# 等布局完成后定位
 	await parent.get_tree().process_frame
 	_update_chrome_positions()
-	_animate_chrome_in()
-	# 创建全息合成视口 (供全息迷你屏投影完整 UI)
+	# 先创建全息合成视口 (此时各组件位置正确, 包围盒精确)
 	_setup_holo_viewport()
+	# 再启动入场动画 (动画会临时修改位置/透明度, 不影响全息布局)
+	_animate_chrome_in()
 
 ## 创建圆形悬浮按钮
 func _create_chrome_button(text: String, is_close: bool) -> Button:
@@ -201,6 +242,47 @@ func _create_chrome_button(text: String, is_close: bool) -> Button:
 	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	return btn
 
+## 创建悬浮发言气泡 (在面板侧面, 带小三角指向面板)
+func _create_speech_bubble() -> Control:
+	var hue = EventBus.ui_hue
+	var wrapper = Control.new()
+	wrapper.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# 主气泡面板
+	var bubble = PanelContainer.new()
+	bubble.custom_minimum_size = Vector2(140, 0)
+	var bg = StyleBoxFlat.new()
+	bg.bg_color = Color(0.04, 0.06, 0.12, 0.92)
+	bg.border_color = Color.from_hsv(hue, 0.45, 0.85, 0.35)
+	bg.set_border_width_all(1)
+	bg.set_corner_radius_all(10)
+	bg.content_margin_left = 10
+	bg.content_margin_right = 10
+	bg.content_margin_top = 6
+	bg.content_margin_bottom = 6
+	bubble.add_theme_stylebox_override("panel", bg)
+	bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	_speech_label = Label.new()
+	_speech_label.text = ""
+	_speech_label.add_theme_font_size_override("font_size", 13)
+	_speech_label.add_theme_color_override("font_color", Color(0.55, 0.75, 0.95, 0.9))
+	_speech_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_speech_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_speech_label.custom_minimum_size = Vector2(120, 0)
+	_speech_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bubble.add_child(_speech_label)
+
+	# 小三角箭头 (用 _draw 绘制, 方向在定位时更新)
+	var arrow = _SpeechArrow.new()
+	arrow.hue = hue
+	arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	wrapper.add_child(arrow)
+	wrapper.add_child(bubble)
+	wrapper.set_meta("_bubble", bubble)
+	wrapper.set_meta("_arrow", arrow)
+	return wrapper
+
 ## 创建悬浮重开按钮 (pill 形状, 居中在面板下方)
 func _create_restart_bubble(on_restart: Callable) -> Button:
 	var btn = Button.new()
@@ -242,14 +324,11 @@ func _show_restart_bubble() -> void:
 	if not is_instance_valid(_restart_bubble) or not is_instance_valid(game_container):
 		return
 	_restart_bubble.show()
-	# 检查面板下方是否有足够空间放置按钮
+	# 检查面板下方是否有足够空间放置按钮 (用固定常量, 和预留空间一致)
 	var gc_pos = game_container.position
 	var gc_size = game_container.size
-	var gap := 8.0
-	var rb_h = maxf(_restart_bubble.size.y, _restart_bubble.custom_minimum_size.y)
-	var needed_bottom = gc_pos.y + gc_size.y + gap + rb_h + gap
+	var needed_bottom = gc_pos.y + gc_size.y + _RESTART_GAP + _RESTART_RESERVE.y + _RESTART_GAP
 	if needed_bottom > screen_size.y:
-		# 空间不足: 将面板整体上移腐出空间
 		var shift = needed_bottom - screen_size.y
 		game_container.position.y = maxf(gc_pos.y - shift, 8.0)
 	_update_chrome_positions()
@@ -328,6 +407,40 @@ func _update_chrome_positions() -> void:
 		y = clampf(y, 8.0, screen_size.y - sc_size.y - 8.0)
 		_side_container.position = Vector2(x, y)
 
+	# 发言气泡: 面板侧面 (侧边按钮对面, 即靠近宠物的一侧)
+	if is_instance_valid(_speech_bubble):
+		var bubble: PanelContainer = _speech_bubble.get_meta("_bubble") as PanelContainer
+		var arrow: Control = _speech_bubble.get_meta("_arrow") as Control
+		if bubble:
+			var speech_side = -_chrome_side  # 和侧边按钮相反的一侧
+			var b_size = bubble.size
+			var arrow_w := 8.0
+			var sx: float
+			if speech_side > 0:
+				# 气泡在面板右侧
+				sx = gc_pos.x + gc_size.x + gap + arrow_w
+			else:
+				# 气泡在面板左侧
+				sx = gc_pos.x - b_size.x - gap - arrow_w
+			var sy = gc_pos.y + 8.0  # 稍低于面板顶部
+			sx = clampf(sx, 8.0, screen_size.x - b_size.x - 8.0)
+			sy = clampf(sy, 8.0, screen_size.y - b_size.y - 8.0)
+			bubble.position = Vector2(sx, sy)
+			# 箭头定位
+			if arrow:
+				var arrow_h := 12.0
+				var ax: float
+				if speech_side > 0:
+					ax = sx - arrow_w
+					(arrow as _SpeechArrow).pointing_right = false  # 箭头指向左边(面板)
+				else:
+					ax = sx + b_size.x
+					(arrow as _SpeechArrow).pointing_right = true  # 箭头指向右边(面板)
+				var ay = sy + b_size.y / 2.0 - arrow_h / 2.0
+				arrow.position = Vector2(ax, ay)
+				arrow.size = Vector2(arrow_w, arrow_h)
+				arrow.queue_redraw()
+
 	# 重开按钮: 居中在面板下方
 	if is_instance_valid(_restart_bubble) and _restart_bubble.visible:
 		var rb_size = _restart_bubble.size
@@ -398,6 +511,12 @@ func _animate_chrome_in() -> void:
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT) \
 				.set_delay(delay)
 
+	# 发言气泡: 淡入
+	if is_instance_valid(_speech_bubble):
+		_speech_bubble.modulate.a = 0.0
+		var tw = _speech_bubble.create_tween()
+		tw.tween_property(_speech_bubble, "modulate:a", 1.0, 0.25).set_delay(0.15)
+
 # ══════════════════════════════════════════════
 # 全息合成视口 (合成面板+悬浮组件, 供全息迷你屏投影)
 # ══════════════════════════════════════════════
@@ -458,6 +577,18 @@ func _setup_holo_viewport() -> void:
 		_holo_restart.visible = _restart_bubble.visible
 		_holo_viewport.add_child(_holo_restart)
 
+	if is_instance_valid(_speech_bubble):
+		_holo_speech = _speech_bubble.duplicate(0)
+		_disable_clone_input(_holo_speech)
+		_holo_speech.modulate = Color.WHITE
+		_holo_speech.scale = Vector2.ONE
+		# duplicate(0) 不复制 meta，手动关联子节点引用
+		# wrapper 的子节点顺序: [0]=arrow, [1]=bubble
+		if _holo_speech.get_child_count() >= 2:
+			_holo_speech.set_meta("_arrow", _holo_speech.get_child(0))
+			_holo_speech.set_meta("_bubble", _holo_speech.get_child(1))
+		_holo_viewport.add_child(_holo_speech)
+
 	parent.add_child(_holo_viewport)
 	_update_holo_layout()
 
@@ -482,17 +613,20 @@ func _update_holo_layout() -> void:
 	for node in [_title_bubble, _connector, _side_container]:
 		if is_instance_valid(node):
 			bounds = bounds.merge(Rect2(node.position, node.size))
-	# 重开按钮: 即使隐藏也预留空间 (防止出现时视口跳变)
-	if is_instance_valid(_restart_bubble):
-		if _restart_bubble.visible:
-			bounds = bounds.merge(Rect2(_restart_bubble.position, _restart_bubble.size))
-		else:
-			var rb_size = _restart_bubble.custom_minimum_size
-			var rb_pos = Vector2(
-				gc_pos.x + (gc_size.x - rb_size.x) / 2.0,
-				gc_pos.y + gc_size.y + gap
-			)
-			bounds = bounds.merge(Rect2(rb_pos, rb_size))
+	# 发言气泡
+	if is_instance_valid(_speech_bubble):
+		var bubble: PanelContainer = _speech_bubble.get_meta("_bubble") as PanelContainer
+		if bubble:
+			bounds = bounds.merge(Rect2(bubble.position, bubble.size))
+	# 重开按钮: 始终用固定常量预留空间 (无论显隐, 防止视口跳变)
+	var rb_reserve_pos = Vector2(
+		gc_pos.x + (gc_size.x - _RESTART_RESERVE.x) / 2.0,
+		gc_pos.y + gc_size.y + _RESTART_GAP
+	)
+	bounds = bounds.merge(Rect2(rb_reserve_pos, _RESTART_RESERVE))
+	# 如果按钮可见且实际 size 更大, 也能包含
+	if is_instance_valid(_restart_bubble) and _restart_bubble.visible:
+		bounds = bounds.merge(Rect2(_restart_bubble.position, _restart_bubble.size))
 	bounds = bounds.grow(2)  # 2px 边距
 
 	# 更新视口大小
@@ -522,6 +656,19 @@ func _update_holo_layout() -> void:
 		_holo_restart.size = _restart_bubble.size
 		_holo_restart.visible = _restart_bubble.visible
 
+	if is_instance_valid(_holo_speech) and is_instance_valid(_speech_bubble):
+		var bubble: PanelContainer = _speech_bubble.get_meta("_bubble") as PanelContainer
+		var holo_bubble: PanelContainer = _holo_speech.get_meta("_bubble") as PanelContainer
+		var holo_arrow: Control = _holo_speech.get_meta("_arrow") as Control
+		var orig_arrow: Control = _speech_bubble.get_meta("_arrow") as Control
+		if bubble and holo_bubble:
+			holo_bubble.position = bubble.position - offset
+			holo_bubble.size = bubble.size
+		if orig_arrow and holo_arrow:
+			holo_arrow.position = orig_arrow.position - offset
+			holo_arrow.size = orig_arrow.size
+			holo_arrow.queue_redraw()
+
 ## 获取全息合成纹理 (供 pet_gaming.gd 渲染)
 func get_holo_texture() -> Texture2D:
 	if is_instance_valid(_holo_viewport):
@@ -532,20 +679,22 @@ func get_holo_texture() -> Texture2D:
 
 ## 悬浮组件退场动画
 func _animate_chrome_out() -> void:
-	for node in [_title_bubble, _side_container, _connector, _restart_bubble]:
+	for node in [_title_bubble, _side_container, _connector, _restart_bubble, _speech_bubble]:
 		if is_instance_valid(node):
 			var tw = node.create_tween()
 			tw.tween_property(node, "modulate:a", 0.0, 0.12)
 
 ## 清理悬浮组件
 func _cleanup_chrome() -> void:
-	for node in [_title_bubble, _side_container, _connector, _restart_bubble, _holo_viewport]:
+	for node in [_title_bubble, _side_container, _connector, _restart_bubble, _speech_bubble, _holo_viewport]:
 		if is_instance_valid(node):
 			node.queue_free()
 	_title_bubble = null
 	_side_container = null
 	_connector = null
 	_restart_bubble = null
+	_speech_bubble = null
+	_speech_label = null
 	_chrome_close_btn = null
 	_help_btn = null
 	_holo_viewport = null
@@ -554,6 +703,7 @@ func _cleanup_chrome() -> void:
 	_holo_connector = null
 	_holo_side = null
 	_holo_restart = null
+	_holo_speech = null
 
 ## 返回悬浮组件的屏幕矩形 (供 hit_region_manager 注册)
 func get_chrome_rects() -> Array[Rect2]:
@@ -564,6 +714,10 @@ func get_chrome_rects() -> Array[Rect2]:
 		rects.append(Rect2(_side_container.position, _side_container.size))
 	if is_instance_valid(_restart_bubble) and _restart_bubble.visible:
 		rects.append(Rect2(_restart_bubble.position, _restart_bubble.size))
+	if is_instance_valid(_speech_bubble):
+		var bubble: PanelContainer = _speech_bubble.get_meta("_bubble") as PanelContainer
+		if bubble:
+			rects.append(Rect2(bubble.position, bubble.size))
 	return rects
 
 # ══════════════════════════════════════════════
@@ -753,3 +907,38 @@ func _position_tutorial() -> void:
 		y = clampf(y, 8.0, vp.y - tp_size.y - 8.0)
 
 	_tutorial_panel.position = Vector2(x, y)
+
+# ══════════════════════════════════════════════
+# 内嵌类: 发言气泡小三角箭头
+# ══════════════════════════════════════════════
+
+class _SpeechArrow extends Control:
+	var hue: float = 0.55
+	var pointing_right: bool = false  # true = 箭头尖端朝右 (面板在右侧)
+
+	func _draw() -> void:
+		var w = size.x
+		var h = size.y
+		if w < 1 or h < 1:
+			return
+		var points: PackedVector2Array
+		if pointing_right:
+			# 尖端在右
+			points = PackedVector2Array([
+				Vector2(0, 0),
+				Vector2(w, h / 2.0),
+				Vector2(0, h),
+			])
+		else:
+			# 尖端在左
+			points = PackedVector2Array([
+				Vector2(w, 0),
+				Vector2(0, h / 2.0),
+				Vector2(w, h),
+			])
+		var fill_color = Color(0.04, 0.06, 0.12, 0.92)
+		draw_colored_polygon(points, fill_color)
+		# 边框线 (只画两条斜边，不画底边)
+		var border_color = Color.from_hsv(hue, 0.45, 0.85, 0.35)
+		draw_line(points[0], points[1], border_color, 1.0, true)
+		draw_line(points[1], points[2], border_color, 1.0, true)

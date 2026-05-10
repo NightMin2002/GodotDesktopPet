@@ -83,7 +83,8 @@ func render_hologram() -> void:
 	pet.draw_set_transform(Vector2.ZERO, -pet.rotation, Vector2.ONE)
 
 	var side = holo_side
-	var gap = pet.PET_RADIUS + 5.0
+	# 近端微微与宠物重叠, 营造 3D 前景感
+	var gap = pet.PET_RADIUS * -0.4
 
 	# 获取全息合成纹理 (面板 + 悬浮组件的完整画面)
 	var viewport_tex: Texture2D = null
@@ -148,6 +149,31 @@ func render_hologram() -> void:
 
 	# 恢复变换
 	pet.draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+
+## 返回全息迷你屏在屏幕上的包围矩形 (供游戏面板定位时避让)
+func get_holo_screen_rect() -> Rect2:
+	if not active or not game:
+		return Rect2()
+	var side = holo_side
+	var gap_val = pet.PET_RADIUS * -0.4
+	var viewport_tex: Texture2D = game.get_holo_texture() if game else null
+	var holo_w: float
+	var holo_h: float
+	if viewport_tex and viewport_tex.get_size().y > 0:
+		var tex_size = viewport_tex.get_size()
+		var aspect = tex_size.x / tex_size.y
+		holo_h = pet.PET_RADIUS * 2.5
+		holo_w = holo_h * aspect
+	else:
+		holo_w = pet.PET_RADIUS * 1.6
+		holo_h = pet.PET_RADIUS * 1.6
+	var cx = side * (gap_val + holo_w * 0.5)
+	var cy = 0.0
+	# 转到屏幕坐标
+	var pet_screen = pet.get_global_transform_with_canvas().get_origin()
+	var rect_x = pet_screen.x + cx - holo_w * 0.5 - 4.0
+	var rect_y = pet_screen.y + cy - holo_h * 0.5 - 4.0
+	return Rect2(rect_x, rect_y, holo_w + 8.0, holo_h + 8.0)
 
 # ── 踏板管理 (私有) ──
 

@@ -462,15 +462,15 @@ func _draw() -> void:
 		pet_effects.render_arcs(self)
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 	
+	# ── 游戏全息迷你屏 (先画, 让宠物本体覆盖近端, 营造 3D 前景效果) ──
+	if gaming.active and gaming.game:
+		gaming.render_hologram()
+
 	# ── 宠物本体 (可能画两次: 正常 + 屏幕穿越幽灵) ──
 	_draw_body(Vector2.ZERO)
 	if _wrap_ghost_offset != Vector2.ZERO:
 		_draw_body(_wrap_ghost_offset)
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
-
-	# ── 游戏全息迷你屏 (委托给 PetGaming) ──
-	if gaming.active and gaming.game:
-		gaming.render_hologram()
 	
 ## 绘制宠物本体 (外壳+眼球+覆盖层), world_offset 用于屏幕穿越双重渲染
 func _draw_body(world_offset: Vector2) -> void:
