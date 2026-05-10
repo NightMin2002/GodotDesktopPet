@@ -1,0 +1,6 @@
+{
+    "id": "snake",
+    "name": "路径规划",
+    "desc": "单元收集导航训练",
+    "script": "res://games/snake/game.gd"
+}
