@@ -47,8 +47,7 @@ var _score_label: RichTextLabel = null
 var _mine_count_label: Label = null
 
 # ── 拖拽 ──
-var _dragging: bool = false
-var _drag_offset: Vector2 = Vector2.ZERO
+# (已统一到 BaseGame._on_panel_input)
 
 # ── 战绩 ──
 var _wins: int = 0
@@ -131,6 +130,9 @@ func get_tutorial_steps() -> Array[Dictionary]:
 		{"text": "揭开所有安全区域即可通过评估"},
 		{"text": "首次点击保证安全，不会引爆"},
 	]
+
+func get_default_panel_size() -> Vector2:
+	return Vector2(310, 500)
 
 func start() -> void:
 	_build_ui()
@@ -278,26 +280,8 @@ func _build_ui() -> void:
 	_update_score_label()
 	vbox.add_child(score_rich)
 
-	# ── 面板拖拽 + 挂载 ──
-	_panel.gui_input.connect(_on_panel_input)
-	_panel.resized.connect(sync_viewport_size)
-
-	game_viewport.add_child(_panel)
-	await game_viewport.get_tree().process_frame
-	sync_viewport_size()
-	_position_near_pet()
-
-	# 弹入动画
-	game_container.modulate.a = 0.0
-	game_container.scale = Vector2(0.6, 0.6)
-	game_container.pivot_offset = game_container.size / 2.0
-	var tween = game_container.create_tween().set_parallel(true)
-	tween.tween_property(game_container, "modulate:a", 1.0, 0.2)
-	tween.tween_property(game_container, "scale", Vector2.ONE, 0.3) \
-		.set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
-
-	# 悬浮组件 (标题气泡 + 侧边按钮 + 重开按钮)
-	_setup_floating_chrome(get_game_name(), _on_close, _on_restart)
+	# ── 输入处理 + 挂载 + 弹入动画 + 悬浮组件 (统一流程)
+	await _mount_panel(_panel)
 
 	# 启动计时器 process
 	_panel.set_process(true)
@@ -516,15 +500,7 @@ func _on_close() -> void:
 		game_finished.emit(Result.LOSE)
 		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
 			_pet.show_local_bubble(_pick(_q_lose, _POOL_CLOSE_MID))
-	_animate_chrome_out()
-	if is_instance_valid(game_container):
-		game_container.pivot_offset = game_container.size / 2.0
-		var tween = game_container.create_tween().set_parallel(true)
-		tween.tween_property(game_container, "modulate:a", 0.0, 0.15)
-		tween.tween_property(game_container, "scale", Vector2(0.5, 0.5), 0.15)
-		tween.finished.connect(func():
-			EventBus.close_game_requested.emit()
-		)
+	_close_game()
 
 # ══════════════════════════════════════════════
 # 格子视觉更新 (Control 节点方式)
@@ -684,65 +660,4 @@ func _update_score_label() -> void:
 		+ "[/color][/center]"
 	)
 
-func _position_near_pet() -> void:
-	var vp = screen_size
-	var pet_pos := Vector2(vp.x / 2.0, vp.y / 2.0)
-	if is_instance_valid(_pet):
-		pet_pos = _pet.get_global_transform_with_canvas().get_origin()
-	var pw := game_container.size.x if game_container.size.x > 10 else 310.0
-	var ph := game_container.size.y if game_container.size.y > 10 else 500.0
-	# 获取全息屏区域 (避让用)
-	var holo_rect := Rect2()
-	if is_instance_valid(_pet) and _pet.gaming and _pet.gaming.active:
-		holo_rect = _pet.gaming.get_holo_screen_rect()
-	var pet_r := 30.0
-	var base_gap := pet_r + pet_r * 1.2 + pet_r * 1.5
-	var x: float
-	if pet_pos.x > vp.x * 0.5:
-		x = pet_pos.x - pw - base_gap
-		if holo_rect.size.x > 0:
-			var panel_right = x + pw
-			if panel_right > holo_rect.position.x:
-				x = holo_rect.position.x - pw - 8.0
-	else:
-		x = pet_pos.x + base_gap
-		if holo_rect.size.x > 0:
-			var holo_right = holo_rect.position.x + holo_rect.size.x
-			if x < holo_right:
-				x = holo_right + 8.0
-	var y = pet_pos.y - ph * 0.35
-	var bottom_reserve := _RESTART_GAP + _RESTART_RESERVE.y + _RESTART_GAP
-	x = clampf(x, 8.0, vp.x - pw - 8.0)
-	y = clampf(y, 8.0, vp.y - ph - bottom_reserve)
-	game_container.position = Vector2(x, y)
-
-func _clamp_panel_to_screen() -> void:
-	if not is_instance_valid(game_container):
-		return
-	var vp = screen_size
-	var pos = game_container.position
-	pos.x = clampf(pos.x, 8.0, vp.x - game_container.size.x - 8.0)
-	pos.y = clampf(pos.y, 8.0, vp.y - game_container.size.y - 8.0)
-	game_container.position = pos
-	_update_chrome_positions()
-
-func _on_panel_input(event: InputEvent) -> void:
-	if not is_instance_valid(game_container):
-		return
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		var local = _panel.get_local_mouse_position()
-		if event.pressed and local.y < 50.0:  # 上部区域可拖拽
-			_dragging = true
-			_drag_offset = game_container.get_viewport().get_mouse_position() - game_container.position
-			EventBus.drag_started.emit()
-		else:
-			if _dragging:
-				EventBus.drag_ended.emit()
-			_dragging = false
-	elif event is InputEventMouseMotion and _dragging:
-		var vp = screen_size
-		var new_pos = game_container.get_viewport().get_mouse_position() - _drag_offset
-		new_pos.x = clampf(new_pos.x, 8.0, vp.x - game_container.size.x - 8.0)
-		new_pos.y = clampf(new_pos.y, 8.0, vp.y - game_container.size.y - 8.0)
-		game_container.position = new_pos
-		_update_chrome_positions()
+# 面板定位/拖拽/clamp 已统一到 BaseGame

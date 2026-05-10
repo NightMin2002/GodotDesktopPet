@@ -115,6 +115,138 @@ func sync_viewport_size() -> void:
 			game_container.custom_minimum_size = s
 			game_container.size = s
 
+## 子类覆写: 默认面板尺寸 (用于定位时面板 size 尚未确定的 fallback)
+func get_default_panel_size() -> Vector2:
+	return Vector2(280, 400)
+
+## 子类覆写: 中途关闭时的吐槽话术 (空字符串 = 不显示)
+func get_close_speech() -> String:
+	return ""
+
+# ── 通用面板管理 ──
+
+## 将面板挂载到 SubViewport，等布局完成后同步大小并定位
+## 子类在 _build_ui() 构建面板后调用此方法完成后续流程
+func _mount_panel(panel: PanelContainer) -> void:
+	panel.gui_input.connect(_on_panel_input)
+	panel.resized.connect(sync_viewport_size)
+
+	game_viewport.add_child(panel)
+	await game_viewport.get_tree().process_frame
+	sync_viewport_size()
+	_position_near_pet()
+
+	# 弹入动画
+	game_container.modulate.a = 0.0
+	game_container.scale = Vector2(0.6, 0.6)
+	game_container.pivot_offset = game_container.size / 2.0
+	var tween = game_container.create_tween().set_parallel(true)
+	tween.tween_property(game_container, "modulate:a", 1.0, 0.2)
+	tween.tween_property(game_container, "scale", Vector2.ONE, 0.3) \
+		.set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
+
+	# 悬浮组件 (标题气泡 + 侧边按钮 + 发言气泡 + 重开按钮)
+	_setup_floating_chrome(get_game_name(), _close_game, _on_restart)
+
+## 面板定位: 宠物侧面, 避让全息迷你屏, 底部预留重开按钮空间
+func _position_near_pet() -> void:
+	var vp = screen_size
+	var pet_pos := Vector2(vp.x / 2.0, vp.y / 2.0)
+	if is_instance_valid(_pet):
+		pet_pos = _pet.get_global_transform_with_canvas().get_origin()
+	var default_size = get_default_panel_size()
+	var pw: float = game_container.size.x if game_container.size.x > 10 else default_size.x
+	var ph: float = game_container.size.y if game_container.size.y > 10 else default_size.y
+	# 获取全息屏区域 (避让用)
+	var holo_rect := Rect2()
+	if is_instance_valid(_pet) and _pet.gaming and _pet.gaming.active:
+		holo_rect = _pet.gaming.get_holo_screen_rect()
+	var pet_r := 30.0
+	var base_gap := pet_r + pet_r * 1.2 + pet_r * 1.5
+	var x: float
+	if pet_pos.x > vp.x * 0.5:
+		x = pet_pos.x - pw - base_gap
+		if holo_rect.size.x > 0:
+			var panel_right = x + pw
+			if panel_right > holo_rect.position.x:
+				x = holo_rect.position.x - pw - 8.0
+	else:
+		x = pet_pos.x + base_gap
+		if holo_rect.size.x > 0:
+			var holo_right = holo_rect.position.x + holo_rect.size.x
+			if x < holo_right:
+				x = holo_right + 8.0
+	var y = pet_pos.y - ph * 0.35
+	var bottom_reserve := _RESTART_GAP + _RESTART_RESERVE.y + _RESTART_GAP
+	x = clampf(x, 8.0, vp.x - pw - 8.0)
+	y = clampf(y, 8.0, vp.y - ph - bottom_reserve)
+	game_container.position = Vector2(x, y)
+
+## 限制面板不超出屏幕
+func _clamp_panel_to_screen() -> void:
+	if not is_instance_valid(game_container):
+		return
+	var vp = screen_size
+	var pos = game_container.position
+	pos.x = clampf(pos.x, 8.0, vp.x - game_container.size.x - 8.0)
+	pos.y = clampf(pos.y, 8.0, vp.y - game_container.size.y - 8.0)
+	game_container.position = pos
+	_update_chrome_positions()
+
+## 面板拖拽处理 (顶部区域可拖拽)
+func _on_panel_input(event: InputEvent) -> void:
+	if not is_instance_valid(game_container):
+		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		var panel = game_viewport.get_child(0) as Control if game_viewport and game_viewport.get_child_count() > 0 else null
+		if not panel:
+			return
+		var local = panel.get_local_mouse_position()
+		if event.pressed and local.y < 50.0:
+			_chrome_dragging = true
+			_chrome_drag_offset = game_container.get_viewport().get_mouse_position() - game_container.position
+			EventBus.drag_started.emit()
+		else:
+			if _chrome_dragging:
+				EventBus.drag_ended.emit()
+			_chrome_dragging = false
+	elif event is InputEventMouseMotion and _chrome_dragging:
+		var vp = screen_size
+		var new_pos = game_container.get_viewport().get_mouse_position() - _chrome_drag_offset
+		new_pos.x = clampf(new_pos.x, 8.0, vp.x - game_container.size.x - 8.0)
+		new_pos.y = clampf(new_pos.y, 8.0, vp.y - game_container.size.y - 8.0)
+		game_container.position = new_pos
+		_update_chrome_positions()
+
+## 子类覆写: 重开逻辑 (由悬浮重开按钮触发)
+func _on_restart() -> void:
+	pass
+
+## 子类覆写: 中途关闭前的额外清理 (在退场动画之前调用)
+## 返回 true = 已处理 game_finished 信号, false = 不需要处理
+func _on_close_cleanup() -> bool:
+	return false
+
+## 通用关闭流程: 中途退出处理 + 退场动画 + 发射关闭信号
+func _close_game() -> void:
+	# 子类额外清理
+	var handled = _on_close_cleanup()
+	# 默认中途关闭处理 (子类没处理的话)
+	if not handled:
+		var speech = get_close_speech()
+		if speech != "" and is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
+			_pet.show_local_bubble(speech)
+	# 退场动画
+	_animate_chrome_out()
+	if is_instance_valid(game_container):
+		game_container.pivot_offset = game_container.size / 2.0
+		var tween = game_container.create_tween().set_parallel(true)
+		tween.tween_property(game_container, "modulate:a", 0.0, 0.15)
+		tween.tween_property(game_container, "scale", Vector2(0.5, 0.5), 0.15)
+		tween.finished.connect(func():
+			EventBus.close_game_requested.emit()
+		)
+
 # ══════════════════════════════════════════════
 # 悬浮组件系统 (标题气泡 + 侧边按钮 + 连接线)
 # ══════════════════════════════════════════════
