@@ -14,9 +14,7 @@ var _panel: PanelContainer = null
 var _grid: Control = null
 var _score_label: RichTextLabel = null
 
-# ── 战绩 ──
-var _wins: int = 0
-var _losses: int = 0
+# ── 战绩 (_wins/_losses 在 BaseGame 中) ──
 var _draws: int = 0
 
 # ── 话术池 (洗牌防重复) ──
@@ -82,11 +80,7 @@ var _q_ai_win: Array = []
 var _q_player_win: Array = []
 var _q_draw: Array = []
 
-func _pick(queue: Array, pool: Array) -> String:
-	if queue.is_empty():
-		queue.append_array(pool)
-		queue.shuffle()
-	return queue.pop_back()
+# _pick() 已统一到 BaseGame 基类
 
 # ── BaseGame 接口 ──
 
@@ -105,6 +99,8 @@ func get_tutorial_steps() -> Array[Dictionary]:
 	]
 
 func start() -> void:
+	_load_scores()
+	_draws = SettingsManager.get_int("game_tic_tac_toe_draws", 0)
 	_build_ui()
 	_reset_board()
 	_say(_pick(_q_start, _POOL_START))
@@ -126,16 +122,7 @@ func _build_ui() -> void:
 	_panel.custom_minimum_size = Vector2(280, 0)
 
 	# 面板背景
-	var bg = StyleBoxFlat.new()
-	bg.bg_color = Color(0.04, 0.06, 0.12, 0.95)
-	bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.9, 0.4)
-	bg.set_border_width_all(1)
-	bg.set_corner_radius_all(12)
-	bg.content_margin_left = 0
-	bg.content_margin_right = 0
-	bg.content_margin_top = 0
-	bg.content_margin_bottom = 6
-	_panel.add_theme_stylebox_override("panel", bg)
+	_panel.add_theme_stylebox_override("panel", _create_game_panel_bg())
 
 	var outer = MarginContainer.new()
 	outer.add_theme_constant_override("margin_left", 14)
@@ -241,6 +228,8 @@ func _end_game(result: Result, win_line: Array) -> void:
 			_draws += 1
 			_say(_pick(_q_draw, _POOL_DRAW))
 	_update_score_label()
+	_save_scores()
+	SettingsManager.set_int("game_tic_tac_toe_draws", _draws)
 	_show_restart_bubble()
 	# 按钮显示后重新确保不超出屏幕
 	await game_viewport.get_tree().process_frame
@@ -256,6 +245,7 @@ func _on_close_cleanup() -> bool:
 	if not _game_over:
 		_game_over = true
 		_losses += 1
+		_save_scores()
 		game_finished.emit(Result.LOSE)
 		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
 			_pet.show_local_bubble("对弈中断。...这算你认输。")

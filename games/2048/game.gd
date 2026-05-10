@@ -26,6 +26,7 @@ var _best: int = 0
 var _game_over: bool = false
 var _reached_2048: bool = false
 var _animating: bool = false  # 动画进行中, 阻止输入
+var _simulating: bool = false # 模拟移动检测中, 跳过副作用 (话术等)
 
 # ── 自动操作 (AI 自玩) ──
 var _auto_play: bool = false
@@ -91,6 +92,8 @@ func get_tutorial_steps() -> Array[Dictionary]:
 	]
 
 func start() -> void:
+	_load_scores()
+	_best = SettingsManager.get_int("game_2048_best", 0)
 	_build_ui()
 	_reset_game()
 	_say(_pick(_q_start, _POOL_START))
@@ -113,16 +116,7 @@ func _build_ui() -> void:
 	_panel.custom_minimum_size = Vector2(GRID * CELL_SIZE + (GRID + 1) * CELL_GAP + 28, 0)
 
 	# 面板背景
-	var bg = StyleBoxFlat.new()
-	bg.bg_color = Color(0.04, 0.06, 0.12, 0.95)
-	bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.9, 0.4)
-	bg.set_border_width_all(1)
-	bg.set_corner_radius_all(12)
-	bg.content_margin_left = 0
-	bg.content_margin_right = 0
-	bg.content_margin_top = 0
-	bg.content_margin_bottom = 6
-	_panel.add_theme_stylebox_override("panel", bg)
+	_panel.add_theme_stylebox_override("panel", _create_game_panel_bg())
 
 	var outer = MarginContainer.new()
 	outer.add_theme_constant_override("margin_left", 14)
@@ -345,6 +339,8 @@ func _do_move(dir: Vector2i) -> void:
 			_game_over = true
 			_say(_pick(_q_lose, _POOL_LOSE))
 			_show_restart_bubble()
+			_save_scores()
+			_save_best()
 			game_finished.emit(Result.WIN if _reached_2048 else Result.LOSE)
 	)
 
@@ -432,7 +428,7 @@ func _compress_and_merge_tracked(line: Array) -> Dictionary:
 			moves.append({from = src[i + 1], to = dest})
 			merged.append(dest)
 			_score += new_val
-			if new_val >= 2048 and not _reached_2048:
+			if new_val >= 2048 and not _reached_2048 and not _simulating:
 				_reached_2048 = true
 				_say(_pick(_q_win, _POOL_WIN))
 			i += 2
@@ -512,6 +508,10 @@ func _update_score() -> void:
 		_best = _score
 	if _best_value:
 		_best_value.text = str(_best)
+
+## 保存最高分到 SettingsManager
+func _save_best() -> void:
+	SettingsManager.set_int("game_2048_best", _best)
 
 func _get_tile_color(value: int, hue: float) -> Color:
 	match value:
@@ -605,6 +605,8 @@ func _on_close_cleanup() -> bool:
 	var was_auto = _auto_play
 	if not _game_over:
 		_game_over = true
+		_save_scores()
+		_save_best()
 		game_finished.emit(Result.LOSE)
 		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
 			if was_auto:
@@ -619,11 +621,7 @@ func _on_close_cleanup() -> bool:
 # 话术系统
 # ══════════════════════════════════════════════
 
-func _pick(queue: Array, pool: Array) -> String:
-	if queue.is_empty():
-		queue.append_array(pool)
-		queue.shuffle()
-	return queue.pop_back()
+# _pick() 已统一到 BaseGame 基类
 
 # ══════════════════════════════════════════════
 # 自动操作 (AI 自玩)
@@ -727,10 +725,12 @@ func _would_move(dir: Vector2i) -> bool:
 		saved_board.append(_board[y].duplicate())
 	var saved_score = _score
 	var saved_2048 = _reached_2048
-	# 尝试移动
+	# 模拟模式: 阻止副作用 (如 _say 话术触发)
+	_simulating = true
 	var data = _move_tracked(dir)
 	var moved = data.moved
 	# 恢复状态
+	_simulating = false
 	_board = saved_board
 	_score = saved_score
 	_reached_2048 = saved_2048

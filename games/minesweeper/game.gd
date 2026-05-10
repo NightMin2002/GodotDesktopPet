@@ -49,10 +49,7 @@ var _mine_count_label: Label = null
 # ── 拖拽 ──
 # (已统一到 BaseGame._on_panel_input)
 
-# ── 战绩 ──
-var _wins: int = 0
-var _losses: int = 0
-
+# (_wins/_losses 已统一到 BaseGame)
 # ── 动画 ──
 var _exploded_cell: int = -1  # 爆炸格子索引
 var _hover_idx: int = -1       # 鼠标悬停格子
@@ -110,11 +107,7 @@ var _q_unflag: Array = []
 var _q_lose: Array = []
 var _q_win: Array = []
 
-func _pick(queue: Array, pool: Array) -> String:
-	if queue.is_empty():
-		queue.append_array(pool)
-		queue.shuffle()
-	return queue.pop_back()
+# _pick() 已统一到 BaseGame 基类
 
 # ── BaseGame 接口 ──
 
@@ -135,6 +128,7 @@ func get_default_panel_size() -> Vector2:
 	return Vector2(310, 500)
 
 func start() -> void:
+	_load_scores()
 	_build_ui()
 	_reset_game()
 	_say(_pick(_q_start, _POOL_START))
@@ -161,16 +155,7 @@ func _build_ui() -> void:
 	_panel.custom_minimum_size = Vector2(COLS * CELL_SIZE + 32, 0)
 
 	# 面板背景
-	var bg = StyleBoxFlat.new()
-	bg.bg_color = Color(0.04, 0.06, 0.12, 0.95)
-	bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.9, 0.4)
-	bg.set_border_width_all(1)
-	bg.set_corner_radius_all(12)
-	bg.content_margin_left = 0
-	bg.content_margin_right = 0
-	bg.content_margin_top = 0
-	bg.content_margin_bottom = 6
-	_panel.add_theme_stylebox_override("panel", bg)
+	_panel.add_theme_stylebox_override("panel", _create_game_panel_bg())
 
 	var outer = MarginContainer.new()
 	outer.add_theme_constant_override("margin_left", 14)
@@ -481,6 +466,7 @@ func _end_game(won: bool) -> void:
 				_revealed[i] = true
 	_refresh_all_cells()
 	_update_score_label()
+	_save_scores()
 	_show_restart_bubble()
 	# 确保面板不超出屏幕
 	if is_instance_valid(game_viewport):
@@ -497,6 +483,7 @@ func _on_close_cleanup() -> bool:
 		_game_over = true
 		_timer_running = false
 		_losses += 1
+		_save_scores()
 		game_finished.emit(Result.LOSE)
 		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
 			_pet.show_local_bubble(_pick(_q_lose, _POOL_CLOSE_MID))

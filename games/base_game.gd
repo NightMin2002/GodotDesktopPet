@@ -18,6 +18,10 @@ var game_container: SubViewportContainer   # 屏幕上的容器 (定位/拖拽�
 var screen_size: Vector2                   # 屏幕实际大小
 var _pet: Node2D = null                    # 宠物原体引用
 
+# ── 战绩 (通用, 子类可直接使用) ──
+var _wins: int = 0
+var _losses: int = 0
+
 # ── 教程面板 ──
 var _tutorial_panel: PanelContainer = null
 var _tutorial_visible: bool = false
@@ -77,6 +81,49 @@ func get_tutorial_steps() -> Array[Dictionary]:
 ## 覆写: 返回预览动画 Control 节点 (可选, 显示在教程面板顶部)
 func get_tutorial_preview() -> Control:
 	return null
+
+# ── 通用话术工具 ──
+
+## 洗牌防重复话术抽取 (子类共用, 不需要各自定义)
+func _pick(queue: Array, pool: Array) -> String:
+	if queue.is_empty():
+		queue.append_array(pool)
+		queue.shuffle()
+	return queue.pop_back()
+
+# ── 通用 UI 工厂 ──
+
+## 创建游戏面板标准背景 (深色半透明 + 主题色边框 + 圆角)
+## 子类可在返回后自行调整 content_margin
+func _create_game_panel_bg() -> StyleBoxFlat:
+	var bg = StyleBoxFlat.new()
+	bg.bg_color = Color(0.04, 0.06, 0.12, 0.95)
+	bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.9, 0.4)
+	bg.set_border_width_all(1)
+	bg.set_corner_radius_all(12)
+	bg.content_margin_left = 0
+	bg.content_margin_right = 0
+	bg.content_margin_top = 0
+	bg.content_margin_bottom = 6
+	return bg
+
+# ── 战绩持久化 ──
+
+## 从 SettingsManager 加载战绩 (子类 start() 中调用)
+func _load_scores() -> void:
+	var id = get_game_id()
+	if id == "":
+		return
+	_wins = SettingsManager.get_int("game_" + id + "_wins", 0)
+	_losses = SettingsManager.get_int("game_" + id + "_losses", 0)
+
+## 保存战绩到 SettingsManager (结束/关闭时调用)
+func _save_scores() -> void:
+	var id = get_game_id()
+	if id == "":
+		return
+	SettingsManager.set_int("game_" + id + "_wins", _wins)
+	SettingsManager.set_int("game_" + id + "_losses", _losses)
 
 # ── 辅助方法 ──
 
