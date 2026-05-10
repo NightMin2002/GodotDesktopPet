@@ -45,6 +45,7 @@ func start() -> void:
 ## 统一清理 (拖拽中断/正常结束)
 func finish() -> void:
 	_remove_side_walls()
+	_clear_platforms()
 	active = false
 	phase = 0
 	descending = false
@@ -134,11 +135,11 @@ func update(delta: float) -> void:
 			phase = 0
 			var elevator = _elevator
 			_elevator = null
+			platforms.erase(elevator)
 			var tween = elevator.create_tween()
 			tween.tween_property(elevator, "modulate:a", 0.0, 0.5)
 			tween.finished.connect(func():
 				if is_instance_valid(elevator):
-					platforms.erase(elevator)
 					elevator.queue_free()
 			)
 			finish()
