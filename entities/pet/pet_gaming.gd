@@ -10,7 +10,6 @@ var pet: RigidBody2D  # 由 pet.gd 注入
 var active: bool = false
 var game: RefCounted = null  # 当前游戏引用 (BaseGame)
 var holo_side: float = 1.0  # 全息屏方向: 1=右侧, -1=左侧
-var holo_aspect: float = 0.0  # 全息屏宽高比 (初始化后固定)
 
 # ── 悬浮踏板 ──
 var _platform: StaticBody2D = null  # 游戏态悬浮踏板
@@ -26,7 +25,6 @@ func on_gaming_changed(is_active: bool, game_ref: RefCounted) -> void:
 	active = is_active
 	game = game_ref
 	if is_active:
-		holo_aspect = 0.0  # 重置，让新游戏初始化自己的比例
 		# 取消正在进行的空间跳跃 (清理踏板+状态)
 		if pet.free_roam_sys.active:
 			pet.free_roam_sys.finish()
@@ -87,19 +85,18 @@ func render_hologram() -> void:
 	var side = holo_side
 	var gap = pet.PET_RADIUS + 5.0
 
-	# 获取 SubViewport 纹理，按比例计算全息屏尺寸
+	# 获取全息合成纹理 (面板 + 悬浮组件的完整画面)
 	var viewport_tex: Texture2D = null
-	if game and game.game_viewport:
-		viewport_tex = game.game_viewport.get_texture()
+	if game:
+		viewport_tex = game.get_holo_texture()
 	var holo_w: float
 	var holo_h: float
 	if viewport_tex and viewport_tex.get_size().y > 0:
 		var tex_size = viewport_tex.get_size()
-		# 首次获取时记录宽高比，后续固定 (防止面板大小变化导致跳变)
-		if holo_aspect <= 0.0:
-			holo_aspect = tex_size.x / tex_size.y
+		# 动态计算宽高比 (合成视口大小随重开按钮显隐变化)
+		var aspect = tex_size.x / tex_size.y
 		holo_h = pet.PET_RADIUS * 2.5
-		holo_w = holo_h * holo_aspect
+		holo_w = holo_h * aspect
 	else:
 		holo_w = pet.PET_RADIUS * 1.6
 		holo_h = pet.PET_RADIUS * 1.6
@@ -116,7 +113,6 @@ func render_hologram() -> void:
 	pet.draw_circle(beam_start, 1.5, Color.from_hsv(hue, 0.4, 1.0, 0.4), true, -1.0, true)
 
 	# 梯形透视: 靠近宠物的边上下收缩，远离的边保持原高
-	# 模拟"侧面看投影屏幕"的真实感
 	var half_w = holo_w / 2.0
 	var half_h = holo_h / 2.0
 	var shrink = 0.15  # 近端收缩比例 (15%)
@@ -146,13 +142,7 @@ func render_hologram() -> void:
 		Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)
 	])
 
-	# 外框光晕 (梯形轮廓)
-	var glow_pts = pts.duplicate()
-	glow_pts.append(pts[0])  # 闭合
-	pet.draw_polyline(glow_pts, Color.from_hsv(hue, 0.3, 0.8, 0.1), 2.0, true)
-	pet.draw_polyline(glow_pts, Color.from_hsv(hue, 0.4, 0.9, 0.35), 0.6, true)
-
-	# SubViewport 纹理映射到梯形 (自动镜像任何游戏面板)
+	# 合成纹理映射到梯形 (面板 + 悬浮组件的完整画面)
 	if viewport_tex:
 		pet.draw_polygon(pts, [Color(1, 1, 1, 0.75)], uvs, viewport_tex)
 

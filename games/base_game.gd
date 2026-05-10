@@ -29,6 +29,14 @@ var _chrome_side: int = 1                  # 按钮朝向 (1=右侧, -1=左侧)
 var _chrome_dragging: bool = false
 var _chrome_drag_offset: Vector2 = Vector2.ZERO
 
+# ── 全息合成视口 (合成面板+悬浮组件的完整画面) ──
+var _holo_viewport: SubViewport = null
+var _holo_game_rect: TextureRect = null
+var _holo_title: Control = null
+var _holo_connector: Control = null
+var _holo_side: Control = null
+var _holo_restart: Control = null
+
 # ── 元数据 (子类覆写) ──
 
 func get_game_id() -> String:
@@ -149,6 +157,8 @@ func _setup_floating_chrome(game_name: String, on_close: Callable, on_restart: C
 	await parent.get_tree().process_frame
 	_update_chrome_positions()
 	_animate_chrome_in()
+	# 创建全息合成视口 (供全息迷你屏投影完整 UI)
+	_setup_holo_viewport()
 
 ## 创建圆形悬浮按钮
 func _create_chrome_button(text: String, is_close: bool) -> Button:
@@ -243,6 +253,9 @@ func _show_restart_bubble() -> void:
 		var shift = needed_bottom - screen_size.y
 		game_container.position.y = maxf(gc_pos.y - shift, 8.0)
 	_update_chrome_positions()
+	# 同步全息克隆体可见性
+	if is_instance_valid(_holo_restart):
+		_holo_restart.show()
 	# 弹入动画
 	_restart_bubble.modulate.a = 0.0
 	_restart_bubble.scale = Vector2(0.5, 0.5)
@@ -256,6 +269,9 @@ func _show_restart_bubble() -> void:
 func _hide_restart_bubble() -> void:
 	if is_instance_valid(_restart_bubble):
 		_restart_bubble.hide()
+	if is_instance_valid(_holo_restart):
+		_holo_restart.hide()
+	_update_holo_layout()
 
 ## 判断按钮应该在面板哪一侧 (远离宠物)
 func _determine_chrome_side() -> int:
@@ -323,6 +339,8 @@ func _update_chrome_positions() -> void:
 
 	# 教程面板
 	_position_tutorial()
+	# 全息合成视口布局同步
+	_update_holo_layout()
 
 ## 标题气泡拖拽 → 带动整个面板移动
 func _on_chrome_drag_input(event: InputEvent) -> void:
@@ -380,6 +398,138 @@ func _animate_chrome_in() -> void:
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT) \
 				.set_delay(delay)
 
+# ══════════════════════════════════════════════
+# 全息合成视口 (合成面板+悬浮组件, 供全息迷你屏投影)
+# ══════════════════════════════════════════════
+
+## 创建全息合成视口 (独立 SubViewport, 不显示在屏幕上)
+func _setup_holo_viewport() -> void:
+	if not is_instance_valid(game_container) or not game_viewport:
+		return
+	var parent = game_container.get_parent()
+	if not parent:
+		return
+
+	_holo_viewport = SubViewport.new()
+	_holo_viewport.transparent_bg = true
+	_holo_viewport.gui_disable_input = true
+	_holo_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+
+	# 游戏面板内容 (通过 ViewportTexture 实时镜像)
+	_holo_game_rect = TextureRect.new()
+	_holo_game_rect.texture = game_viewport.get_texture()
+	_holo_game_rect.stretch_mode = TextureRect.STRETCH_SCALE
+	_holo_game_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_holo_viewport.add_child(_holo_game_rect)
+
+	# 克隆悬浮组件 (纯视觉副本, 无交互)
+	# 注意: 克隆时入场动画正在执行, 原件可能处于透明/缩小状态
+	# 必须强制重置克隆体的 modulate 和 scale
+	if is_instance_valid(_title_bubble):
+		_holo_title = _title_bubble.duplicate(0)
+		_disable_clone_input(_holo_title)
+		_holo_title.modulate = Color.WHITE
+		_holo_title.scale = Vector2.ONE
+		_holo_viewport.add_child(_holo_title)
+
+	if is_instance_valid(_connector):
+		_holo_connector = _connector.duplicate(0)
+		_holo_connector.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_holo_connector.modulate = Color.WHITE
+		_holo_viewport.add_child(_holo_connector)
+
+	if is_instance_valid(_side_container):
+		_holo_side = _side_container.duplicate(0)
+		_disable_clone_input(_holo_side)
+		_holo_side.modulate = Color.WHITE
+		_holo_side.scale = Vector2.ONE
+		# 子按钮也需要重置 (入场动画逐个设置了子按钮的透明度和缩放)
+		for child in _holo_side.get_children():
+			if child is Control:
+				child.modulate = Color.WHITE
+				child.scale = Vector2.ONE
+		_holo_viewport.add_child(_holo_side)
+
+	if is_instance_valid(_restart_bubble):
+		_holo_restart = _restart_bubble.duplicate(0)
+		_disable_clone_input(_holo_restart)
+		_holo_restart.modulate = Color.WHITE
+		_holo_restart.scale = Vector2.ONE
+		_holo_restart.visible = _restart_bubble.visible
+		_holo_viewport.add_child(_holo_restart)
+
+	parent.add_child(_holo_viewport)
+	_update_holo_layout()
+
+## 递归禁用克隆体的鼠标交互
+func _disable_clone_input(node: Node) -> void:
+	if node is Control:
+		(node as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for child in node.get_children():
+		_disable_clone_input(child)
+
+## 更新全息视口布局 (重算包围盒 + 定位克隆体)
+func _update_holo_layout() -> void:
+	if not is_instance_valid(_holo_viewport) or not is_instance_valid(game_container):
+		return
+
+	var gc_pos = game_container.position
+	var gc_size = game_container.size
+	var gap := 8.0
+
+	# 计算所有元素的包围盒 (始终包含全部元素空间, 防止显隐跳动)
+	var bounds = Rect2(gc_pos, gc_size)
+	for node in [_title_bubble, _connector, _side_container]:
+		if is_instance_valid(node):
+			bounds = bounds.merge(Rect2(node.position, node.size))
+	# 重开按钮: 即使隐藏也预留空间 (防止出现时视口跳变)
+	if is_instance_valid(_restart_bubble):
+		if _restart_bubble.visible:
+			bounds = bounds.merge(Rect2(_restart_bubble.position, _restart_bubble.size))
+		else:
+			var rb_size = _restart_bubble.custom_minimum_size
+			var rb_pos = Vector2(
+				gc_pos.x + (gc_size.x - rb_size.x) / 2.0,
+				gc_pos.y + gc_size.y + gap
+			)
+			bounds = bounds.merge(Rect2(rb_pos, rb_size))
+	bounds = bounds.grow(2)  # 2px 边距
+
+	# 更新视口大小
+	_holo_viewport.size = Vector2i(int(bounds.size.x), int(bounds.size.y))
+	var offset = bounds.position
+
+	# 定位游戏面板纹理
+	if is_instance_valid(_holo_game_rect):
+		_holo_game_rect.position = gc_pos - offset
+		_holo_game_rect.size = gc_size
+
+	# 定位克隆体 (转换到视口内部坐标系)
+	if is_instance_valid(_holo_title) and is_instance_valid(_title_bubble):
+		_holo_title.position = _title_bubble.position - offset
+		_holo_title.size = _title_bubble.size
+
+	if is_instance_valid(_holo_connector) and is_instance_valid(_connector):
+		_holo_connector.position = _connector.position - offset
+		_holo_connector.size = _connector.size
+		_holo_connector.visible = _connector.visible
+
+	if is_instance_valid(_holo_side) and is_instance_valid(_side_container):
+		_holo_side.position = _side_container.position - offset
+
+	if is_instance_valid(_holo_restart) and is_instance_valid(_restart_bubble):
+		_holo_restart.position = _restart_bubble.position - offset
+		_holo_restart.size = _restart_bubble.size
+		_holo_restart.visible = _restart_bubble.visible
+
+## 获取全息合成纹理 (供 pet_gaming.gd 渲染)
+func get_holo_texture() -> Texture2D:
+	if is_instance_valid(_holo_viewport):
+		return _holo_viewport.get_texture()
+	if game_viewport:
+		return game_viewport.get_texture()
+	return null
+
 ## 悬浮组件退场动画
 func _animate_chrome_out() -> void:
 	for node in [_title_bubble, _side_container, _connector, _restart_bubble]:
@@ -389,7 +539,7 @@ func _animate_chrome_out() -> void:
 
 ## 清理悬浮组件
 func _cleanup_chrome() -> void:
-	for node in [_title_bubble, _side_container, _connector, _restart_bubble]:
+	for node in [_title_bubble, _side_container, _connector, _restart_bubble, _holo_viewport]:
 		if is_instance_valid(node):
 			node.queue_free()
 	_title_bubble = null
@@ -398,6 +548,12 @@ func _cleanup_chrome() -> void:
 	_restart_bubble = null
 	_chrome_close_btn = null
 	_help_btn = null
+	_holo_viewport = null
+	_holo_game_rect = null
+	_holo_title = null
+	_holo_connector = null
+	_holo_side = null
+	_holo_restart = null
 
 ## 返回悬浮组件的屏幕矩形 (供 hit_region_manager 注册)
 func get_chrome_rects() -> Array[Rect2]:
