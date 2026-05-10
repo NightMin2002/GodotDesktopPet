@@ -27,6 +27,10 @@ var _game_over: bool = false
 var _reached_2048: bool = false
 var _animating: bool = false  # 动画进行中, 阻止输入
 
+# ── 自动操作 (AI 自玩) ──
+var _auto_play: bool = false
+var _auto_timer: Timer = null
+
 # ── 滑动输入 ──
 var _swipe_start: Vector2 = Vector2.ZERO
 var _swiping: bool = false
@@ -92,6 +96,7 @@ func start() -> void:
 	_say(_pick(_q_start, _POOL_START))
 
 func cleanup() -> void:
+	_stop_auto_play()
 	if is_instance_valid(_panel):
 		_panel.queue_free()
 	_panel = null
@@ -545,6 +550,15 @@ func _get_font_size(value: int) -> int:
 # ══════════════════════════════════════════════
 
 func _on_game_input(event: InputEvent) -> void:
+	# 用户输入 -> 接管自动操作
+	if _auto_play:
+		var dominated = false
+		if event is InputEventKey and event.pressed and not event.echo:
+			dominated = true
+		elif event is InputEventMouseButton and event.pressed:
+			dominated = true
+		if dominated:
+			_stop_auto_play()
 	if _game_over or _animating:
 		return
 
@@ -588,11 +602,17 @@ func _on_restart() -> void:
 	_say(_pick(_q_start, _POOL_START))
 
 func _on_close_cleanup() -> bool:
+	var was_auto = _auto_play
 	if not _game_over:
 		_game_over = true
 		game_finished.emit(Result.LOSE)
 		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
-			_pet.show_local_bubble(_pick(_q_close, _POOL_CLOSE_MID))
+			if was_auto:
+				# 自己玩着被关了
+				var auto_close_lines = ["...？", "...训练中断。", "运算被终止了。"]
+				_pet.show_local_bubble(auto_close_lines[randi() % auto_close_lines.size()])
+			else:
+				_pet.show_local_bubble(_pick(_q_close, _POOL_CLOSE_MID))
 	return true
 
 # ══════════════════════════════════════════════
@@ -604,3 +624,114 @@ func _pick(queue: Array, pool: Array) -> String:
 		queue.append_array(pool)
 		queue.shuffle()
 	return queue.pop_back()
+
+# ══════════════════════════════════════════════
+# 自动操作 (AI 自玩)
+# ══════════════════════════════════════════════
+
+## 启动自动操作模式
+func _start_auto_play() -> void:
+	_auto_play = true
+	# 开局话术
+	var auto_start_lines = [
+		"逻辑训练程序启动。",
+		"...运算热身。",
+		"矩阵推演开始。...想打扰的话，由你接手。",
+		"自主训练。...观看可以。",
+	]
+	if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
+		_pet.show_local_bubble(auto_start_lines[randi() % auto_start_lines.size()])
+	# 等悬浮组件创建完毕后再设透明 (start() 是异步的)
+	if is_instance_valid(game_viewport):
+		await game_viewport.get_tree().create_timer(0.6).timeout
+	if not _auto_play or not is_instance_valid(game_container):
+		return
+	var alpha = 0.35
+	var dur = 0.25
+	var tw = game_container.create_tween().set_parallel(true)
+	tw.tween_property(game_container, "modulate:a", alpha, dur)
+	for node in [_title_bubble, _side_container, _connector, _speech_bubble, _restart_bubble]:
+		if is_instance_valid(node):
+			tw.tween_property(node, "modulate:a", alpha, dur)
+	# 启动自动操作计时器
+	if is_instance_valid(_auto_timer):
+		_auto_timer.queue_free()
+	_auto_timer = Timer.new()
+	_auto_timer.wait_time = 0.5
+	_auto_timer.timeout.connect(_auto_play_step)
+	game_viewport.add_child(_auto_timer)
+	_auto_timer.start()
+
+func _stop_auto_play() -> void:
+	var was_auto = _auto_play
+	_auto_play = false
+	if is_instance_valid(_auto_timer):
+		_auto_timer.stop()
+		_auto_timer.queue_free()
+		_auto_timer = null
+	# 用户接手 -> 面板亮起来 + 话术 (游戏结束时不触发)
+	if was_auto and not _game_over and is_instance_valid(game_container) and game_container.modulate.a < 1.0:
+		var tw = game_container.create_tween().set_parallel(true)
+		tw.tween_property(game_container, "modulate:a", 1.0, 0.2)
+		for node in [_title_bubble, _side_container, _connector, _speech_bubble, _restart_bubble]:
+			if is_instance_valid(node):
+				tw.tween_property(node, "modulate:a", 1.0, 0.2)
+		var takeover_lines = [
+			"...交给你了。",
+			"操作权移交。",
+			"你来？...好。",
+			"接手确认。",
+		]
+		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
+			_pet.show_local_bubble(takeover_lines[randi() % takeover_lines.size()])
+
+func _auto_play_step() -> void:
+	if not _auto_play:
+		return
+	# 游戏结束 -> 等一会儿自动关闭
+	if _game_over:
+		_stop_auto_play()
+		if is_instance_valid(game_viewport):
+			await game_viewport.get_tree().create_timer(3.0).timeout
+			if is_instance_valid(game_viewport):
+				_close_game()
+		return
+	# 动画中跳过, 等下一次 tick
+	if _animating:
+		return
+	# AI 决策
+	var dir = _ai_pick_move()
+	if dir != Vector2i.ZERO:
+		_do_move(dir)
+	# 变速节奏 (随机化时间间隔, 像在思考)
+	if is_instance_valid(_auto_timer):
+		_auto_timer.wait_time = randf_range(0.25, 0.55)
+
+## AI 策略: 角落贪心法 (DOWN > LEFT > RIGHT > UP)
+## 偶尔随机 (10%) 给点 "失误", 更有人味
+func _ai_pick_move() -> Vector2i:
+	var priorities = [Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1)]
+	# 10% 概率随机挑一个有效方向
+	if randf() < 0.1:
+		priorities.shuffle()
+	for dir in priorities:
+		if _would_move(dir):
+			return dir
+	return Vector2i.ZERO
+
+## 检测某个方向是否有效 (不修改状态)
+func _would_move(dir: Vector2i) -> bool:
+	# 保存状态
+	var saved_board: Array = []
+	for y in range(GRID):
+		saved_board.append(_board[y].duplicate())
+	var saved_score = _score
+	var saved_2048 = _reached_2048
+	# 尝试移动
+	var data = _move_tracked(dir)
+	var moved = data.moved
+	# 恢复状态
+	_board = saved_board
+	_score = saved_score
+	_reached_2048 = saved_2048
+	return moved

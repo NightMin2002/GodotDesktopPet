@@ -899,6 +899,7 @@ func _build_debug_behavior_submenu() -> void:
 		{"label": "错误标识", "behavior": "_icon:error", "desc": "显示操作失败交叉图标"},
 		{"label": "碎碎念", "behavior": "_chatter", "desc": "立即触发一次碎碎念气泡"},
 		{"label": "空间跳跃", "behavior": "_free_roam", "desc": "触发一次空间跳跃踏板序列"},
+		{"label": "自动对弈", "behavior": "_auto_game", "desc": "宠物自己玩一局 2048"},
 	]
 
 	for item in debug_items:
@@ -956,6 +957,8 @@ func _on_debug_behavior_pressed(behavior: String) -> void:
 		EventBus.show_reminder_bubble.emit("碎碎念系统未就绪。")
 	elif behavior == "_free_roam":
 		EventBus.trigger_free_roam.emit()
+	elif behavior == "_auto_game":
+		EventBus.launch_game_auto.emit("2048")
 	else:
 		EventBus.trigger_idle_behavior.emit(behavior)
 

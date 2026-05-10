@@ -167,6 +167,14 @@ func _cleanup_current_game() -> void:
 func close_game() -> void:
 	_cleanup_current_game()
 
+## 启动游戏并开启自动操作模式 (宠物自己玩)
+func launch_game_auto(game_id: String, pet: Node2D) -> bool:
+	if not launch_game(game_id, pet):
+		return false
+	if _current_game and _current_game.has_method("_start_auto_play"):
+		_current_game._start_auto_play()
+	return true
+
 ## 返回游戏面板 + 教程面板的屏幕矩形 (供 hit_region_manager 注册)
 func get_panel_rects() -> Array[Rect2]:
 	var result: Array[Rect2] = []

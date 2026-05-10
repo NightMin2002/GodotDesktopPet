@@ -325,6 +325,10 @@ func _setup_game_system() -> void:
 			if game_mgr and game_mgr.has_method("launch_game"):
 				game_mgr.launch_game(game_id, pet_instance)
 		)
+		EventBus.launch_game_auto.connect(func(game_id: String):
+			if game_mgr and game_mgr.has_method("launch_game_auto"):
+				game_mgr.launch_game_auto(game_id, pet_instance)
+		)
 		print("[DesktopPet] 游戏系统已就绪 (", game_mgr.get_installed_games().size(), " 个游戏)")
 
 # ── 任务栏样式守护 ──
