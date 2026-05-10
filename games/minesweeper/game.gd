@@ -492,7 +492,7 @@ func _on_restart() -> void:
 	_reset_game()
 	_say(_pick(_q_start, _POOL_START))
 
-func _on_close() -> void:
+func _on_close_cleanup() -> bool:
 	if not _game_over:
 		_game_over = true
 		_timer_running = false
@@ -500,7 +500,7 @@ func _on_close() -> void:
 		game_finished.emit(Result.LOSE)
 		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
 			_pet.show_local_bubble(_pick(_q_lose, _POOL_CLOSE_MID))
-	_close_game()
+	return true
 
 # ══════════════════════════════════════════════
 # 格子视觉更新 (Control 节点方式)

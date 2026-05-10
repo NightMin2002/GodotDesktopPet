@@ -251,7 +251,7 @@ func _on_restart() -> void:
 	_reset_board()
 	_say(_pick(_q_start, _POOL_START))
 
-func _on_close() -> void:
+func _on_close_cleanup() -> bool:
 	# 游戏进行中关闭 -> 算认输
 	if not _game_over:
 		_game_over = true
@@ -259,7 +259,7 @@ func _on_close() -> void:
 		game_finished.emit(Result.LOSE)
 		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
 			_pet.show_local_bubble("对弈中断。...这算你认输。")
-	_close_game()
+	return true
 
 func _update_score_label() -> void:
 	if not _score_label:

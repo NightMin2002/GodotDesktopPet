@@ -1,0 +1,8 @@
+{
+    "id": "2048",
+    "name": "矩阵叠加",
+    "desc": "滑动合并同值方块，目标达到2048",
+    "version": "1.0.0",
+    "author": "NightMin",
+    "script": "res://games/2048/game.gd"
+}
