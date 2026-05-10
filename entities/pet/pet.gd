@@ -65,6 +65,9 @@ var poke_system: PokeSystem
 # ── Idle 微行为系统 (委托给 IdleBehaviors) ──
 var idle_behaviors: IdleBehaviors
 
+# ── 自主活动调度器 (委托给 IdleActivities) ──
+var idle_activities: IdleActivities
+
 # ── 弹性形变系统 (委托给 PetSquash) ──
 var squash: PetSquash
 
@@ -118,6 +121,10 @@ func _ready() -> void:
 	idle_behaviors = IdleBehaviors.new()
 	idle_behaviors.pet = self
 	
+	# 初始化自主活动调度器
+	idle_activities = IdleActivities.new()
+	idle_activities.pet = self
+	
 	# 初始化弹性形变系统
 	squash = PetSquash.new()
 	squash.pet = self
@@ -147,6 +154,7 @@ func _ready() -> void:
 	var ag = SettingsManager.get_bool("anti_gravity", false)
 	_set_anti_gravity(ag)
 	screen_wrap = SettingsManager.get_bool("screen_wrap", false)
+	idle_activities.mode = SettingsManager.get_int("auto_activity", 1)
 	# 弹性形变恢复 (elastic_mode: 0=关闭, 1=轻弹, 2=果冻, 3=弹力球)
 	var elastic_mode = SettingsManager.get_int("elastic_mode", 0)
 	if elastic_mode > 0:
@@ -198,6 +206,8 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		screen_wrap = is_on
 		if not is_on:
 			_wrap_ghost_offset = Vector2.ZERO
+	elif setting_id == "auto_activity":
+		idle_activities.mode = SettingsManager.get_int("auto_activity", 1)
 	elif setting_id == "hud_clock":
 		if is_clone:
 			return
@@ -403,6 +413,7 @@ func _process(delta: float) -> void:
 
 	var has_visual_change = pet_effects.update(delta)
 	idle_behaviors.update(delta)
+	idle_activities.update(delta)
 	_roam_update(delta)
 	var squash_changed = squash.update(delta)
 	

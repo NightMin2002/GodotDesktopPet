@@ -39,6 +39,7 @@ var _mode_btn: Button
 var _effects_btn: Button
 var _elastic_btn: Button
 var _entertain_btn: Button
+var _activity_btn: Button
 var _clone_btn: Button
 var _dismiss_btn: Button
 var _sysinfo_btn: Button
@@ -280,6 +281,10 @@ func _build_sec_play() -> void:
 	vbox.add_child(_entertain_btn)
 	_bind_l3_trigger(_entertain_btn, "entertain", "sec_play")
 
+	_activity_btn = _make_menu_btn("自主活动 · 偶尔 [+]", Color(0.3, 1.0, 0.7, 1))
+	vbox.add_child(_activity_btn)
+	_bind_l3_trigger(_activity_btn, "auto_activity", "sec_play")
+
 	# 小游戏入口容器 (菜单打开时动态填充，因为 game_mgr 初始化晚于菜单构建)
 	_game_container = VBoxContainer.new()
 	_game_container.add_theme_constant_override("separation", 6)
@@ -295,6 +300,14 @@ func _build_sec_play() -> void:
 		{"id": "stroll", "on": "自主巡航 [●]", "off": "自主巡航 [○]", "key": "stroll", "default": true},
 	], 3)
 	_submenu._l3_parent_map["entertain"] = "sec_play"
+
+	# L3: 自主活动单选
+	_submenu.create_radio("auto_activity", [
+		{"value": 0, "label": "关闭", "desc": "不会自己玩游戏或跳跃"},
+		{"value": 1, "label": "偶尔", "desc": "隔很久才自己动一下"},
+		{"value": 2, "label": "频繁", "desc": "经常自己找事做"},
+	], _on_radio_auto_activity, 3)
+	_submenu._l3_parent_map["auto_activity"] = "sec_play"
 
 ## 动态更新小游戏列表 (每次菜单打开时调用)
 func _update_game_list() -> void:
@@ -462,6 +475,10 @@ func _load_saved_settings() -> void:
 	_update_gait_label(gm)
 	_submenu.refresh_radio("gait", gm)
 
+	var am = SettingsManager.get_int("auto_activity", 1)
+	_update_activity_label(am)
+	_submenu.refresh_radio("auto_activity", am)
+
 	var chatter_mode = SettingsManager.get_int("pet_chatter_mode", 1)
 	_update_chatter_label(chatter_mode)
 	_submenu.refresh_radio("chatter", chatter_mode)
@@ -506,6 +523,7 @@ func _refresh_submenu_states() -> void:
 	_submenu.refresh_radio("gait", SettingsManager.get_int("move_style", 0))
 	_submenu.refresh_radio("chatter", SettingsManager.get_int("chatter_mode", 0))
 	_submenu.refresh_radio("elastic", elastic_mode)
+	_submenu.refresh_radio("auto_activity", SettingsManager.get_int("auto_activity", 1))
 
 # ═══════════════════════════════════════════
 # 弹性追踪 / _process
@@ -682,6 +700,20 @@ func _update_behavior_mode_label(mode: int) -> void:
 func _on_behavior_mode_synced(mode: int) -> void:
 	_update_behavior_mode_label(mode)
 	_submenu.refresh_radio("behavior_mode", mode)
+
+# ── 自主活动 ──
+
+const ACTIVITY_LABELS := ["自主活动 · 已关闭 [+]", "自主活动 · 偶尔 [+]", "自主活动 · 频繁 [+]"]
+
+func _on_radio_auto_activity(value: int) -> void:
+	_update_activity_label(value)
+	# 直接通知所有宠物实例 (通过 setting_toggled 信号)
+	SettingsManager.set_int("auto_activity", value)
+	EventBus.setting_toggled.emit("auto_activity", value > 0)
+	_submenu.refresh_radio("auto_activity", value)
+
+func _update_activity_label(mode: int) -> void:
+	_activity_btn.text = ACTIVITY_LABELS[mode]
 
 # ── 步态 ──
 

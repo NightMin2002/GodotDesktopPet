@@ -174,16 +174,7 @@ func try_random(_idle_elapsed: float) -> bool:
 		trigger("scan")
 		return true
 	
-	# ── 无聊时自己玩 2048 ──
-	# 条件: 自由行动模式 + 非深夜 + 非游戏中 + 冷却到期
-	if not _nighttime_active and pet.behavior_mode == 0 and not pet.gaming.active:
-		if not pet.has_meta("_auto_game_cooldown") or \
-			(Time.get_ticks_msec() - pet.get_meta("_auto_game_cooldown")) > 300000:  # 5 min
-			if randf() < 0.02:  # 2% 每次 idle 检查
-				pet.set_meta("_auto_game_cooldown", Time.get_ticks_msec())
-				EventBus.launch_game_auto.emit("2048")
-				return true
-	
+	# 自主活动已迁移到 IdleActivities (定时器驱动, 不在此轮询)
 	# 休眠触发已迁移至 update() 的白天分级逻辑 / 深夜模式自动触发
 	
 	return false
