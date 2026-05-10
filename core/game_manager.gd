@@ -172,7 +172,10 @@ func get_panel_rects() -> Array[Rect2]:
 	var result: Array[Rect2] = []
 	if is_instance_valid(_game_container) and _game_container.visible:
 		result.append(Rect2(_game_container.position, _game_container.size))
-	if _current_game and is_instance_valid(_current_game._tutorial_panel):
-		var tp = _current_game._tutorial_panel
-		result.append(Rect2(tp.position, tp.size))
+	if _current_game:
+		if is_instance_valid(_current_game._tutorial_panel):
+			var tp = _current_game._tutorial_panel
+			result.append(Rect2(tp.position, tp.size))
+		# 悬浮组件 (标题气泡 + 侧边按钮)
+		result.append_array(_current_game.get_chrome_rects())
 	return result

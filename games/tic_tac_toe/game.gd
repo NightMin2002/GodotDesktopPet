@@ -15,8 +15,6 @@ var _grid: Control = null
 var _status_label: Label = null
 var _speech_panel: PanelContainer = null  # 宠物发言容器
 var _score_label: RichTextLabel = null
-var _title_bar: HBoxContainer = null
-var _restart_btn: Button = null
 
 # ── 拖拽 ──
 var _dragging: bool = false
@@ -125,8 +123,6 @@ func cleanup() -> void:
 	_status_label = null
 	_speech_panel = null
 	_score_label = null
-	_title_bar = null
-	_restart_btn = null
 	super.cleanup()
 
 # ══════════════════════════════════════════════
@@ -161,58 +157,6 @@ func _build_ui() -> void:
 	vbox.add_theme_constant_override("separation", 8)
 	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	outer.add_child(vbox)
-
-	# ── 标题栏 ──
-	_title_bar = HBoxContainer.new()
-	_title_bar.custom_minimum_size = Vector2(0, 34)
-	_title_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 穿透到面板，支持拖拽
-
-	var title = Label.new()
-	title.text = "  策略矩阵"
-	title.add_theme_font_size_override("font_size", 16)
-	title.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.4, 1.0, 0.9))
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_title_bar.add_child(title)
-
-	var help_btn = create_help_button()
-	if help_btn:
-		_title_bar.add_child(help_btn)
-
-	var close_btn = Button.new()
-	close_btn.text = "✕"
-	close_btn.custom_minimum_size = Vector2(26, 26)
-	close_btn.add_theme_font_size_override("font_size", 13)
-	close_btn.add_theme_color_override("font_color", Color(0.5, 0.55, 0.65, 0.7))
-	close_btn.add_theme_color_override("font_hover_color", Color(1.0, 0.35, 0.35, 1.0))
-	close_btn.add_theme_color_override("font_pressed_color", Color(1.0, 0.2, 0.2, 1.0))
-	var close_normal = StyleBoxFlat.new()
-	close_normal.bg_color = Color(0.08, 0.10, 0.18, 0.6)
-	close_normal.set_corner_radius_all(6)
-	close_normal.set_content_margin_all(0)
-	var close_hover = StyleBoxFlat.new()
-	close_hover.bg_color = Color(0.15, 0.08, 0.08, 0.8)
-	close_hover.set_corner_radius_all(6)
-	close_hover.set_content_margin_all(0)
-	close_btn.add_theme_stylebox_override("normal", close_normal)
-	close_btn.add_theme_stylebox_override("hover", close_hover)
-	close_btn.add_theme_stylebox_override("pressed", close_hover)
-	var close_focus = StyleBoxEmpty.new()
-	close_btn.add_theme_stylebox_override("focus", close_focus)
-	close_btn.mouse_default_cursor_shape = Control.CURSOR_ARROW
-	close_btn.pressed.connect(func(): _on_close())
-	_title_bar.add_child(close_btn)
-
-	vbox.add_child(_title_bar)
-	var sep = HSeparator.new()
-	sep.add_theme_constant_override("separation", 4)
-	var sep_style = StyleBoxFlat.new()
-	sep_style.bg_color = Color.from_hsv(EventBus.ui_hue, 0.6, 0.8, 0.15)
-	sep_style.set_content_margin_all(0)
-	sep.add_theme_stylebox_override("separator", sep_style)
-	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(sep)
 
 	# ── 宠物发言区 (带背景 + 引用竖线) ──
 	_speech_panel = PanelContainer.new()
@@ -258,33 +202,6 @@ func _build_ui() -> void:
 	_update_score_label()
 	vbox.add_child(score_rich)
 
-	# ── 再来一局 ──
-	_restart_btn = Button.new()
-	_restart_btn.text = "再来一局"
-	_restart_btn.custom_minimum_size = Vector2(0, 32)
-	_restart_btn.add_theme_font_size_override("font_size", 14)
-	_restart_btn.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.35, 0.85, 0.8))
-	_restart_btn.add_theme_color_override("font_hover_color", Color.from_hsv(EventBus.ui_hue, 0.5, 1.0, 1.0))
-	var rst_normal = StyleBoxFlat.new()
-	rst_normal.bg_color = Color(0.06, 0.09, 0.18, 0.7)
-	rst_normal.border_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.7, 0.3)
-	rst_normal.set_border_width_all(1)
-	rst_normal.set_corner_radius_all(8)
-	var rst_hover = StyleBoxFlat.new()
-	rst_hover.bg_color = Color(0.08, 0.12, 0.25, 0.8)
-	rst_hover.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.9, 0.6)
-	rst_hover.set_border_width_all(1)
-	rst_hover.set_corner_radius_all(8)
-	var rst_focus = StyleBoxEmpty.new()
-	_restart_btn.add_theme_stylebox_override("normal", rst_normal)
-	_restart_btn.add_theme_stylebox_override("hover", rst_hover)
-	_restart_btn.add_theme_stylebox_override("pressed", rst_hover)
-	_restart_btn.add_theme_stylebox_override("focus", rst_focus)
-	_restart_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	_restart_btn.pressed.connect(_on_restart)
-	_restart_btn.hide()
-	vbox.add_child(_restart_btn)
-
 	# ── 输入处理 (拖拽 + 点击外部关闭) ──
 	_panel.gui_input.connect(_on_panel_input)
 	_panel.resized.connect(sync_viewport_size)  # 面板大小变化时同步 SubViewport
@@ -305,6 +222,9 @@ func _build_ui() -> void:
 	tween.tween_property(game_container, "modulate:a", 1.0, 0.2)
 	tween.tween_property(game_container, "scale", Vector2.ONE, 0.3) \
 		.set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
+
+	# 悬浮组件 (标题气泡 + 侧边按钮 + 重开按钮)
+	_setup_floating_chrome(get_game_name(), _on_close, _on_restart)
 
 func _position_near_pet() -> void:
 	var vp = screen_size
@@ -334,6 +254,7 @@ func _clamp_panel_to_screen() -> void:
 	pos.x = clampf(pos.x, 8.0, vp.x - game_container.size.x - 8.0)
 	pos.y = clampf(pos.y, 8.0, vp.y - game_container.size.y - 8.0)
 	game_container.position = pos
+	_update_chrome_positions()
 
 # ══════════════════════════════════════════════
 # 游戏逻辑
@@ -343,7 +264,7 @@ func _reset_board() -> void:
 	_board = [0,0,0, 0,0,0, 0,0,0]
 	_game_over = false
 	_player_turn = true
-	_restart_btn.hide()
+	_hide_restart_bubble()
 	_status_label.text = "操作员先手"
 	(_grid as _BoardRenderer).set_win_line([])
 	(_grid as _BoardRenderer).set_board(_board, -1)
@@ -408,8 +329,8 @@ func _end_game(result: Result, win_line: Array) -> void:
 			_status_label.text = "均衡态"
 			_say(_pick(_q_draw, _POOL_DRAW))
 	_update_score_label()
-	_restart_btn.show()
-	# 按钮显示后面板变高，重新确保不超出屏幕
+	_show_restart_bubble()
+	# 按钮显示后重新确保不超出屏幕
 	await game_viewport.get_tree().process_frame
 	_clamp_panel_to_screen()
 	game_finished.emit(result)
@@ -427,6 +348,7 @@ func _on_close() -> void:
 		# 吐槽通过宠物气泡显示 (面板即将关闭，_say 看不到)
 		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
 			_pet.show_local_bubble("对弈中断。...这算你认输。")
+	_animate_chrome_out()
 	if is_instance_valid(game_container):
 		game_container.pivot_offset = game_container.size / 2.0
 		var tween = game_container.create_tween().set_parallel(true)
@@ -555,9 +477,9 @@ func _on_panel_input(event: InputEvent) -> void:
 	if not is_instance_valid(game_container):
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		# 只在标题栏区域启动拖拽
+		# 只在发言区域启动拖拽
 		var local = _panel.get_local_mouse_position()
-		if event.pressed and local.y < 120.0:  # 标题栏 + 发言区均可拖拽
+		if event.pressed and local.y < 80.0:  # 发言区可拖拽
 			_dragging = true
 			_drag_offset = game_container.get_viewport().get_mouse_position() - game_container.position
 			EventBus.drag_started.emit()
@@ -571,7 +493,7 @@ func _on_panel_input(event: InputEvent) -> void:
 		new_pos.x = clampf(new_pos.x, 8.0, vp.x - game_container.size.x - 8.0)
 		new_pos.y = clampf(new_pos.y, 8.0, vp.y - game_container.size.y - 8.0)
 		game_container.position = new_pos
-		_position_tutorial()
+		_update_chrome_positions()
 
 # ══════════════════════════════════════════════
 # 内嵌类: 棋盘渲染器
