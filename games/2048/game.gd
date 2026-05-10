@@ -29,8 +29,7 @@ var _animating: bool = false  # 动画进行中, 阻止输入
 var _simulating: bool = false # 模拟移动检测中, 跳过副作用 (话术等)
 
 # ── 自动操作 (AI 自玩) ──
-var _auto_play: bool = false
-var _auto_timer: Timer = null
+# (_auto_play / _auto_timer 已在 BaseGame 中)
 
 # ── 滑动输入 ──
 var _swipe_start: Vector2 = Vector2.ZERO
@@ -630,7 +629,6 @@ func _on_close_cleanup() -> bool:
 ## 启动自动操作模式
 func _start_auto_play() -> void:
 	_auto_play = true
-	# 开局话术
 	var auto_start_lines = [
 		"逻辑训练程序启动。",
 		"...运算热身。",
@@ -639,41 +637,19 @@ func _start_auto_play() -> void:
 	]
 	if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
 		_pet.show_local_bubble(auto_start_lines[randi() % auto_start_lines.size()])
-	# 等悬浮组件创建完毕后再设透明 (start() 是异步的)
 	if is_instance_valid(game_viewport):
 		await game_viewport.get_tree().create_timer(0.6).timeout
 	if not _auto_play or not is_instance_valid(game_container):
 		return
-	var alpha = 0.35
-	var dur = 0.25
-	var tw = game_container.create_tween().set_parallel(true)
-	tw.tween_property(game_container, "modulate:a", alpha, dur)
-	for node in [_title_bubble, _side_container, _connector, _speech_bubble, _restart_bubble]:
-		if is_instance_valid(node):
-			tw.tween_property(node, "modulate:a", alpha, dur)
-	# 启动自动操作计时器
-	if is_instance_valid(_auto_timer):
-		_auto_timer.queue_free()
-	_auto_timer = Timer.new()
-	_auto_timer.wait_time = 0.5
-	_auto_timer.timeout.connect(_auto_play_step)
-	game_viewport.add_child(_auto_timer)
-	_auto_timer.start()
+	_auto_fade(AUTO_PLAY_ALPHA)
+	_auto_create_timer(0.5)
 
 func _stop_auto_play() -> void:
 	var was_auto = _auto_play
 	_auto_play = false
-	if is_instance_valid(_auto_timer):
-		_auto_timer.stop()
-		_auto_timer.queue_free()
-		_auto_timer = null
-	# 用户接手 -> 面板亮起来 + 话术 (游戏结束时不触发)
+	_auto_destroy_timer()
 	if was_auto and not _game_over and is_instance_valid(game_container) and game_container.modulate.a < 1.0:
-		var tw = game_container.create_tween().set_parallel(true)
-		tw.tween_property(game_container, "modulate:a", 1.0, 0.2)
-		for node in [_title_bubble, _side_container, _connector, _speech_bubble, _restart_bubble]:
-			if is_instance_valid(node):
-				tw.tween_property(node, "modulate:a", 1.0, 0.2)
+		_auto_fade(1.0)
 		var takeover_lines = [
 			"...交给你了。",
 			"操作权移交。",
@@ -686,22 +662,14 @@ func _stop_auto_play() -> void:
 func _auto_play_step() -> void:
 	if not _auto_play:
 		return
-	# 游戏结束 -> 等一会儿自动关闭
 	if _game_over:
-		_stop_auto_play()
-		if is_instance_valid(game_viewport):
-			await game_viewport.get_tree().create_timer(3.0).timeout
-			if is_instance_valid(game_viewport):
-				_close_game()
+		_auto_finish_and_close()
 		return
-	# 动画中跳过, 等下一次 tick
 	if _animating:
 		return
-	# AI 决策
 	var dir = _ai_pick_move()
 	if dir != Vector2i.ZERO:
 		_do_move(dir)
-	# 变速节奏 (随机化时间间隔, 像在思考)
 	if is_instance_valid(_auto_timer):
 		_auto_timer.wait_time = randf_range(0.25, 0.55)
 

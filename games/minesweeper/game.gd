@@ -54,6 +54,9 @@ var _mine_count_label: Label = null
 var _exploded_cell: int = -1  # 爆炸格子索引
 var _hover_idx: int = -1       # 鼠标悬停格子
 
+# ── 自动操作 (AI 自玩) ──
+# (_auto_play / _auto_timer 已在 BaseGame 中)
+
 # ── 话术池 (洗牌防重复) ──
 const _POOL_START := [
 	"区域扫描初始化。请标记威胁源。",
@@ -135,6 +138,7 @@ func start() -> void:
 
 func cleanup() -> void:
 	_timer_running = false
+	_stop_auto_play()
 	if is_instance_valid(_panel):
 		_panel.queue_free()
 	_panel = null
@@ -361,6 +365,9 @@ func _on_cell_input(idx: int, event: InputEvent) -> void:
 		return
 	if not (event is InputEventMouseButton) or not event.pressed:
 		return
+	# 用户输入 -> 接管自动操作
+	if _auto_play:
+		_stop_auto_play()
 	if event.button_index == MOUSE_BUTTON_LEFT:
 		_reveal_cell(idx)
 	elif event.button_index == MOUSE_BUTTON_RIGHT:
@@ -479,6 +486,7 @@ func _on_restart() -> void:
 	_say(_pick(_q_start, _POOL_START))
 
 func _on_close_cleanup() -> bool:
+	var was_auto = _auto_play
 	if not _game_over:
 		_game_over = true
 		_timer_running = false
@@ -486,7 +494,11 @@ func _on_close_cleanup() -> bool:
 		_save_scores()
 		game_finished.emit(Result.LOSE)
 		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
-			_pet.show_local_bubble(_pick(_q_lose, _POOL_CLOSE_MID))
+			if was_auto:
+				var auto_close_lines = ["...？", "...扫描中断。", "威胁评估被终止了。"]
+				_pet.show_local_bubble(auto_close_lines[randi() % auto_close_lines.size()])
+			else:
+				_pet.show_local_bubble(_pick(_q_lose, _POOL_CLOSE_MID))
 	return true
 
 # ══════════════════════════════════════════════
@@ -648,3 +660,136 @@ func _update_score_label() -> void:
 	)
 
 # 面板定位/拖拽/clamp 已统一到 BaseGame
+
+# ══════════════════════════════════════════════
+# 自动操作 (AI 自玩)
+# ══════════════════════════════════════════════
+
+## 启动自动操作模式
+func _start_auto_play() -> void:
+	_auto_play = true
+	var auto_start_lines = [
+		"威胁源扫描训练启动。",
+		"...危险区域演练。",
+		"自主扫雷开始。...想接手就点。",
+		"训练中。...观摩可以。",
+	]
+	if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
+		_pet.show_local_bubble(auto_start_lines[randi() % auto_start_lines.size()])
+	if is_instance_valid(game_viewport):
+		await game_viewport.get_tree().create_timer(0.6).timeout
+	if not _auto_play or not is_instance_valid(game_container):
+		return
+	_auto_fade(AUTO_PLAY_ALPHA)
+	_auto_create_timer(0.4)
+
+func _stop_auto_play() -> void:
+	var was_auto = _auto_play
+	_auto_play = false
+	_auto_destroy_timer()
+	if was_auto and not _game_over and is_instance_valid(game_container) and game_container.modulate.a < 1.0:
+		_auto_fade(1.0)
+		var takeover_lines = [
+			"...你来？好。",
+			"操作权移交。",
+			"接手确认。...小心地雷。",
+		]
+		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
+			_pet.show_local_bubble(takeover_lines[randi() % takeover_lines.size()])
+
+func _auto_play_step() -> void:
+	if not _auto_play:
+		return
+	if _game_over:
+		_auto_finish_and_close()
+		return
+	var action = _ai_pick_action()
+	if action.type == "reveal":
+		_reveal_cell(action.idx)
+	elif action.type == "flag":
+		if not _flagged[action.idx]:
+			_toggle_flag(action.idx)
+	if is_instance_valid(_auto_timer):
+		_auto_timer.wait_time = randf_range(0.3, 0.7)
+
+## AI 策略: 约束求解 + 概率猜测
+func _ai_pick_action() -> Dictionary:
+	# 首次点击: 选中心附近
+	if _first_click:
+		var center = (ROWS / 2) * COLS + (COLS / 2)
+		return {type = "reveal", idx = center}
+	
+	# ── 第一轮: 确定性推理 ──
+	var safe_cells: Array[int] = []   # 确定安全
+	var mine_cells: Array[int] = []   # 确定是雷
+	
+	for i in range(ROWS * COLS):
+		if not _revealed[i] or _adjacent[i] <= 0:
+			continue
+		# 这个已揭开的数字格周围的未揭开格子
+		var r = i / COLS
+		var c = i % COLS
+		var unrevealed: Array[int] = []
+		var flagged_count := 0
+		for dr in range(-1, 2):
+			for dc in range(-1, 2):
+				if dr == 0 and dc == 0: continue
+				var nr = r + dr
+				var nc = c + dc
+				if nr < 0 or nr >= ROWS or nc < 0 or nc >= COLS: continue
+				var ni = nr * COLS + nc
+				if _flagged[ni]:
+					flagged_count += 1
+				elif not _revealed[ni]:
+					unrevealed.append(ni)
+		var remaining_mines = _adjacent[i] - flagged_count
+		if remaining_mines == 0 and unrevealed.size() > 0:
+			# 周围雷全标完了, 剩下的都安全
+			for ui in unrevealed:
+				if ui not in safe_cells:
+					safe_cells.append(ui)
+		elif remaining_mines == unrevealed.size() and unrevealed.size() > 0:
+			# 剩下的未揭开格全是雷
+			for ui in unrevealed:
+				if ui not in mine_cells:
+					mine_cells.append(ui)
+	
+	# 优先提交确定的雷 (插旗)
+	if mine_cells.size() > 0:
+		return {type = "flag", idx = mine_cells[randi() % mine_cells.size()]}
+	# 然后揭开确定安全的
+	if safe_cells.size() > 0:
+		return {type = "reveal", idx = safe_cells[randi() % safe_cells.size()]}
+	
+	# ── 第二轮: 概率猜测 (角落优先) ──
+	var candidates: Array[int] = []
+	for i in range(ROWS * COLS):
+		if not _revealed[i] and not _flagged[i]:
+			candidates.append(i)
+	if candidates.is_empty():
+		return {type = "reveal", idx = 0}  # fallback
+	
+	# 角落 > 边缘 > 内部 (角落雷的概率统计上更低)
+	var corners: Array[int] = []
+	var edges: Array[int] = []
+	var inner: Array[int] = []
+	for ci in candidates:
+		var cr = ci / COLS
+		var cc = ci % COLS
+		var is_corner = (cr == 0 or cr == ROWS - 1) and (cc == 0 or cc == COLS - 1)
+		var is_edge = cr == 0 or cr == ROWS - 1 or cc == 0 or cc == COLS - 1
+		if is_corner:
+			corners.append(ci)
+		elif is_edge:
+			edges.append(ci)
+		else:
+			inner.append(ci)
+	
+	# 10% 概率随机猜 (给点"失误", 更有人味)
+	if randf() < 0.1:
+		return {type = "reveal", idx = candidates[randi() % candidates.size()]}
+	if corners.size() > 0:
+		return {type = "reveal", idx = corners[randi() % corners.size()]}
+	if edges.size() > 0:
+		return {type = "reveal", idx = edges[randi() % edges.size()]}
+	return {type = "reveal", idx = inner[randi() % inner.size()]}

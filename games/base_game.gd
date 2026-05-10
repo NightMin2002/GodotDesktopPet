@@ -22,6 +22,11 @@ var _pet: Node2D = null                    # 宠物原体引用
 var _wins: int = 0
 var _losses: int = 0
 
+# ── 自动操作 (AI 自玩, 通用基础设施) ──
+var _auto_play: bool = false
+var _auto_timer: Timer = null
+const AUTO_PLAY_ALPHA := 0.6  # 自玩时面板透明度
+
 # ── 教程面板 ──
 var _tutorial_panel: PanelContainer = null
 var _tutorial_visible: bool = false
@@ -124,6 +129,48 @@ func _save_scores() -> void:
 		return
 	SettingsManager.set_int("game_" + id + "_wins", _wins)
 	SettingsManager.set_int("game_" + id + "_losses", _losses)
+
+# ── 自玩通用基础设施 ──
+
+## 淡入/淡出面板 + 所有悬浮组件
+func _auto_fade(target_alpha: float, dur: float = 0.25) -> void:
+	if not is_instance_valid(game_container):
+		return
+	var tw = game_container.create_tween().set_parallel(true)
+	tw.tween_property(game_container, "modulate:a", target_alpha, dur)
+	for node in [_title_bubble, _side_container, _connector, _speech_bubble, _restart_bubble]:
+		if is_instance_valid(node):
+			tw.tween_property(node, "modulate:a", target_alpha, dur)
+
+## 创建自玩定时器 (连接到 _auto_play_step)
+func _auto_create_timer(interval: float = 0.4) -> void:
+	if is_instance_valid(_auto_timer):
+		_auto_timer.queue_free()
+	_auto_timer = Timer.new()
+	_auto_timer.wait_time = interval
+	_auto_timer.timeout.connect(_auto_play_step)
+	game_viewport.add_child(_auto_timer)
+	_auto_timer.start()
+
+## 销毁自玩定时器
+func _auto_destroy_timer() -> void:
+	if is_instance_valid(_auto_timer):
+		_auto_timer.stop()
+		_auto_timer.queue_free()
+		_auto_timer = null
+
+## 自玩步骤 (子类覆写, 实现 AI 逻辑)
+func _auto_play_step() -> void:
+	pass
+
+## 自玩结束 + 等待后自动关闭游戏 (子类在 game_over 时调用)
+func _auto_finish_and_close() -> void:
+	_auto_play = false
+	_auto_destroy_timer()
+	if is_instance_valid(game_viewport):
+		await game_viewport.get_tree().create_timer(3.0).timeout
+		if is_instance_valid(game_viewport):
+			_close_game()
 
 # ── 辅助方法 ──
 

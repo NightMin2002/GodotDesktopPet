@@ -116,4 +116,5 @@ func _do_free_roam() -> void:
 	pet._start_free_roam()
 
 func _do_auto_game() -> void:
-	EventBus.launch_game_auto.emit("2048")
+	var games = ["2048", "minesweeper"]
+	EventBus.launch_game_auto.emit(games[randi() % games.size()])
