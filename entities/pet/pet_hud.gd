@@ -9,11 +9,20 @@ var pet: RigidBody2D  # 宿主宠物引用
 # ── 本地定向气泡 ──
 const MAX_LOCAL_BUBBLES := 3
 var _local_bubbles: Array[PanelContainer] = []
+var _bubble_layer: CanvasLayer = null  # 高层级渲染层 (游戏面板之上)
 
 # ── 初始化 ──
 
 func init_bubbles() -> void:
 	pass  # 气泡按需创建，无需预初始化
+
+## 确保气泡渲染层存在 (layer 120, 高于游戏面板的 110)
+func _ensure_bubble_layer() -> void:
+	if is_instance_valid(_bubble_layer):
+		return
+	_bubble_layer = CanvasLayer.new()
+	_bubble_layer.layer = 120
+	pet.add_child(_bubble_layer)
 
 # ── 主更新 (由 pet._process 调用) ──
 
@@ -26,7 +35,6 @@ func update(delta: float) -> void:
 ## 创建一个本地气泡面板 (每次调用 show_bubble 动态创建)
 func _create_bubble_panel(message: String) -> PanelContainer:
 	var panel = PanelContainer.new()
-	panel.top_level = true  # 脱离刚体物理旋转
 	panel.custom_minimum_size = Vector2(60, 30)
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	
@@ -55,7 +63,8 @@ func show_bubble(message: String) -> void:
 			oldest.queue_free()
 	
 	var panel = _create_bubble_panel(message)
-	pet.add_child(panel)
+	_ensure_bubble_layer()
+	_bubble_layer.add_child(panel)
 	_local_bubbles.append(panel)
 	
 	# 弹入动画

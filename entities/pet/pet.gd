@@ -392,9 +392,9 @@ func _process(delta: float) -> void:
 	
 	# 更新子系统
 	pet_hud.update(delta)
-	# HUD 面板: 悬浮模式下转发鼠标状态
+	# HUD 面板: 悬浮模式下转发鼠标状态 (游戏态不响应 hover)
 	if not is_clone:
-		hud_panel.set_hover(is_mouse_on_pet())
+		hud_panel.set_hover(false if gaming.active else is_mouse_on_pet())
 	hud_panel.update(delta)
 	eye_behavior.update(delta)
 
@@ -437,9 +437,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		current_state.input(event)
 	
 	if event is InputEventMouseButton:
-		# 右键呼出全局追踪菜单 (HUD) — 仅原体响应
+		# 右键呼出全局追踪菜单 (HUD) — 仅原体响应, 游戏态屏蔽
 		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-			if not is_clone and is_mouse_on_pet():
+			if not is_clone and is_mouse_on_pet() and not gaming.active:
 				get_viewport().set_input_as_handled()
 				EventBus.show_context_menu.emit(self)
 
