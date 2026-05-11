@@ -160,12 +160,14 @@ func _position_panel(entry: Dictionary) -> void:
 	var y = btn_pos.y + btn_size.y / 2.0 - panel.size.y / 2.0
 	y = clampf(y, 8.0, vp_size.y - panel.size.y - 8.0)
 	panel.position = Vector2(x, y)
+	panel.set_meta("trigger_global_x", btn_pos.x + btn_size.x / 2.0)
 	panel.set_meta("trigger_global_y", btn_pos.y + btn_size.y / 2.0)
 	panel.queue_redraw()
 
 func _on_panel_draw(panel: PanelContainer) -> void:
 	if not panel.has_meta("trigger_global_y"): return
 	var trigger_global_y: float = panel.get_meta("trigger_global_y")
+	var trigger_global_x: float = panel.get_meta("trigger_global_x", 0.0)
 	var local_y = trigger_global_y - panel.global_position.y
 	
 	var arr_w = 6.0
@@ -175,7 +177,8 @@ func _on_panel_draw(panel: PanelContainer) -> void:
 	
 	var pts = PackedVector2Array()
 	var border_pts = PackedVector2Array()
-	var is_right_side = (_menu._menu_side == 1)
+	# 动态判断面板相对于触发按钮的方位 (如果面板在右侧，则其自身中心x > 触发中心x)
+	var is_right_side = (panel.global_position.x + panel.size.x/2.0 > trigger_global_x)
 	
 	if is_right_side:
 		pts.append(Vector2(2.0, local_y - arr_h/2.0))

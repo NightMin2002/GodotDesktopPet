@@ -34,9 +34,12 @@ func build() -> void:
 	_menu.add_child(panel)
 	panel.draw.connect(_on_panel_draw.bind(panel))
 
+
+
 func _on_panel_draw(panel: PanelContainer) -> void:
 	if not panel.has_meta("trigger_global_y"): return
 	var trigger_global_y: float = panel.get_meta("trigger_global_y")
+	var trigger_global_x: float = panel.get_meta("trigger_global_x", 0.0)
 	var local_y = trigger_global_y - panel.global_position.y
 	
 	var arr_w = 6.0
@@ -46,7 +49,7 @@ func _on_panel_draw(panel: PanelContainer) -> void:
 	
 	var pts = PackedVector2Array()
 	var border_pts = PackedVector2Array()
-	var is_right_side = (_menu._menu_side == 1)
+	var is_right_side = (panel.global_position.x + panel.size.x/2.0 > trigger_global_x)
 	
 	if is_right_side:
 		pts.append(Vector2(2.0, local_y - arr_h/2.0))

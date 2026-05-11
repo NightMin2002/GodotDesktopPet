@@ -223,6 +223,7 @@ func update_position(menu_id: String) -> void:
 	var y = btn_pos.y + btn_size.y / 2.0 - panel.size.y / 2.0
 	y = clampf(y, 8.0, vp_size.y - panel.size.y - 8.0)
 	panel.position = Vector2(x, y)
+	panel.set_meta("trigger_global_x", trigger_btn.global_position.x + trigger_btn.size.x / 2.0)
 	panel.set_meta("trigger_global_y", trigger_btn.global_position.y + trigger_btn.size.y / 2.0)
 	panel.queue_redraw()
 
@@ -342,6 +343,7 @@ func update_l3_position(menu_id: String) -> void:
 	var y = btn_pos.y + btn_size.y / 2.0 - panel.size.y / 2.0
 	y = clampf(y, 8.0, vp_size.y - panel.size.y - 8.0)
 	panel.position = Vector2(x, y)
+	panel.set_meta("trigger_global_x", trigger_btn.global_position.x + trigger_btn.size.x / 2.0)
 	panel.set_meta("trigger_global_y", trigger_btn.global_position.y + trigger_btn.size.y / 2.0)
 	panel.queue_redraw()
 
@@ -473,7 +475,9 @@ func _on_panel_draw(panel: PanelContainer) -> void:
 	
 	var pts = PackedVector2Array()
 	var border_pts = PackedVector2Array()
-	var is_right_side = (_menu._menu_side == 1)
+	var trigger_global_x: float = panel.get_meta("trigger_global_x", 0.0)
+	# 动态判断面板相对于触发器的方位 (如果面板在右边，则其自身中心x > 触发中心x)
+	var is_right_side = (panel.global_position.x + panel.size.x/2.0 > trigger_global_x)
 	
 	if is_right_side:
 		# 面板在触发器右侧，箭头朝左
