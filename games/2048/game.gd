@@ -18,6 +18,7 @@ var _cells: Array = []       # Array[Array[PanelContainer]]
 var _cell_labels: Array = [] # Array[Array[Label]]
 var _score_value: Label = null
 var _best_value: Label = null
+var _compare_label: Label = null
 
 # ── 游戏状态 ──
 var _board: Array = []  # Array[Array[int]] 4x4, 0=空
@@ -92,7 +93,7 @@ func get_tutorial_steps() -> Array[Dictionary]:
 
 func start() -> void:
 	_load_scores()
-	_best = SettingsManager.get_int("game_2048_best", 0)
+	_best = SettingsManager.get_int(_score_key("best"), 0)
 	_build_ui()
 	_reset_game()
 	_say(_pick(_q_start, _POOL_START))
@@ -138,6 +139,18 @@ func _build_ui() -> void:
 
 	_score_value = _create_score_box(score_row, "分数", "0")
 	_best_value = _create_score_box(score_row, "最高", "0")
+
+	# ── 双方对比行 ──
+	var my_best = SettingsManager.get_int(_score_key("best"), 0)
+	var pet_best = SettingsManager.get_int(_other_score_key("best"), 0)
+	var compare_label = Label.new()
+	compare_label.text = "我: %d | 宠: %d" % [my_best, pet_best]
+	compare_label.add_theme_font_size_override("font_size", 11)
+	compare_label.add_theme_color_override("font_color", Color(0.4, 0.5, 0.6, 0.6))
+	compare_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	compare_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(compare_label)
+	_compare_label = compare_label
 
 	# ── 棋盘 ──
 	var board_wrapper = PanelContainer.new()
@@ -508,10 +521,13 @@ func _update_score() -> void:
 		_best = _score
 	if _best_value:
 		_best_value.text = str(_best)
+	if _compare_label:
+		var other_best = SettingsManager.get_int(_other_score_key("best"), 0)
+		_compare_label.text = "我: %d | 宠: %d" % ([_best, other_best] if not _auto_play else [other_best, _best])
 
 ## 保存最高分到 SettingsManager
 func _save_best() -> void:
-	SettingsManager.set_int("game_2048_best", _best)
+	SettingsManager.set_int(_score_key("best"), _best)
 
 func _get_tile_color(value: int, hue: float) -> Color:
 	match value:

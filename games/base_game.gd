@@ -115,21 +115,33 @@ func _create_game_panel_bg() -> StyleBoxFlat:
 
 # ── 战绩持久化 ──
 
+## 战绩存储 key (自玩/手动分开)
+func _score_key(suffix: String) -> String:
+	var id = get_game_id()
+	if _auto_play:
+		return "game_" + id + "_auto_" + suffix
+	return "game_" + id + "_" + suffix
+
+## 读取对方数据的 key (自玩时读用户, 手动时读宠物)
+func _other_score_key(suffix: String) -> String:
+	var id = get_game_id()
+	if _auto_play:
+		return "game_" + id + "_" + suffix
+	return "game_" + id + "_auto_" + suffix
+
 ## 从 SettingsManager 加载战绩 (子类 start() 中调用)
 func _load_scores() -> void:
-	var id = get_game_id()
-	if id == "":
+	if get_game_id() == "":
 		return
-	_wins = SettingsManager.get_int("game_" + id + "_wins", 0)
-	_losses = SettingsManager.get_int("game_" + id + "_losses", 0)
+	_wins = SettingsManager.get_int(_score_key("wins"), 0)
+	_losses = SettingsManager.get_int(_score_key("losses"), 0)
 
 ## 保存战绩到 SettingsManager (结束/关闭时调用)
 func _save_scores() -> void:
-	var id = get_game_id()
-	if id == "":
+	if get_game_id() == "":
 		return
-	SettingsManager.set_int("game_" + id + "_wins", _wins)
-	SettingsManager.set_int("game_" + id + "_losses", _losses)
+	SettingsManager.set_int(_score_key("wins"), _wins)
+	SettingsManager.set_int(_score_key("losses"), _losses)
 
 # ── 游戏熟练度 (委托 SettingsManager) ──
 

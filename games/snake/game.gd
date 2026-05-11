@@ -41,6 +41,7 @@ var _score_label: RichTextLabel = null
 var _info_label: Label = null
 var _record_label: RichTextLabel = null
 var _best_length: int = 0  # 历史最长记录 (持久化)
+var _compare_label: Label = null
 
 # ── 话术池 (洗牌防重复) ──
 const _POOL_START := [
@@ -128,7 +129,7 @@ func get_default_panel_size() -> Vector2:
 
 func start() -> void:
 	_load_scores()
-	_best_length = SettingsManager.get_int("game_snake_best_len", 3)
+	_best_length = SettingsManager.get_int(_score_key("best_len"), 3)
 	_build_ui()
 	_reset_game()
 	_say(_pick(_q_start, _POOL_START))
@@ -187,6 +188,17 @@ func _build_ui() -> void:
 	_info_label.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7, 0.6))
 	_info_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(_info_label)
+
+	# ── 双方对比行 ──
+	var my_len = SettingsManager.get_int(_score_key("best_len"), 3)
+	var pet_len = SettingsManager.get_int(_other_score_key("best_len"), 3)
+	_compare_label = Label.new()
+	_compare_label.text = "我的最长: %d | 宠物最长: %d" % [my_len, pet_len]
+	_compare_label.add_theme_font_size_override("font_size", 11)
+	_compare_label.add_theme_color_override("font_color", Color(0.4, 0.5, 0.6, 0.6))
+	_compare_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_compare_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_compare_label)
 
 	# 网格区域
 	var grid_wrapper = CenterContainer.new()
@@ -321,7 +333,10 @@ func _end_game(won: bool) -> void:
 	# 更新最长记录
 	if _snake.size() > _best_length:
 		_best_length = _snake.size()
-		SettingsManager.set_int("game_snake_best_len", _best_length)
+		SettingsManager.set_int(_score_key("best_len"), _best_length)
+	if _compare_label:
+		var other_len = SettingsManager.get_int(_other_score_key("best_len"), 3)
+		_compare_label.text = "我的最长: %d | 宠物最长: %d" % ([_best_length, other_len] if not _auto_play else [other_len, _best_length])
 	if won:
 		_wins += 1
 		_add_gaming_xp(50)

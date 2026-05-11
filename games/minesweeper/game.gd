@@ -37,6 +37,7 @@ var _flag_count: int = 0           # 已插旗数
 var _timer_running: bool = false
 var _elapsed: float = 0.0
 var _timer_label: Label = null
+var _compare_label: Label = null
 
 # ── UI 引用 ──
 var _panel: PanelContainer = null
@@ -210,6 +211,19 @@ func _build_ui() -> void:
 
 	info_wrapper.add_child(info_bar)
 	vbox.add_child(info_wrapper)
+
+	# ── 双方对比行 ──
+	var my_w = SettingsManager.get_int(_score_key("wins"), 0)
+	var my_l = SettingsManager.get_int(_score_key("losses"), 0)
+	var pet_w = SettingsManager.get_int(_other_score_key("wins"), 0)
+	var pet_l = SettingsManager.get_int(_other_score_key("losses"), 0)
+	_compare_label = Label.new()
+	_compare_label.text = "我: %d/%d | 宠: %d/%d" % [my_w, my_w + my_l, pet_w, pet_w + pet_l]
+	_compare_label.add_theme_font_size_override("font_size", 11)
+	_compare_label.add_theme_color_override("font_color", Color(0.4, 0.5, 0.6, 0.6))
+	_compare_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_compare_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_compare_label)
 
 	# ── 雷区格子 (Control 节点树方式) ──
 	var grid_wrapper = CenterContainer.new()
