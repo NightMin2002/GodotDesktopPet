@@ -27,6 +27,9 @@ func build() -> void:
 	_register_radio("window_mode", 0, "wm_free",     WindowFreePreview.new(),     "在窗口间自由行走跳跃", Vector2(180, 100))
 	_register_radio("window_mode", 1, "wm_confined",  WindowConfinedPreview.new(), "被困在窗口内部无法离开", Vector2(180, 100))
 	_register_radio("window_mode", 2, "wm_repelled",  WindowRepelledPreview.new(), "被窗口推开无法进入", Vector2(180, 100))
+	# ── 指令模式预览 (L3: "behavior_mode") ──
+	_register_radio("behavior_mode", 0, "bm_free",  BehaviorFreePreview.new(),  "活力满满，随意滚动跳跃", Vector2(180, 100))
+	_register_radio("behavior_mode", 1, "bm_quiet", BehaviorQuietPreview.new(), "安安静静，待机休眠不乱跑", Vector2(180, 100))
 
 ## 每帧定位跟踪 (由 context_menu._process 调用)
 func update_positions() -> void:
@@ -563,3 +566,191 @@ class WindowRepelledPreview extends ViewBase:
 		var p2 = pos - dir * 2.0 + perp * 4.0
 		var p3 = pos - dir * 2.0 - perp * 4.0
 		draw_colored_polygon(PackedVector2Array([p1, p2, p3]), color)
+
+# ═══════════════════════════════════════════
+# 动画预览 Control: 指令 - 自由行动
+# ═══════════════════════════════════════════
+class BehaviorFreePreview extends ViewBase:
+	var _time: float = 0.0
+
+	func _process(delta: float) -> void:
+		_time += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		var cx = size.x / 2.0
+		var r = 6.0
+		var ground_y = size.y * 0.75
+		var hue = EventBus.ui_hue
+		
+		# 极简发光地面线
+		draw_line(Vector2(cx - 60, ground_y), Vector2(cx + 60, ground_y), Color(0.3, 0.5, 0.8, 0.2), 2.0, true)
+		draw_line(Vector2(cx - 30, ground_y), Vector2(cx + 30, ground_y), Color(0.4, 0.7, 1.0, 0.5), 1.0, true)
+		
+		# 相位动画：周期跳跃与左右跑动
+		var phase = fmod(_time * 0.6, 1.0)
+		var px = cx
+		var py = ground_y - r
+		
+		if phase < 0.3:
+			# 向右大跳
+			var t = phase / 0.3
+			px = lerpf(cx - 40, cx + 10, t)
+			py = ground_y - r - sin(t * PI) * 35.0
+		elif phase < 0.5:
+			# 向左小跳
+			var t = (phase - 0.3) / 0.2
+			px = lerpf(cx + 10, cx - 20, t)
+			py = ground_y - r - sin(t * PI) * 15.0
+		elif phase < 0.7:
+			# 向右小跳
+			var t = (phase - 0.5) / 0.2
+			px = lerpf(cx - 20, cx, t)
+			py = ground_y - r - sin(t * PI) * 10.0
+		elif phase < 1.0:
+			# 原地蓄力准备下一次大跳
+			var t = (phase - 0.7) / 0.3
+			px = cx - 40 * t
+			py = ground_y - r
+		
+		# 残影速度线 (充满活力)
+		var path_c = Color.from_hsv(hue, 0.5, 1.0, 0.2)
+		for i in range(1, 5):
+			# 用微小的延迟采样前面的时间点
+			var past_phase = fmod((_time - i * 0.04) * 0.6, 1.0)
+			var ppx = cx
+			var ppy = ground_y - r
+			if past_phase < 0.3:
+				var t = past_phase / 0.3
+				ppx = lerpf(cx - 40, cx + 10, t)
+				ppy = ground_y - r - sin(t * PI) * 35.0
+			elif past_phase < 0.5:
+				var t = (past_phase - 0.3) / 0.2
+				ppx = lerpf(cx + 10, cx - 20, t)
+				ppy = ground_y - r - sin(t * PI) * 15.0
+			elif past_phase < 0.7:
+				var t = (past_phase - 0.5) / 0.2
+				ppx = lerpf(cx - 20, cx, t)
+				ppy = ground_y - r - sin(t * PI) * 10.0
+			elif past_phase < 1.0:
+				var t = (past_phase - 0.7) / 0.3
+				ppx = cx - 40 * t
+				ppy = ground_y - r
+			
+			draw_circle(Vector2(ppx, ppy), r - i * 0.8, Color(path_c.r, path_c.g, path_c.b, 0.4 - i * 0.08))
+
+		_draw_holo_pet(Vector2(px, py), hue, r)
+
+# ═══════════════════════════════════════════
+# 动画预览 Control: 指令 - 安静待命
+# ═══════════════════════════════════════════
+class BehaviorQuietPreview extends ViewBase:
+	var _time: float = 0.0
+
+	func _process(delta: float) -> void:
+		_time += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		var cx = size.x / 2.0
+		var r = 6.0
+		var ground_y = size.y * 0.75
+		var hue = EventBus.ui_hue
+		
+		# 极简发光地面线
+		draw_line(Vector2(cx - 60, ground_y), Vector2(cx + 60, ground_y), Color(0.3, 0.5, 0.8, 0.2), 2.0, true)
+		draw_line(Vector2(cx - 30, ground_y), Vector2(cx + 30, ground_y), Color(0.4, 0.7, 1.0, 0.5), 1.0, true)
+		
+		# 屏幕角落指示器 (表示 retreat_target)
+		var corner_x = cx + 55.0
+		draw_line(Vector2(corner_x, ground_y), Vector2(corner_x, ground_y - 15.0), Color(0.2, 0.7, 0.9, 0.4), 2.0, true)
+		draw_line(Vector2(corner_x, ground_y), Vector2(corner_x - 10.0, ground_y), Color(0.2, 0.7, 0.9, 0.4), 2.0, true)
+		
+		# 动作流程
+		# 0.0~0.25: 滚向角落 (retreat)
+		# 0.25~0.4: 停泊到位，加上阻尼稳住
+		# 0.4~1.0: 休眠阶段 (hibernate)
+		var loop_time = 4.0
+		var phase = fmod(_time, loop_time) / loop_time
+		var px = cx - 20.0
+		var py = ground_y - r
+		var drowsy_amt = 0.0
+		var show_zzz = false
+		
+		if phase < 0.25:
+			# 滚动寻位
+			var t = phase / 0.25
+			# 用 ease_out 让它减速停靠
+			t = 1.0 - (1.0 - t) * (1.0 - t)
+			px = lerpf(cx - 40.0, corner_x - r - 3.0, t)
+		elif phase < 0.4:
+			# 停靠完毕，开始闭眼
+			px = corner_x - r - 3.0
+			var t = (phase - 0.25) / 0.15
+			drowsy_amt = lerpf(0.0, 0.8, t)
+		else:
+			# 彻底休眠，呼吸闭眼
+			px = corner_x - r - 3.0
+			drowsy_amt = 0.8 + sin((phase - 0.4) * TAU * 3.0) * 0.1
+			show_zzz = true
+		
+		var pet_center = Vector2(px, py)
+		
+		# 本体底座光晕
+		var glow_c = Color.from_hsv(hue, 0.6, 1.0, 0.15)
+		draw_circle(pet_center, r + 2.5, glow_c, true, -1.0, true)
+		# 立体核心网络
+		var c1 = Color.from_hsv(hue, 0.5, 0.9, 0.5)
+		draw_circle(pet_center, r, c1, true, -1.0, true)
+		var c2 = Color.from_hsv(hue, 0.3, 1.0, 0.7)
+		draw_circle(pet_center, r * 0.7, c2, true, -1.0, true)
+		
+		# 休眠挡板 (机械眼睑) 覆盖核心网
+		if drowsy_amt > 0.05:
+			# 画上半闭的深蓝灰色挡板多边形
+			var close_px = r * drowsy_amt * 1.5
+			var flat_y = clampf(-r + close_px, -r + 0.1, r - 0.1)
+			var dx = sqrt(maxf(0.0, r * r - flat_y * flat_y))
+			var pts = PackedVector2Array()
+			var arc_steps = 16
+			var angle_l = atan2(flat_y, -dx)
+			var angle_r = atan2(flat_y, dx)
+			var span = angle_r - angle_l
+			if span < 0: span += TAU
+			for i in range(arc_steps + 1):
+				var t = float(i) / float(arc_steps)
+				var a = angle_l + span * t
+				pts.append(Vector2(cos(a), sin(a)) * r)
+			if pts.size() >= 3:
+				var shutter_offset = PackedVector2Array()
+				for pt in pts:
+					shutter_offset.append(pet_center + pt)
+				var shutter_c = Color.from_hsv(hue, 0.5, 0.25, 1.0) # 暗色遮罩
+				draw_colored_polygon(shutter_offset, shutter_c)
+				draw_polyline(shutter_offset, shutter_c, 1.0, true)
+				
+		# 锐利边界收尾
+		var rim_c = Color.from_hsv(hue, 0.2, 1.0, 0.8)
+		draw_arc(pet_center, r, 0, TAU, 24, rim_c, 1.0, true)
+		
+		# 漂浮 Zzz 气泡
+		if show_zzz:
+			var z_phase = fmod(_time * 0.8, 1.0)
+			for i in range(3):
+				var offset_phase = fmod(z_phase + float(i) * 0.33, 1.0)
+				# 抛物线漂浮 (上飘且微微右偏)
+				var zx = pet_center.x + offset_phase * 15.0
+				var zy = pet_center.y - r - 8.0 - offset_phase * 25.0
+				var alpha = sin(offset_phase * PI) * 0.8
+				var z_color = Color(0.5, 0.8, 1.0, alpha)
+				var s = 0.5 + offset_phase * 0.8
+				
+				# 画个缩放的Z折线
+				var z_pts = PackedVector2Array([
+					Vector2(zx - 3*s, zy - 3*s),
+					Vector2(zx + 3*s, zy - 3*s),
+					Vector2(zx - 3*s, zy + 3*s),
+					Vector2(zx + 3*s, zy + 3*s)
+				])
+				draw_polyline(z_pts, z_color, 1.2 * s, true)
+

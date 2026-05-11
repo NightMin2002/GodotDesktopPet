@@ -219,8 +219,8 @@ func _build_sec_behavior() -> void:
 	_submenu._l3_parent_map["window_mode"] = "sec_behavior"
 
 	_submenu.create_radio("behavior_mode", [
-		{"value": 0, "label": "自由行动", "desc": "活力满满，随意滚动跳跃"},
-		{"value": 1, "label": "安静待命", "desc": "安安静静，乖乖不动"},
+		{"value": 0, "label": "自由行动"},
+		{"value": 1, "label": "安静待命"},
 	], _on_radio_behavior_mode, 3)
 	_submenu._l3_parent_map["behavior_mode"] = "sec_behavior"
 
