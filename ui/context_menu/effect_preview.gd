@@ -36,6 +36,7 @@ func build() -> void:
 	# ── 模式预览 (L3: "mode") ──
 	_register_toggle("eye_track", "mode", EyeTrackPreview.new(), "随着鼠标移动，宠物始终注视着光标", Vector2(180, 100))
 	_register_toggle("anti_gravity", "mode", AntiGravityPreview.new(), "重力场反转，宠物将吸附在屏幕顶部行走", Vector2(180, 100))
+	_register_toggle("free_roam", "mode", FreeRoamPreview.new(), "虚空生成能量踏板，宠物可在屏幕内四处落脚攀跃", Vector2(180, 100))
 ## 每帧定位跟踪 (由 context_menu._process 调用)
 func update_positions() -> void:
 	for entry in _entries.values():
@@ -1031,3 +1032,97 @@ class AntiGravityPreview extends ViewBase:
 			
 		# 纯净展示，无面部动画
 		_draw_holo_pet(Vector2(cx, pet_y), hue, r)
+
+# ═══════════════════════════════════════════
+# 动画预览 Control: 模式 - 空间跳跃
+# ═══════════════════════════════════════════
+class FreeRoamPreview extends ViewBase:
+	var _time: float = 0.0
+
+	func _process(delta: float) -> void:
+		_time += delta
+		queue_redraw()
+
+	func _draw_plat(plat_pos: Vector2, hw: float, alpha: float, hue: float) -> void:
+		if alpha <= 0.01: return
+		var c = Color.from_hsv(hue, 0.6, 1.0, alpha)
+		# 极简能量束风格踏板
+		draw_line(plat_pos + Vector2(-hw, 0), plat_pos + Vector2(hw, 0), Color(c.r, c.g, c.b, alpha * 0.15), 8.0, true)
+		draw_line(plat_pos + Vector2(-hw, 0), plat_pos + Vector2(hw, 0), Color(c.r, c.g, c.b, alpha * 0.4), 3.0, true)
+		draw_line(plat_pos + Vector2(-hw, 0), plat_pos + Vector2(hw, 0), Color(c.r, c.g, c.b, alpha * 0.9), 1.5, true)
+		var dot_c = Color(c.r, c.g, c.b, alpha * 0.95)
+		draw_circle(plat_pos + Vector2(-hw, 0), 2.5, dot_c, true, -1.0, true)
+		draw_circle(plat_pos + Vector2(hw, 0), 2.5, dot_c, true, -1.0, true)
+
+	func _draw() -> void:
+		var cx = size.x / 2.0
+		var cy = size.y / 2.0
+		var r = 14.0
+		var hue = EventBus.ui_hue
+		
+		var loop = 3.5
+		var phase = fmod(_time, loop)
+		var t = 0.0
+		
+		# 定义两个悬空踏板的核心落点
+		var p1 = Vector2(cx - 30.0, cy + 20.0)
+		var p2 = Vector2(cx + 30.0, cy - 10.0)
+		
+		var pet_pos = Vector2.ZERO
+		var p1_alpha = 0.0
+		var p2_alpha = 0.0
+		var rot = 0.0
+		
+		if phase < 1.0:
+			pet_pos = p1
+			p1_alpha = 1.0
+			p2_alpha = 0.0
+		elif phase < 1.5:
+			# 从左下跳往右上
+			t = (phase - 1.0) / 0.5
+			var x = lerpf(p1.x, p2.x, t)
+			var base_y = lerpf(p1.y, p2.y, t)
+			pet_pos = Vector2(x, base_y - sin(t * PI) * 50.0)
+			
+			p1_alpha = 1.0 - t
+			p2_alpha = t
+			rot = sin(t * PI) * 0.4
+			
+			_draw_dotted_parabola(p1, p2, -50.0, Color.from_hsv(hue, 0.4, 1.0, 0.4))
+		elif phase < 2.5:
+			pet_pos = p2
+			p1_alpha = 0.0
+			p2_alpha = 1.0
+		elif phase < 3.0:
+			# 这边跳得较慢较低，平铺直叙地落回去
+			t = (phase - 2.5) / 0.5
+			var x = lerpf(p2.x, p1.x, t)
+			var base_y = lerpf(p2.y, p1.y, t)
+			pet_pos = Vector2(x, base_y - sin(t * PI) * 20.0)
+			
+			p1_alpha = t
+			p2_alpha = 1.0 - t
+			rot = -sin(t * PI) * 0.3
+			
+			_draw_dotted_parabola(p2, p1, -20.0, Color.from_hsv(hue, 0.4, 1.0, 0.4))
+		else:
+			# 落地带有微小缓冲
+			pet_pos = p1
+			p1_alpha = 1.0
+			p2_alpha = 0.0
+			var bump = sin((phase - 3.0)/0.5 * PI)
+			pet_pos.y += bump * 3.0 
+			
+		var plat_w = 20.0
+		_draw_plat(p1 + Vector2(0, r), plat_w, p1_alpha, hue)
+		_draw_plat(p2 + Vector2(0, r), plat_w, p2_alpha, hue)
+		
+		# 极简虚空漂浮粒子，营造高空自由悬浮感
+		for i in range(5):
+			var hash_x = fmod(i * 137.5, size.x)
+			var hash_y = fmod(i * 93.1 - _time * (10.0 + i*5.0), size.y + 40) - 20
+			var p_alpha = sin(_time * 2.0 + i) * 0.3 + 0.3
+			draw_circle(Vector2(hash_x, hash_y), 1.0 + fmod(i*0.3, 1.5), Color(1, 1, 1, p_alpha * 0.5))
+		
+		# 我们不需要 look_offset 因为这个只是动作演示，睁着大眼睛即可
+		_draw_holo_pet(pet_pos, hue, r, rot)
