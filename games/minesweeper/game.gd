@@ -763,35 +763,60 @@ func _ai_pick_action() -> Dictionary:
 	if safe_cells.size() > 0:
 		return {type = "reveal", idx = safe_cells[randi() % safe_cells.size()]}
 	
-	# ── 第二轮: 概率猜测 (角落优先) ──
+	# ── 第二轮: 概率估算猜测 ──
 	var candidates: Array[int] = []
 	for i in range(ROWS * COLS):
 		if not _revealed[i] and not _flagged[i]:
 			candidates.append(i)
 	if candidates.is_empty():
 		return {type = "reveal", idx = 0}  # fallback
-	
-	# 角落 > 边缘 > 内部 (角落雷的概率统计上更低)
-	var corners: Array[int] = []
-	var edges: Array[int] = []
-	var inner: Array[int] = []
+
+	# 按熟练度决定: 失误时随机选, 否则选最安全的
+	if randf() < _get_mistake_rate():
+		return {type = "reveal", idx = candidates[randi() % candidates.size()]}
+
+	# 对每个候选格估算危险概率
+	var total_remaining_mines = MINE_COUNT - _flag_count
+	var total_unrevealed = candidates.size()
+	var base_rate = float(total_remaining_mines) / maxf(float(total_unrevealed), 1.0)
+
+	var best_idx = candidates[0]
+	var best_danger = 1.0
 	for ci in candidates:
 		var cr = ci / COLS
 		var cc = ci % COLS
-		var is_corner = (cr == 0 or cr == ROWS - 1) and (cc == 0 or cc == COLS - 1)
-		var is_edge = cr == 0 or cr == ROWS - 1 or cc == 0 or cc == COLS - 1
-		if is_corner:
-			corners.append(ci)
-		elif is_edge:
-			edges.append(ci)
-		else:
-			inner.append(ci)
-	
-	# 按熟练度决定失误率
-	if randf() < _get_mistake_rate():
-		return {type = "reveal", idx = candidates[randi() % candidates.size()]}
-	if corners.size() > 0:
-		return {type = "reveal", idx = corners[randi() % corners.size()]}
-	if edges.size() > 0:
-		return {type = "reveal", idx = edges[randi() % edges.size()]}
-	return {type = "reveal", idx = inner[randi() % inner.size()]}
+		var max_prob = -1.0  # 最高危险度 (来自相邻约束)
+		# 检查所有相邻的已揭开数字格
+		for dr in range(-1, 2):
+			for dc in range(-1, 2):
+				if dr == 0 and dc == 0: continue
+				var nr = cr + dr
+				var nc = cc + dc
+				if nr < 0 or nr >= ROWS or nc < 0 or nc >= COLS: continue
+				var ni = nr * COLS + nc
+				if not _revealed[ni] or _adjacent[ni] <= 0: continue
+				# 这个数字格周围还有多少未知格和剩余雷
+				var adj_unrevealed := 0
+				var adj_flagged := 0
+				for dr2 in range(-1, 2):
+					for dc2 in range(-1, 2):
+						if dr2 == 0 and dc2 == 0: continue
+						var nr2 = nr + dr2
+						var nc2 = nc + dc2
+						if nr2 < 0 or nr2 >= ROWS or nc2 < 0 or nc2 >= COLS: continue
+						var ni2 = nr2 * COLS + nc2
+						if _flagged[ni2]:
+							adj_flagged += 1
+						elif not _revealed[ni2]:
+							adj_unrevealed += 1
+				var remaining = _adjacent[ni] - adj_flagged
+				if adj_unrevealed > 0:
+					var prob = float(remaining) / float(adj_unrevealed)
+					max_prob = maxf(max_prob, prob)
+		# 没有相邻约束的格子用全局基础概率
+		var danger = max_prob if max_prob >= 0.0 else base_rate
+		if danger < best_danger:
+			best_danger = danger
+			best_idx = ci
+
+	return {type = "reveal", idx = best_idx}
