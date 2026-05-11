@@ -225,9 +225,9 @@ func _build_sec_behavior() -> void:
 	_submenu._l3_parent_map["behavior_mode"] = "sec_behavior"
 
 	_submenu.create_radio("gait", [
-		{"value": 0, "label": "蹦跳为主", "desc": "纯蹦跳移动，不会滚动"},
-		{"value": 1, "label": "滚动为主", "desc": "纯滚动移动，不会跳跃"},
-		{"value": 2, "label": "混合平衡", "desc": "蹦跳和滚动各半，动静结合"},
+		{"value": 0, "label": "蹦跳为主"},
+		{"value": 1, "label": "滚动为主"},
+		{"value": 2, "label": "混合平衡"},
 	], _on_radio_gait, 3)
 	_submenu._l3_parent_map["gait"] = "sec_behavior"
 

@@ -27,9 +27,12 @@ func build() -> void:
 	_register_radio("window_mode", 0, "wm_free",     WindowFreePreview.new(),     "在窗口间自由行走跳跃", Vector2(180, 100))
 	_register_radio("window_mode", 1, "wm_confined",  WindowConfinedPreview.new(), "被困在窗口内部无法离开", Vector2(180, 100))
 	_register_radio("window_mode", 2, "wm_repelled",  WindowRepelledPreview.new(), "被窗口推开无法进入", Vector2(180, 100))
-	# ── 指令模式预览 (L3: "behavior_mode") ──
 	_register_radio("behavior_mode", 0, "bm_free",  BehaviorFreePreview.new(),  "活力满满，随意滚动跳跃", Vector2(180, 100))
 	_register_radio("behavior_mode", 1, "bm_quiet", BehaviorQuietPreview.new(), "安安静静，待机休眠不乱跑", Vector2(180, 100))
+	# ── 步态模式预览 (L3: "gait") ──
+	_register_radio("gait", 0, "g_jump", GaitJumpPreview.new(),  "纯蹦跳抛物移动，绝不贴地", Vector2(180, 100))
+	_register_radio("gait", 1, "g_roll", GaitRollPreview.new(),  "纯滚动贴地平移，绝不跳跃", Vector2(180, 100))
+	_register_radio("gait", 2, "g_mix",  GaitMixedPreview.new(), "二者结合，动静自如的平衡", Vector2(180, 100))
 
 ## 每帧定位跟踪 (由 context_menu._process 调用)
 func update_positions() -> void:
@@ -183,6 +186,25 @@ class ViewBase extends Control:
 		# 锐利的发光边界
 		var rim_c = Color.from_hsv(hue, 0.2, 1.0, 0.8)
 		draw_arc(center, r, 0, TAU, 24, rim_c, 1.0, true)
+
+	func _draw_holo_pet_rot(center: Vector2, hue: float, r: float = 6.0, rot: float = 0.0) -> void:
+		_draw_holo_pet(center, hue, r)
+		# 加点能体现旋转的十字高光，配合发光层次
+		var c = Color.from_hsv(hue, 0.1, 1.0, 0.9)
+		for i in range(4):
+			var a = rot + i * PI / 2.0
+			var pt = center + Vector2(cos(a), sin(a)) * (r * 0.7)
+			draw_circle(pt, 1.2, c, true, -1.0, true)
+			draw_line(center + Vector2(cos(a), sin(a)) * (r * 0.3), pt, Color(c, 0.4), 1.0, true)
+
+	func _draw_dotted_parabola(start: Vector2, end: Vector2, height_offset: float, color: Color) -> void:
+		var steps = 12
+		for i in range(steps + 1):
+			var t = float(i) / steps
+			var x = lerpf(start.x, end.x, t)
+			var base_y = lerpf(start.y, end.y, t)
+			var y = base_y + height_offset * sin(t * PI)
+			draw_circle(Vector2(x, y), 1.2, color, true, -1.0, true)
 
 # ═══════════════════════════════════════════
 # 动画预览 Control: 撞击冲击波
@@ -758,4 +780,135 @@ class BehaviorQuietPreview extends ViewBase:
 					Vector2(zx + 3*s, zy + 3*s)
 				])
 				draw_polyline(z_pts, z_color, 1.2 * s, true)
+
+# ═══════════════════════════════════════════
+# 动画预览 Control: 步态 - 蹦跳为主
+# ═══════════════════════════════════════════
+class GaitJumpPreview extends ViewBase:
+	var _time: float = 0.0
+
+	func _process(delta: float) -> void:
+		_time += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		var cx = size.x / 2.0
+		var r = 6.0
+		var ground_y = size.y * 0.75
+		var hue = EventBus.ui_hue
+		
+		draw_line(Vector2(cx - 60, ground_y), Vector2(cx + 60, ground_y), Color(0.3, 0.5, 0.8, 0.2), 2.0, true)
+		draw_line(Vector2(cx - 30, ground_y), Vector2(cx + 30, ground_y), Color(0.4, 0.7, 1.0, 0.5), 1.0, true)
+
+		var arc_c = Color.from_hsv(hue, 0.6, 1.0, 0.3)
+		_draw_dotted_parabola(Vector2(cx - 40, ground_y - r), Vector2(cx + 40, ground_y - r), -35.0, arc_c)
+
+		var loop = 1.0
+		var phase = fmod(_time, loop) / loop
+		var px = cx
+		var py = ground_y - r
+		
+		if phase < 0.5:
+			var t = phase / 0.5
+			px = lerpf(cx - 40, cx + 40, t)
+			py = ground_y - r - sin(t * PI) * 35.0
+		else:
+			var t = (phase - 0.5) / 0.5
+			px = lerpf(cx + 40, cx - 40, t)
+			py = ground_y - r - sin(t * PI) * 35.0
+			
+		_draw_holo_pet(Vector2(px, py), hue, r)
+
+# ═══════════════════════════════════════════
+# 动画预览 Control: 步态 - 滚动为主
+# ═══════════════════════════════════════════
+class GaitRollPreview extends ViewBase:
+	var _time: float = 0.0
+
+	func _process(delta: float) -> void:
+		_time += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		var cx = size.x / 2.0
+		var r = 6.0
+		var ground_y = size.y * 0.75
+		var hue = EventBus.ui_hue
+		
+		# 极简发光地面线
+		draw_line(Vector2(cx - 60, ground_y), Vector2(cx + 60, ground_y), Color(0.3, 0.5, 0.8, 0.2), 2.0, true)
+		draw_line(Vector2(cx - 30, ground_y), Vector2(cx + 30, ground_y), Color(0.4, 0.7, 1.0, 0.5), 1.0, true)
+
+		var loop = 1.6
+		var phase = fmod(_time, loop) / loop
+		var px = cx
+		var py = ground_y - r
+		var rot = 0.0
+		
+		if phase < 0.5:
+			var t = phase / 0.5
+			var eased_t = smoothstep(0.0, 1.0, t)
+			px = lerpf(cx - 40, cx + 40, eased_t)
+			rot = px * 0.6
+		else:
+			var t = (phase - 0.5) / 0.5
+			var eased_t = smoothstep(0.0, 1.0, t)
+			px = lerpf(cx + 40, cx - 40, eased_t)
+			rot = px * 0.6
+			
+
+
+		_draw_holo_pet_rot(Vector2(px, py), hue, r, rot)
+
+# ═══════════════════════════════════════════
+# 动画预览 Control: 步态 - 混合平衡
+# ═══════════════════════════════════════════
+class GaitMixedPreview extends ViewBase:
+	var _time: float = 0.0
+
+	func _process(delta: float) -> void:
+		_time += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		var cx = size.x / 2.0
+		var r = 6.0
+		var ground_y = size.y * 0.75
+		var hue = EventBus.ui_hue
+		
+		# 极简发光地面线
+		draw_line(Vector2(cx - 60, ground_y), Vector2(cx + 60, ground_y), Color(0.3, 0.5, 0.8, 0.2), 2.0, true)
+		draw_line(Vector2(cx - 30, ground_y), Vector2(cx + 30, ground_y), Color(0.4, 0.7, 1.0, 0.5), 1.0, true)
+
+		var arc_c = Color.from_hsv(hue, 0.6, 1.0, 0.3)
+		var loop = 2.0
+		var phase = fmod(_time, loop) / loop
+		var px = cx
+		var py = ground_y - r
+		var rot = 0.0
+		
+		if phase < 0.25:
+			var t = phase / 0.25
+			var eased_t = smoothstep(0.0, 1.0, t)
+			px = lerpf(cx - 40, cx, eased_t)
+			rot = px * 0.6
+		elif phase < 0.5:
+			_draw_dotted_parabola(Vector2(cx, ground_y - r), Vector2(cx + 40, ground_y - r), -25.0, arc_c)
+			var t = (phase - 0.25) / 0.25
+			px = lerpf(cx, cx + 40, t)
+			py = ground_y - r - sin(t * PI) * 25.0
+			rot = 0
+		elif phase < 0.75:
+			var t = (phase - 0.5) / 0.25
+			var eased_t = smoothstep(0.0, 1.0, t)
+			px = lerpf(cx + 40, cx, eased_t)
+			rot = px * 0.6
+		else:
+			_draw_dotted_parabola(Vector2(cx, ground_y - r), Vector2(cx - 40, ground_y - r), -25.0, arc_c)
+			var t = (phase - 0.75) / 0.25
+			px = lerpf(cx, cx - 40, t)
+			py = ground_y - r - sin(t * PI) * 25.0
+			rot = 0
+
+		_draw_holo_pet_rot(Vector2(px, py), hue, r, rot)
 
