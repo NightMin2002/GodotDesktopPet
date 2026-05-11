@@ -37,6 +37,7 @@ func build() -> void:
 	_register_toggle("eye_track", "mode", EyeTrackPreview.new(), "随着鼠标移动，宠物始终注视着光标", Vector2(180, 100))
 	_register_toggle("anti_gravity", "mode", AntiGravityPreview.new(), "重力场反转，宠物将吸附在屏幕顶部行走", Vector2(180, 100))
 	_register_toggle("free_roam", "mode", FreeRoamPreview.new(), "虚空生成能量踏板，宠物可在屏幕内四处落脚攀跃", Vector2(180, 100))
+	_register_toggle("screen_wrap", "mode", ScreenWrapPreview.new(), "打破空间约束，当宠物离开屏幕边缘时，将在另一侧无缝继续前行", Vector2(180, 100))
 ## 每帧定位跟踪 (由 context_menu._process 调用)
 func update_positions() -> void:
 	for entry in _entries.values():
@@ -175,6 +176,9 @@ func _position_panel(entry: Dictionary) -> void:
 # 基础预览 Control (共用绘制方法)
 # ═══════════════════════════════════════════
 class ViewBase extends Control:
+	func _init() -> void:
+		clip_contents = true
+
 	func _draw_holo_pet(center: Vector2, hue: float, r: float = 6.0, rot: float = 0.0, look_offset: Vector2 = Vector2.ZERO) -> void:
 		draw_set_transform(center, rot, Vector2.ONE)
 		
@@ -1119,10 +1123,59 @@ class FreeRoamPreview extends ViewBase:
 		
 		# 极简虚空漂浮粒子，营造高空自由悬浮感
 		for i in range(5):
-			var hash_x = fmod(i * 137.5, size.x)
-			var hash_y = fmod(i * 93.1 - _time * (10.0 + i*5.0), size.y + 40) - 20
+			var hash_x = wrapf(i * 137.5, 0.0, size.x)
+			var raw_y = i * 93.1 - _time * (10.0 + i * 5.0)
+			var hash_y = wrapf(raw_y, -20.0, size.y + 20.0)
 			var p_alpha = sin(_time * 2.0 + i) * 0.3 + 0.3
 			draw_circle(Vector2(hash_x, hash_y), 1.0 + fmod(i*0.3, 1.5), Color(1, 1, 1, p_alpha * 0.5))
 		
 		# 我们不需要 look_offset 因为这个只是动作演示，睁着大眼睛即可
 		_draw_holo_pet(pet_pos, hue, r, rot)
+
+# ═══════════════════════════════════════════
+# 动画预览 Control: 模式 - 屏幕穿越
+# ═══════════════════════════════════════════
+class ScreenWrapPreview extends ViewBase:
+	var _time: float = 0.0
+
+	func _process(delta: float) -> void:
+		_time += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		var r = 14.0
+		var hue = EventBus.ui_hue
+		
+		# 使用真实的控件边界，依靠 clip_contents = true 产生完美的硬切割视觉错觉
+		var bound_l = 0.0
+		var bound_r = size.x
+		var span = size.x
+		var ground_y = size.y - 20.0
+		
+		# 极简虚线贯穿整个控件作为基底
+		draw_line(Vector2(0, ground_y), Vector2(size.x, ground_y), Color(0.4, 0.6, 1.0, 0.5), 2.0, true)
+		
+		# 匀速向右运动
+		var speed = 75.0
+		var total_dist = _time * speed
+		# 无缝循环 x 控制在 0 到 size.x 之间
+		var x = fmod(total_dist, span)
+		var rot = total_dist * 0.18
+		var pet_y = ground_y - r
+		
+		# 幽灵边界探测
+		var ghost_offset = Vector2.ZERO
+		var margin = r * 1.5
+		
+		if x > bound_r - margin:
+			ghost_offset = Vector2(-span, 0)
+		elif x < bound_l + margin:
+			ghost_offset = Vector2(span, 0)
+			
+		var pet_center = Vector2(x, pet_y)
+		
+		# 借助 clip_contents，超出边界的部分会自动被裁掉
+		# 左半边出去多少，右半边就会严格进来多少，形成真正物理上的无缝连接！
+		_draw_holo_pet(pet_center, hue, r, rot)
+		if ghost_offset != Vector2.ZERO:
+			_draw_holo_pet(pet_center + ghost_offset, hue, r, rot)
