@@ -45,6 +45,8 @@ var _dismiss_btn: Button
 var _sysinfo_btn: Button
 var _autostart_btn: Button
 var _debug_behavior_btn: Button
+var _profile_btn: Button
+var _profile_labels: Dictionary = {}  # 宠物档案面板的动态标签
 var _theme_btn: Button
 var _reminder_btn: Button
 
@@ -370,6 +372,10 @@ func _build_sec_system() -> void:
 	vbox.add_child(_debug_behavior_btn)
 	_bind_l3_trigger(_debug_behavior_btn, "debug_behavior", "sec_system")
 
+	_profile_btn = _make_menu_btn("宠物档案 [+]", Color(0.6, 0.8, 1.0, 1))
+	vbox.add_child(_profile_btn)
+	_bind_l3_trigger(_profile_btn, "pet_profile", "sec_system")
+
 	panel.mouse_entered.connect(func(): _submenu.on_panel_enter())
 	panel.mouse_exited.connect(func(): _submenu.on_panel_exit())
 	add_child(panel)
@@ -377,6 +383,8 @@ func _build_sec_system() -> void:
 
 	# L3: 指令序列
 	_build_debug_behavior_submenu()
+	# L3: 宠物档案
+	_build_profile_panel()
 
 ## 统一入口
 func _build_all_sections() -> void:
@@ -524,6 +532,8 @@ func _refresh_submenu_states() -> void:
 	_submenu.refresh_radio("chatter", SettingsManager.get_int("chatter_mode", 0))
 	_submenu.refresh_radio("elastic", elastic_mode)
 	_submenu.refresh_radio("auto_activity", SettingsManager.get_int("auto_activity", 1))
+	# 宠物档案面板
+	_refresh_profile_panel()
 
 # ═══════════════════════════════════════════
 # 弹性追踪 / _process
@@ -596,6 +606,7 @@ func _on_show_context_menu(target_node: Node2D) -> void:
 	var panel_pos = _calc_menu_pos(pet_pos)
 	hud.position = panel_pos
 	hud.modulate.a = 0.0
+	_refresh_profile_panel()  # 每次打开菜单时刷新宠物档案
 	hud.show()
 
 	_sidebar.refresh()
@@ -934,6 +945,7 @@ func _build_debug_behavior_submenu() -> void:
 		{"label": "自动对弈", "behavior": "_auto_game_2048", "desc": "宠物自己玩一局 2048"},
 		{"label": "自动扫雷", "behavior": "_auto_game_mine", "desc": "宠物自己玩一局扫雷"},
 		{"label": "自动导航", "behavior": "_auto_game_snake", "desc": "宠物自己玩一局贪吃蛇"},
+		{"label": "经验注入", "behavior": "_add_xp", "desc": "注入 200 游戏经验值 (调试用)"},
 	]
 
 	for item in debug_items:
@@ -958,6 +970,90 @@ func _build_debug_behavior_submenu() -> void:
 	add_child(panel)
 	_submenu.l3_panels["debug_behavior"] = panel
 	_submenu._l3_parent_map["debug_behavior"] = "sec_system"
+
+func _build_profile_panel() -> void:
+	var panel = _submenu._make_panel()
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 6)
+	panel.add_child(vbox)
+
+	var title = Label.new()
+	title.text = "- 游戏熟练度 -"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", Color(0.6, 0.75, 0.9, 0.8))
+	vbox.add_child(title)
+
+	# 等级
+	var lv_label = Label.new()
+	lv_label.add_theme_font_size_override("font_size", 22)
+	lv_label.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0, 1))
+	lv_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(lv_label)
+	_profile_labels["level"] = lv_label
+
+	# XP 进度
+	var xp_label = Label.new()
+	xp_label.add_theme_font_size_override("font_size", 13)
+	xp_label.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7, 0.7))
+	xp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(xp_label)
+	_profile_labels["xp"] = xp_label
+
+	# XP 进度条
+	var bar_bg = Panel.new()
+	bar_bg.custom_minimum_size = Vector2(160, 6)
+	var bar_bg_style = StyleBoxFlat.new()
+	bar_bg_style.bg_color = Color(0.1, 0.12, 0.2, 0.6)
+	bar_bg_style.set_corner_radius_all(3)
+	bar_bg.add_theme_stylebox_override("panel", bar_bg_style)
+	var bar_wrapper = CenterContainer.new()
+	bar_wrapper.add_child(bar_bg)
+	vbox.add_child(bar_wrapper)
+
+	var bar_fill = Panel.new()
+	bar_fill.position = Vector2.ZERO
+	bar_fill.size = Vector2(0, 6)
+	var bar_fill_style = StyleBoxFlat.new()
+	bar_fill_style.bg_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.85, 0.8)
+	bar_fill_style.set_corner_radius_all(3)
+	bar_fill.add_theme_stylebox_override("panel", bar_fill_style)
+	bar_bg.add_child(bar_fill)
+	_profile_labels["bar_fill"] = bar_fill
+	_profile_labels["bar_bg"] = bar_bg
+
+	# 失误率
+	var rate_label = Label.new()
+	rate_label.add_theme_font_size_override("font_size", 13)
+	rate_label.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7, 0.7))
+	rate_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(rate_label)
+	_profile_labels["rate"] = rate_label
+
+	panel.mouse_entered.connect(func(): _submenu.on_l3_panel_enter())
+	panel.mouse_exited.connect(func(): _submenu.on_l3_panel_exit())
+	add_child(panel)
+	_submenu.l3_panels["pet_profile"] = panel
+	_submenu._l3_parent_map["pet_profile"] = "sec_system"
+
+func _refresh_profile_panel() -> void:
+	var info = SettingsManager.get_gaming_level_progress()
+
+	if _profile_labels.has("level"):
+		_profile_labels["level"].text = "Lv.%d" % info.level
+	if _profile_labels.has("xp"):
+		if info.level >= SettingsManager.MAX_LEVEL:
+			_profile_labels["xp"].text = "XP: %d (MAX)" % info.xp
+		else:
+			_profile_labels["xp"].text = "XP: %d / %d" % [info.xp, info.xp_next]
+	if _profile_labels.has("bar_fill") and _profile_labels.has("bar_bg"):
+		var bar_w = _profile_labels["bar_bg"].custom_minimum_size.x
+		_profile_labels["bar_fill"].size = Vector2(bar_w * clampf(info.progress, 0, 1), 6)
+		var fill_style = _profile_labels["bar_fill"].get_theme_stylebox("panel") as StyleBoxFlat
+		if fill_style:
+			fill_style.bg_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.85, 0.8)
+	if _profile_labels.has("rate"):
+		_profile_labels["rate"].text = "失误率: %.1f%%" % (info.rate * 100.0)
 
 func _on_debug_behavior_pressed(behavior: String) -> void:
 	_tooltip.panel.hide()
@@ -997,6 +1093,12 @@ func _on_debug_behavior_pressed(behavior: String) -> void:
 		EventBus.launch_game_auto.emit("minesweeper")
 	elif behavior == "_auto_game_snake":
 		EventBus.launch_game_auto.emit("snake")
+	elif behavior == "_add_xp":
+		SettingsManager.add_gaming_xp(200)
+		var lv = SettingsManager.get_gaming_level()
+		var main_n = get_tree().root.get_node_or_null("Main")
+		if main_n and "pet_instances" in main_n and main_n.pet_instances.size() > 0:
+			main_n.pet_instances[0].show_local_bubble("+200 XP。当前 Lv.%d。" % lv)
 	else:
 		EventBus.trigger_idle_behavior.emit(behavior)
 

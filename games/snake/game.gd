@@ -270,6 +270,11 @@ func _update_speed() -> void:
 func _tick() -> void:
 	if _game_over:
 		return
+	# AI 模式: 每个 tick 都重新决策 (保证反应速度)
+	if _auto_play:
+		var picked = _ai_pick_dir()
+		if picked != Vector2i.ZERO:
+			_next_dir = picked
 	# 保存上一帧位置 (插值用)
 	_prev_snake = _snake.duplicate()
 	_tick_elapsed = 0.0
@@ -295,6 +300,7 @@ func _tick() -> void:
 		_score += 10
 		_just_ate = true
 		_eat_flash = 1.0
+		_add_gaming_xp(2)
 		_update_speed()
 		_spawn_food()
 		if _snake.size() % 15 == 0:
@@ -318,9 +324,11 @@ func _end_game(won: bool) -> void:
 		SettingsManager.set_int("game_snake_best_len", _best_length)
 	if won:
 		_wins += 1
+		_add_gaming_xp(50)
 		_say(_pick(_q_win, _POOL_WIN))
 	else:
 		_losses += 1
+		_add_gaming_xp(5)
 		_say(_pick(_q_lose, _POOL_LOSE))
 	_update_labels()
 	_save_scores()
@@ -568,7 +576,8 @@ func _start_auto_play() -> void:
 		_started = true
 		if is_instance_valid(_tick_timer):
 			_tick_timer.start()
-	_auto_create_timer(0.15)
+	# 自玩定时器仅用于检测游戏结束 (AI 决策在 _tick 里)
+	_auto_create_timer(0.5)
 
 func _stop_auto_play() -> void:
 	var was_auto = _auto_play
@@ -587,28 +596,26 @@ func _stop_auto_play() -> void:
 func _auto_play_step() -> void:
 	if not _auto_play:
 		return
+	# 仅检测游戏结束 (AI 决策已在 _tick 中处理)
 	if _game_over:
 		_auto_finish_and_close()
-		return
-	var picked = _ai_pick_dir()
-	if picked != Vector2i.ZERO:
-		_next_dir = picked
 
-## AI 策略: 贪心寻路 + 开放空间评估
+## AI 策略: 贪心寻路 + 开放空间评估 + 安全回退
 func _ai_pick_dir() -> Vector2i:
 	var head = _snake[0]
 	var options = [DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT]
 	options.erase(-_dir)
 
-	# 5% 随机失误
-	if randf() < 0.05:
+	# 按熟练度决定失误率
+	if randf() < _get_mistake_rate():
 		options.shuffle()
 		for d in options:
 			if _is_safe(head + d):
 				return d
 		return _dir
 
-	var best_dir = _dir
+	# 评分每个安全方向
+	var best_dir = Vector2i.ZERO
 	var best_score = -9999.0
 	for d in options:
 		var next_pos = head + d
@@ -619,10 +626,26 @@ func _ai_pick_dir() -> Vector2i:
 		var dist_new = absi(next_pos.x - _food.x) + absi(next_pos.y - _food.y)
 		if dist_new < dist_now:
 			score += 10.0
-		score += minf(float(_count_reachable(next_pos)), 50.0) * 0.2
+		score += minf(float(_count_reachable(next_pos)), 80.0) * 0.3
 		if score > best_score:
 			best_score = score
 			best_dir = d
+
+	# 安全回退: 没有评分方向时, 选可达空间最大的安全方向
+	if best_dir == Vector2i.ZERO:
+		var fallback_dir = Vector2i.ZERO
+		var fallback_reach = -1
+		for d in options:
+			if _is_safe(head + d):
+				var reach = _count_reachable(head + d)
+				if reach > fallback_reach:
+					fallback_reach = reach
+					fallback_dir = d
+		if fallback_dir != Vector2i.ZERO:
+			return fallback_dir
+		# 真的无路可走 (必死)
+		return _dir
+
 	return best_dir
 
 func _is_safe(pos: Vector2i) -> bool:

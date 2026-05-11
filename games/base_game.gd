@@ -130,6 +130,28 @@ func _save_scores() -> void:
 	SettingsManager.set_int("game_" + id + "_wins", _wins)
 	SettingsManager.set_int("game_" + id + "_losses", _losses)
 
+# ── 游戏熟练度 (委托 SettingsManager) ──
+
+## 增加游戏经验值
+func _add_gaming_xp(amount: int) -> void:
+	var old_level = SettingsManager.get_gaming_level()
+	SettingsManager.add_gaming_xp(amount)
+	var new_level = SettingsManager.get_gaming_level()
+	if new_level > old_level:
+		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
+			var lines = [
+				"...系统升级。游戏熟练度 Lv.%d。" % new_level,
+				"技能精进。Lv.%d。" % new_level,
+				"经验积累到位。Lv.%d。" % new_level,
+			]
+			_pet.show_local_bubble(lines[randi() % lines.size()])
+	else:
+		_say("+%d XP" % amount)
+
+## 获取 AI 失误率
+func _get_mistake_rate() -> float:
+	return SettingsManager.get_gaming_mistake_rate()
+
 # ── 自玩通用基础设施 ──
 
 ## 淡入/淡出面板 + 所有悬浮组件

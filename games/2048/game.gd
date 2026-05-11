@@ -338,6 +338,7 @@ func _do_move(dir: Vector2i) -> void:
 			_game_over = true
 			_say(_pick(_q_lose, _POOL_LOSE))
 			_show_restart_bubble()
+			_add_gaming_xp(5 + _score / 500 * 5)  # 基础 5 + 分数加成
 			_save_scores()
 			_save_best()
 			game_finished.emit(Result.WIN if _reached_2048 else Result.LOSE)
@@ -674,11 +675,10 @@ func _auto_play_step() -> void:
 		_auto_timer.wait_time = randf_range(0.25, 0.55)
 
 ## AI 策略: 角落贪心法 (DOWN > LEFT > RIGHT > UP)
-## 偶尔随机 (10%) 给点 "失误", 更有人味
 func _ai_pick_move() -> Vector2i:
 	var priorities = [Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1)]
-	# 10% 概率随机挑一个有效方向
-	if randf() < 0.1:
+	# 按熟练度决定失误率
+	if randf() < _get_mistake_rate():
 		priorities.shuffle()
 	for dir in priorities:
 		if _would_move(dir):

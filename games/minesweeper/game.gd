@@ -453,6 +453,7 @@ func _end_game(won: bool) -> void:
 	_timer_running = false
 	if won:
 		_wins += 1
+		_add_gaming_xp(40)
 		_say(_pick(_q_win, _POOL_WIN))
 		# 胜利: 自动标记所有雷
 		for i in range(ROWS * COLS):
@@ -466,6 +467,7 @@ func _end_game(won: bool) -> void:
 		_timer_label.text = "%02d:%02d" % [mins, secs]
 	else:
 		_losses += 1
+		_add_gaming_xp(5)
 		_say(_pick(_q_lose, _POOL_LOSE))
 		# 揭开所有雷 + 标出错误插旗
 		for i in range(ROWS * COLS):
@@ -785,8 +787,8 @@ func _ai_pick_action() -> Dictionary:
 		else:
 			inner.append(ci)
 	
-	# 10% 概率随机猜 (给点"失误", 更有人味)
-	if randf() < 0.1:
+	# 按熟练度决定失误率
+	if randf() < _get_mistake_rate():
 		return {type = "reveal", idx = candidates[randi() % candidates.size()]}
 	if corners.size() > 0:
 		return {type = "reveal", idx = corners[randi() % corners.size()]}
