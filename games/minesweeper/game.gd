@@ -10,17 +10,15 @@ const ROWS := 9
 const MINE_COUNT := 10
 const CELL_SIZE := 30  # 每个格子的边长 (px)
 
-# ── 数字颜色 (经典扫雷配色) ──
-const NUM_COLORS := {
-	1: Color(0.35, 0.55, 1.0),    # 蓝
-	2: Color(0.25, 0.70, 0.35),   # 绿
-	3: Color(0.95, 0.30, 0.30),   # 红
-	4: Color(0.55, 0.30, 0.80),   # 紫
-	5: Color(0.80, 0.45, 0.15),   # 橙
-	6: Color(0.20, 0.75, 0.75),   # 青
-	7: Color(0.60, 0.60, 0.60),   # 灰
-	8: Color(0.85, 0.85, 0.85),   # 白
-}
+# ── 数字颜色生成辅助 ──
+func _get_num_color(num: int, hue: float) -> Color:
+	match num:
+		1: return Color.from_hsv(hue, 0.2, 0.8, 0.9)
+		2: return Color.from_hsv(hue, 0.4, 0.9, 1.0)
+		3: return Color.from_hsv(fmod(hue + 0.9, 1.0), 0.6, 0.95, 1.0) # -> hue - 0.1 (yellow/orange)
+		4: return Color.from_hsv(fmod(hue + 0.8, 1.0), 0.8, 1.0, 1.0) # -> hue - 0.2 (red/purple)
+		5: return Color.from_hsv(fmod(hue + 0.1, 1.0), 0.8, 1.0, 1.0) # -> hue + 0.1
+		_: return Color(1.0, 0.2, 0.2, 1.0) # 6-8 高危红色
 
 # ── 游戏状态 ──
 var _mines: Array[bool] = []       # 是否有雷
@@ -165,7 +163,7 @@ func _build_ui() -> void:
 	var outer = MarginContainer.new()
 	outer.add_theme_constant_override("margin_left", 14)
 	outer.add_theme_constant_override("margin_right", 14)
-	outer.add_theme_constant_override("margin_top", 0)
+	outer.add_theme_constant_override("margin_top", 12)
 	outer.add_theme_constant_override("margin_bottom", 4)
 	outer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_panel.add_child(outer)
@@ -179,10 +177,10 @@ func _build_ui() -> void:
 	var info_wrapper = PanelContainer.new()
 	info_wrapper.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var info_bg = StyleBoxFlat.new()
-	info_bg.bg_color = Color(0.05, 0.08, 0.16, 0.6)
-	info_bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.3, 0.5, 0.15)
+	info_bg.bg_color = Color(0.02, 0.03, 0.08, 0.8) # 机能风暗背景
+	info_bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.7, 0.3)
 	info_bg.set_border_width_all(1)
-	info_bg.set_corner_radius_all(6)
+	info_bg.set_corner_radius_all(0) # 直角
 	info_bg.content_margin_left = 10
 	info_bg.content_margin_right = 10
 	info_bg.content_margin_top = 4
@@ -194,7 +192,7 @@ func _build_ui() -> void:
 	info_bar.add_theme_constant_override("separation", 8)
 
 	_mine_count_label = Label.new()
-	_mine_count_label.text = "残留: %d" % MINE_COUNT
+	_mine_count_label.text = "[ THREAT ]  %02d" % MINE_COUNT
 	_mine_count_label.add_theme_font_size_override("font_size", 13)
 	_mine_count_label.add_theme_color_override("font_color", Color.from_hsv(fmod(EventBus.ui_hue + 0.05, 1.0), 0.5, 0.9, 0.9))
 	_mine_count_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -202,7 +200,7 @@ func _build_ui() -> void:
 	info_bar.add_child(_mine_count_label)
 
 	_timer_label = Label.new()
-	_timer_label.text = "00:00"
+	_timer_label.text = "[ TIME ]  00:00"
 	_timer_label.add_theme_font_size_override("font_size", 13)
 	_timer_label.add_theme_color_override("font_color", Color(0.5, 0.6, 0.75, 0.8))
 	_timer_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -218,7 +216,7 @@ func _build_ui() -> void:
 	var pet_w = SettingsManager.get_int(_other_score_key("wins"), 0)
 	var pet_l = SettingsManager.get_int(_other_score_key("losses"), 0)
 	_compare_label = Label.new()
-	_compare_label.text = "我: %d/%d | 宠: %d/%d" % [my_w, my_w + my_l, pet_w, pet_w + pet_l]
+	_compare_label.text = "操作员: %d/%d | 本机: %d/%d" % [my_w, my_w + my_l, pet_w, pet_w + pet_l]
 	_compare_label.add_theme_font_size_override("font_size", 11)
 	_compare_label.add_theme_color_override("font_color", Color(0.4, 0.5, 0.6, 0.6))
 	_compare_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -231,6 +229,7 @@ func _build_ui() -> void:
 
 	_grid_container = GridContainer.new()
 	_grid_container.columns = COLS
+	# 极简激光网格：更小的缝隙
 	_grid_container.add_theme_constant_override("h_separation", 1)
 	_grid_container.add_theme_constant_override("v_separation", 1)
 	_grid_container.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -242,13 +241,12 @@ func _build_ui() -> void:
 		cell.custom_minimum_size = Vector2(CELL_SIZE, CELL_SIZE)
 		cell.mouse_filter = Control.MOUSE_FILTER_STOP
 		cell.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		# 格子背景 (棋盘式交替底色)
-		var is_light = ((i / COLS) + (i % COLS)) % 2 == 0
+		# 取消棋盘格，采用全息冷感单色
 		var cell_bg = StyleBoxFlat.new()
-		cell_bg.bg_color = Color(0.12, 0.16, 0.28, 0.9) if is_light else Color(0.10, 0.13, 0.24, 0.9)
-		cell_bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.25, 0.45, 0.2)
+		cell_bg.bg_color = Color(0.04, 0.05, 0.1, 0.7)
+		cell_bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.6, 0.15)
 		cell_bg.set_border_width_all(1)
-		cell_bg.set_corner_radius_all(3)
+		cell_bg.set_corner_radius_all(0) # 直角机能风
 		cell_bg.set_content_margin_all(0)
 		cell.add_theme_stylebox_override("panel", cell_bg)
 		# 格子文字 (数字/旗/雷)
@@ -301,7 +299,7 @@ func _start_timer_loop() -> void:
 			if _timer_label:
 				var mins = int(_elapsed) / 60
 				var secs = int(_elapsed) % 60
-				_timer_label.text = "%02d:%02d" % [mins, secs]
+				_timer_label.text = "[ TIME ]  %02d:%02d" % [mins, secs]
 
 # ══════════════════════════════════════════════
 # 游戏逻辑
@@ -330,9 +328,9 @@ func _reset_game() -> void:
 	_elapsed = 0.0
 	_timer_running = false
 	if _timer_label:
-		_timer_label.text = "00:00"
+		_timer_label.text = "[ TIME ]  00:00"
 	if _mine_count_label:
-		_mine_count_label.text = "残留: %d" % MINE_COUNT
+		_mine_count_label.text = "[ THREAT ]  %02d" % MINE_COUNT
 	_hide_restart_bubble()
 	_refresh_all_cells()
 
@@ -458,7 +456,7 @@ func _toggle_flag(idx: int) -> void:
 		_flag_count -= 1
 		if randf() < 0.3:
 			_say(_pick(_q_unflag, _POOL_UNFLAG))
-	_mine_count_label.text = "残留: %d" % (MINE_COUNT - _flag_count)
+	_mine_count_label.text = "[ THREAT ]  %02d" % max(0, MINE_COUNT - _flag_count)
 	_refresh_cell(idx)
 
 func _end_game(won: bool) -> void:
@@ -474,11 +472,11 @@ func _end_game(won: bool) -> void:
 			if _mines[i]:
 				_flagged[i] = true
 		_flag_count = MINE_COUNT
-		_mine_count_label.text = "残留: 0"
+		_mine_count_label.text = "[ THREAT ]  00"
 		# 显示最终用时
 		var mins = int(_elapsed) / 60
 		var secs = int(_elapsed) % 60
-		_timer_label.text = "%02d:%02d" % [mins, secs]
+		_timer_label.text = "[ TIME ]  %02d:%02d" % [mins, secs]
 	else:
 		_losses += 1
 		_add_gaming_xp(5)
@@ -495,7 +493,7 @@ func _end_game(won: bool) -> void:
 		var my_l = SettingsManager.get_int(_score_key("losses"), 0)
 		var pet_w = SettingsManager.get_int(_other_score_key("wins"), 0)
 		var pet_l = SettingsManager.get_int(_other_score_key("losses"), 0)
-		_compare_label.text = "我: %d/%d | 宠: %d/%d" % ([my_w, my_w + my_l, pet_w, pet_w + pet_l] if not _auto_play else [pet_w, pet_w + pet_l, my_w, my_w + my_l])
+		_compare_label.text = "操作员: %d/%d | 本机: %d/%d" % ([my_w, my_w + my_l, pet_w, pet_w + pet_l] if not _auto_play else [pet_w, pet_w + pet_l, my_w, my_w + my_l])
 	_show_restart_bubble()
 	# 确保面板不超出屏幕
 	if is_instance_valid(game_viewport):
@@ -542,89 +540,77 @@ func _refresh_cell(idx: int) -> void:
 		cell_bg = StyleBoxFlat.new()
 		cell.add_theme_stylebox_override("panel", cell_bg)
 
-	var is_light = ((idx / COLS) + (idx % COLS)) % 2 == 0
 	var is_hovered = (idx == _hover_idx)
+	cell_bg.set_corner_radius_all(0) # 直角机能风
 
 	if _revealed[idx]:
 		if _mines[idx]:
-			# 雷 (失败时揭开)
+			# 雷: 极简十字交叉+故障红
 			if idx == _exploded_cell:
-				# 引爆格: 强红 + 粗边框 + 大符号
-				cell_bg.bg_color = Color(0.50, 0.05, 0.05, 0.95)
-				cell_bg.border_color = Color(1.0, 0.25, 0.25, 0.8)
-				cell_bg.set_border_width_all(2)
-				lbl.text = "◆"
-				lbl.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25, 1.0))
-				lbl.add_theme_font_size_override("font_size", 16)
-			else:
-				# 其他雷: 暗红
-				cell_bg.bg_color = Color(0.15, 0.06, 0.06, 0.85)
-				cell_bg.border_color = Color(0.55, 0.15, 0.15, 0.4)
+				cell_bg.bg_color = Color(0.40, 0.02, 0.02, 0.95)
+				cell_bg.border_color = Color(1.0, 0.15, 0.15, 0.9)
 				cell_bg.set_border_width_all(1)
-				lbl.text = "✦"
+				lbl.text = "[※]"
+				lbl.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25, 1.0))
+				lbl.add_theme_font_size_override("font_size", 14)
+			else:
+				cell_bg.bg_color = Color(0.12, 0.02, 0.02, 0.85)
+				cell_bg.border_color = Color(0.8, 0.15, 0.15, 0.3)
+				cell_bg.set_border_width_all(1)
+				lbl.text = "※"
 				lbl.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3, 0.7))
-				lbl.add_theme_font_size_override("font_size", 13)
-			cell_bg.set_corner_radius_all(3)
+				lbl.add_theme_font_size_override("font_size", 14)
 			cell.mouse_default_cursor_shape = Control.CURSOR_ARROW
 		else:
-			# 安全格 (已揭开): 棋盘式交替
-			var base = Color(0.04, 0.06, 0.11, 0.4) if is_light else Color(0.05, 0.07, 0.13, 0.45)
-			cell_bg.bg_color = base
-			cell_bg.border_color = Color.from_hsv(hue, 0.12, 0.25, 0.08)
+			# 安全格: 背景透空，显示数字
+			cell_bg.bg_color = Color(0.01, 0.02, 0.05, 0.2)
+			cell_bg.border_color = Color.from_hsv(hue, 0.15, 0.3, 0.05)
 			cell_bg.set_border_width_all(1)
-			cell_bg.set_corner_radius_all(3)
 			cell.mouse_default_cursor_shape = Control.CURSOR_ARROW
 			var num = _adjacent[idx]
 			if num > 0:
 				lbl.text = str(num)
-				var c: Color = NUM_COLORS.get(num, Color.WHITE)
-				# 高危数字 (3+): 更亮更大
-				if num >= 3:
-					c = Color(minf(c.r * 1.25, 1.0), minf(c.g * 1.25, 1.0), minf(c.b * 1.25, 1.0), 1.0)
+				var c: Color = _get_num_color(num, hue)
 				lbl.add_theme_color_override("font_color", c)
-				lbl.add_theme_font_size_override("font_size", 15 if num < 3 else 16)
+				lbl.add_theme_font_size_override("font_size", 14 if num < 3 else 15)
 			else:
 				lbl.text = ""
 	elif _flagged[idx]:
-		# 旗帜
+		# 旗帜: 锁定标记 ◬
 		var is_wrong = _game_over and not _game_won and not _mines[idx]
 		if is_wrong:
-			# 误标: 暗红底 + 红叉
-			cell_bg.bg_color = Color(0.25, 0.06, 0.06, 0.9)
-			cell_bg.border_color = Color(0.7, 0.2, 0.2, 0.6)
+			cell_bg.bg_color = Color(0.20, 0.05, 0.05, 0.8)
+			cell_bg.border_color = Color(0.8, 0.2, 0.2, 0.5)
 			cell_bg.set_border_width_all(1)
-			lbl.text = "✕"
+			lbl.text = "ERR"
 			lbl.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3, 0.9))
+			lbl.add_theme_font_size_override("font_size", 10)
 		else:
-			# 正常旗帜: 主题色边框
-			var flag_bg = Color(0.12, 0.14, 0.28, 0.9) if is_light else Color(0.10, 0.12, 0.25, 0.9)
-			cell_bg.bg_color = flag_bg
-			cell_bg.border_color = Color.from_hsv(hue, 0.6, 0.85, 0.5)
+			cell_bg.bg_color = Color.from_hsv(hue, 0.4, 0.25, 0.95)
+			cell_bg.border_color = Color.from_hsv(hue, 0.7, 0.9, 0.5)
 			cell_bg.set_border_width_all(1)
-			lbl.text = "▸"
-			lbl.add_theme_color_override("font_color", Color.from_hsv(fmod(hue + 0.05, 1.0), 0.7, 1.0, 0.95))
-		cell_bg.set_corner_radius_all(3)
-		lbl.add_theme_font_size_override("font_size", 14)
+			lbl.text = "◬"
+			lbl.add_theme_color_override("font_color", Color.from_hsv(hue, 0.8, 1.0, 0.95))
+			lbl.add_theme_font_size_override("font_size", 13)
 		cell.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	else:
-		# 未揭开: 棋盘式交替 + hover 高亮
-		var base_c = Color(0.12, 0.16, 0.28, 0.9) if is_light else Color(0.10, 0.13, 0.24, 0.9)
+		# 未揭开: 暗黑机能风涂层 - 增加明度，强化物理实体感
+		var base_c = Color.from_hsv(hue, 0.3, 0.2, 0.95)
 		if is_hovered and not _game_over:
-			base_c = Color(base_c.r + 0.05, base_c.g + 0.05, base_c.b + 0.08, 0.95)
-			cell_bg.border_color = Color.from_hsv(hue, 0.5, 0.85, 0.5)
+			base_c = Color.from_hsv(hue, 0.5, 0.35, 0.95)
+			cell_bg.border_color = Color.from_hsv(hue, 0.8, 0.9, 0.6)
 		else:
-			cell_bg.border_color = Color.from_hsv(hue, 0.25, 0.45, 0.2)
+			cell_bg.border_color = Color.from_hsv(hue, 0.5, 0.6, 0.3)
 		cell_bg.bg_color = base_c
 		cell_bg.set_border_width_all(1)
-		cell_bg.set_corner_radius_all(3)
 		lbl.text = ""
 		cell.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	# 胜利时: 已标记的雷高亮绿色
+	# 胜利时: 已标记的雷高亮为绿色安全符号
 	if _game_won and _mines[idx] and _flagged[idx]:
 		cell_bg.bg_color = Color(0.05, 0.15, 0.08, 0.9)
-		cell_bg.border_color = Color.from_hsv(fmod(hue + 0.15, 1.0), 0.6, 1.0, 0.7)
+		cell_bg.border_color = Color.from_hsv(fmod(hue + 0.15, 1.0), 0.6, 1.0, 0.5)
 		cell_bg.set_border_width_all(1)
-		lbl.text = "▸"
+		lbl.text = "✓"
 		lbl.add_theme_color_override("font_color", Color.from_hsv(fmod(hue + 0.15, 1.0), 0.5, 1.0, 1.0))
 		lbl.add_theme_font_size_override("font_size", 14)
 
