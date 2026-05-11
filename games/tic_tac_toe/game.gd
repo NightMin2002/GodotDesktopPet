@@ -5,7 +5,7 @@ extends BaseGame
 
 # ── 游戏状态 ──
 var _board: Array[int] = [0,0,0, 0,0,0, 0,0,0]  # 0=空, 1=玩家(X), 2=AI(O)
-var _game_over: bool = false
+
 var _player_turn: bool = true
 var _last_move: int = -1
 

@@ -21,6 +21,7 @@ var _pet: Node2D = null                    # 宠物原体引用
 # ── 战绩 (通用, 子类可直接使用) ──
 var _wins: int = 0
 var _losses: int = 0
+var _game_over: bool = false
 
 # ── 自动操作 (AI 自玩, 通用基础设施) ──
 var _auto_play: bool = false
@@ -230,6 +231,26 @@ func _auto_destroy_timer() -> void:
 func _auto_play_step() -> void:
 	pass
 
+## 停止自玩 (用户接管) — 通用逻辑, 子类一般不需要覆写
+func _stop_auto_play() -> void:
+	var was_auto = _auto_play
+	_auto_play = false
+	_auto_destroy_timer()
+	if was_auto:
+		# 恢复发言气泡
+		if is_instance_valid(_speech_bubble):
+			_speech_bubble.visible = true
+		# 恢复面板透明度 + 显示接管台词
+		if not _game_over and is_instance_valid(game_container) and game_container.modulate.a < 1.0:
+			_auto_fade(1.0)
+			var lines = _get_takeover_lines()
+			if lines.size() > 0 and is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
+				_pet.show_local_bubble(lines[randi() % lines.size()])
+
+## 接管台词 (子类覆写提供专属台词)
+func _get_takeover_lines() -> Array:
+	return ["...你来？好。", "操作权移交。"]
+
 ## 自玩结束 + 等待后自动关闭游戏 (子类在 game_over 时调用)
 func _auto_finish_and_close() -> void:
 	_auto_play = false
@@ -243,6 +264,8 @@ func _auto_finish_and_close() -> void:
 
 ## 宠物发言 (通过悬浮气泡 + 淡入高亮动画)
 func _say(text: String) -> void:
+	if _auto_play:
+		return  # 自玩时不在面板气泡发言 (不自言自语)
 	if not _speech_label:
 		# 气泡尚未创建，暂存文本
 		_pending_speech = text
@@ -481,8 +504,12 @@ func _setup_floating_chrome(game_name: String, on_close: Callable, on_restart: C
 	_speech_bubble = _create_speech_bubble()
 	parent.add_child(_speech_bubble)
 
-	# 如果 start() 中的 _say() 先于气泡创建，立即显示暂存文本
-	if _pending_speech != "":
+	if _auto_play:
+		# 自玩时隐藏发言气泡 (不自言自语)
+		_speech_bubble.visible = false
+		_pending_speech = ""
+	elif _pending_speech != "":
+		# 如果 start() 中的 _say() 先于气泡创建，立即显示暂存文本
 		_speech_label.text = _pending_speech
 		_pending_speech = ""
 

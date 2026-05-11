@@ -27,7 +27,7 @@ var _mines: Array[bool] = []       # 是否有雷
 var _revealed: Array[bool] = []    # 是否已揭开
 var _flagged: Array[bool] = []     # 是否插旗
 var _adjacent: Array[int] = []     # 周围雷数 (0-8)
-var _game_over: bool = false
+
 var _game_won: bool = false
 var _first_click: bool = true      # 首次点击保证不踩雷
 var _remaining: int = 0            # 剩余非雷格子数
@@ -685,19 +685,8 @@ func _start_auto_play() -> void:
 	_auto_fade(AUTO_PLAY_ALPHA)
 	_auto_create_timer(0.4)
 
-func _stop_auto_play() -> void:
-	var was_auto = _auto_play
-	_auto_play = false
-	_auto_destroy_timer()
-	if was_auto and not _game_over and is_instance_valid(game_container) and game_container.modulate.a < 1.0:
-		_auto_fade(1.0)
-		var takeover_lines = [
-			"...你来？好。",
-			"操作权移交。",
-			"接手确认。...小心地雷。",
-		]
-		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
-			_pet.show_local_bubble(takeover_lines[randi() % takeover_lines.size()])
+func _get_takeover_lines() -> Array:
+	return ["...你来？好。", "操作权移交。", "接手确认。...小心地雷。"]
 
 func _auto_play_step() -> void:
 	if not _auto_play:

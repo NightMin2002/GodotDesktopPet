@@ -20,7 +20,7 @@ var _dir: Vector2i = DIR_RIGHT
 var _next_dir: Vector2i = DIR_RIGHT  # 缓冲输入
 var _food: Vector2i = Vector2i(-1, -1)
 var _score: int = 0
-var _game_over: bool = false
+
 var _game_won: bool = false
 var _started: bool = false            # 等待首次输入
 var _tick_timer: Timer = null
@@ -579,19 +579,8 @@ func _start_auto_play() -> void:
 	# 自玩定时器仅用于检测游戏结束 (AI 决策在 _tick 里)
 	_auto_create_timer(0.5)
 
-func _stop_auto_play() -> void:
-	var was_auto = _auto_play
-	_auto_play = false
-	_auto_destroy_timer()
-	if was_auto and not _game_over and is_instance_valid(game_container) and game_container.modulate.a < 1.0:
-		_auto_fade(1.0)
-		var takeover_lines = [
-			"...你来？好。",
-			"操作权移交。",
-			"接手确认。...小心尾巴。",
-		]
-		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
-			_pet.show_local_bubble(takeover_lines[randi() % takeover_lines.size()])
+func _get_takeover_lines() -> Array:
+	return ["...你来？好。", "操作权移交。", "接手确认。...小心尾巴。"]
 
 func _auto_play_step() -> void:
 	if not _auto_play:

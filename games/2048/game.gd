@@ -23,7 +23,7 @@ var _best_value: Label = null
 var _board: Array = []  # Array[Array[int]] 4x4, 0=空
 var _score: int = 0
 var _best: int = 0
-var _game_over: bool = false
+
 var _reached_2048: bool = false
 var _animating: bool = false  # 动画进行中, 阻止输入
 var _simulating: bool = false # 模拟移动检测中, 跳过副作用 (话术等)
@@ -645,20 +645,8 @@ func _start_auto_play() -> void:
 	_auto_fade(AUTO_PLAY_ALPHA)
 	_auto_create_timer(0.5)
 
-func _stop_auto_play() -> void:
-	var was_auto = _auto_play
-	_auto_play = false
-	_auto_destroy_timer()
-	if was_auto and not _game_over and is_instance_valid(game_container) and game_container.modulate.a < 1.0:
-		_auto_fade(1.0)
-		var takeover_lines = [
-			"...交给你了。",
-			"操作权移交。",
-			"你来？...好。",
-			"接手确认。",
-		]
-		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
-			_pet.show_local_bubble(takeover_lines[randi() % takeover_lines.size()])
+func _get_takeover_lines() -> Array:
+	return ["...交给你了。", "操作权移交。", "你来？...好。", "接手确认。"]
 
 func _auto_play_step() -> void:
 	if not _auto_play:

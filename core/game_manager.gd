@@ -117,7 +117,7 @@ func _destroy_viewport_wrapper() -> void:
 # 启动 / 结束游戏
 # ══════════════════════════════════════════════
 
-func launch_game(game_id: String, pet: Node2D) -> bool:
+func launch_game(game_id: String, pet: Node2D, auto_play: bool = false) -> bool:
 	if _current_game:
 		return false  # 已有游戏在运行
 	_pet_ref = pet
@@ -147,6 +147,7 @@ func launch_game(game_id: String, pet: Node2D) -> bool:
 	_current_game.game_container = _game_container
 	_current_game.screen_size = get_viewport().get_visible_rect().size
 	_current_game._pet = pet
+	_current_game._auto_play = auto_play  # 在 start() 之前设置, 确保气泡/台词正确处理
 
 	_current_game.game_finished.connect(_on_game_finished)
 	_current_game.start()
@@ -169,7 +170,7 @@ func close_game() -> void:
 
 ## 启动游戏并开启自动操作模式 (宠物自己玩)
 func launch_game_auto(game_id: String, pet: Node2D) -> bool:
-	if not launch_game(game_id, pet):
+	if not launch_game(game_id, pet, true):
 		return false
 	if _current_game and _current_game.has_method("_start_auto_play"):
 		_current_game._start_auto_play()
