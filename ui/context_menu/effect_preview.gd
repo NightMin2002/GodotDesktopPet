@@ -425,37 +425,72 @@ class WindowConfinedPreview extends ViewBase:
 		var cy = size.y / 2.0
 		var hue = EventBus.ui_hue
 		var r = 6.0
-		var win_c = Color(0.2, 0.35, 0.6, 0.35)
-		var win_border = Color(0.6, 0.3, 0.3, 0.6)
 		
-		var win = Rect2(cx - 50, cy - 25, 100, 50)
-		draw_rect(win, win_c, true)
-		draw_rect(win, win_border, false, 1.5)
+		var win = Rect2(cx - 35, cy - 20, 70, 40)
+		draw_rect(win, Color(0.2, 0.4, 0.7, 0.15), true)
+		draw_rect(win, Color(0.4, 0.6, 1.0, 0.4), false, 1.5)
 		
-		# 禁锢指示角标
-		var mk = 6.0
-		for corner in [win.position, Vector2(win.end.x, win.position.y), Vector2(win.position.x, win.end.y), win.end]:
-			var dx = mk if corner.x == win.position.x else -mk
-			var dy = mk if corner.y == win.position.y else -mk
-			draw_line(corner, corner + Vector2(dx, 0), win_border, 2.0, true)
-			draw_line(corner, corner + Vector2(0, dy), win_border, 2.0, true)
+		# 指示向内的法线箭头
+		var arrow_c = Color(0.4, 0.7, 1.0, 0.5)
+		_draw_dir_arrow(Vector2(win.position.x - 8, cy), Vector2(1, 0), arrow_c)
+		_draw_dir_arrow(Vector2(win.end.x + 8, cy), Vector2(-1, 0), arrow_c)
+		_draw_dir_arrow(Vector2(cx, win.position.y - 8), Vector2(0, 1), arrow_c)
+		_draw_dir_arrow(Vector2(cx, win.end.y + 8), Vector2(0, -1), arrow_c)
 
-		var inner_left = win.position.x + r + 4
-		var inner_right = win.end.x - r - 4
-		var t_raw = fmod(_time * 0.8, 2.0)
-		var t_tri = t_raw if t_raw < 1.0 else 2.0 - t_raw
-		var px = inner_left + t_tri * (inner_right - inner_left)
-		var py = win.end.y - r - 3
+		var phase = fmod(_time * 0.5, 1.0)
+		var px = cx
+		var py = 0.0
+		var show_collision = false
+		var collision_pt = Vector2.ZERO
+		var entry_anim = 0.0
 		
-		# 碰壁发红阻挡效果
-		if t_tri < 0.08 or t_tri > 0.92:
-			var flash_a = 0.45
-			if t_tri < 0.08:
-				draw_line(Vector2(win.position.x, win.position.y + 3), Vector2(win.position.x, win.end.y - 3), Color(1.0, 0.4, 0.3, flash_a), 2.5, true)
-			else:
-				draw_line(Vector2(win.end.x, win.position.y + 3), Vector2(win.end.x, win.end.y - 3), Color(1.0, 0.4, 0.3, flash_a), 2.5, true)
+		if phase < 0.25:
+			# 从高空无障碍落入
+			var t = phase / 0.25
+			py = lerpf(win.position.y - 35.0, win.end.y - r, t)
+			# 检测穿透瞬间，产生空间门涟漪，消除“生硬穿模”感
+			if abs(py - win.position.y) < 14.0:
+				entry_anim = 1.0 - abs(py - win.position.y) / 14.0
+		elif phase < 0.45:
+			# 在底部准备起跳
+			py = win.end.y - r
+		elif phase < 0.65:
+			# 起跳撞击天花板并被阻挡 (留出1.5px余量坚决不穿透边框)
+			var t = (phase - 0.45) / 0.2
+			py = lerpf(win.end.y - r, win.position.y + r + 1.5, t)
+			if t > 0.85:
+				show_collision = true
+				collision_pt = Vector2(cx, win.position.y)
+		elif phase < 0.85:
+			# 弹回落地
+			var t = (phase - 0.65) / 0.2
+			py = lerpf(win.position.y + r + 1.5, win.end.y - r, t)
+			if t < 0.15:
+				show_collision = true
+				collision_pt = Vector2(cx, win.position.y)
+		else:
+			py = win.end.y - r
+
+		# 进入时的单向通行力场波纹
+		if entry_anim > 0:
+			var portal_c = Color(0.3, 0.9, 1.0, entry_anim * 0.9)
+			var w = 18.0 * entry_anim
+			draw_line(Vector2(cx - w, win.position.y), Vector2(cx + w, win.position.y), portal_c, 3.0, true)
+			draw_arc(Vector2(cx, win.position.y), 10.0 * entry_anim, 0, PI, 16, portal_c, 1.5, true)
+
+		# 撞击天花板的拒止红焰
+		if show_collision:
+			draw_line(collision_pt - Vector2(18, 0), collision_pt + Vector2(18, 0), Color(1.0, 0.3, 0.3, 0.8), 2.5, true)
+			draw_circle(collision_pt, 4.0, Color(1.0, 0.3, 0.3, 0.5))
 
 		_draw_holo_pet(Vector2(px, py), hue, r)
+
+	func _draw_dir_arrow(pos: Vector2, dir: Vector2, color: Color) -> void:
+		var p1 = pos + dir * 4.0
+		var perp = Vector2(-dir.y, dir.x)
+		var p2 = pos - dir * 2.0 + perp * 4.0
+		var p3 = pos - dir * 2.0 - perp * 4.0
+		draw_colored_polygon(PackedVector2Array([p1, p2, p3]), color)
 
 # ═══════════════════════════════════════════
 # 动画预览 Control: 窗口模式 - 窗口排斥
@@ -472,75 +507,59 @@ class WindowRepelledPreview extends ViewBase:
 		var cy = size.y / 2.0
 		var hue = EventBus.ui_hue
 		var r = 6.0
-		var win_c = Color(0.2, 0.35, 0.6, 0.35)
-		var win_border = Color(0.7, 0.5, 0.2, 0.6)
 		
-		var win = Rect2(cx - 30, cy - 22, 60, 38)
-		draw_rect(win, win_c, true)
-		draw_rect(win, win_border, false, 1.5)
+		var win = Rect2(cx - 35, cy - 20, 70, 40)
+		draw_rect(win, Color(0.7, 0.4, 0.2, 0.15), true)
+		draw_rect(win, Color(1.0, 0.6, 0.3, 0.5), false, 1.5)
 		
-		# 排斥力场辐射
-		var pulse = sin(_time * 4.0) * 0.3 + 0.5
-		for i in range(2):
-			var expand = float(i + 1) * 5.0 + sin(_time * 3.0 + float(i)) * 2.0
-			var fa = pulse * 0.12 * (1.0 - float(i) * 0.4)
-			var field_c = Color(0.9, 0.6, 0.2, fa)
-			draw_rect(Rect2(win.position.x - expand, win.position.y - expand, win.size.x + expand * 2, win.size.y + expand * 2), field_c, false, 1.0, true)
+		# 指示向外的法线箭头
+		var arrow_c = Color(1.0, 0.6, 0.3, 0.6)
+		_draw_dir_arrow(Vector2(win.position.x - 8, cy), Vector2(-1, 0), arrow_c)
+		_draw_dir_arrow(Vector2(win.end.x + 8, cy), Vector2(1, 0), arrow_c)
+		_draw_dir_arrow(Vector2(cx, win.position.y - 8), Vector2(0, -1), arrow_c)
+		_draw_dir_arrow(Vector2(cx, win.end.y + 8), Vector2(0, 1), arrow_c)
+
+		var phase = fmod(_time * 0.5, 1.0)
+		var px = cx
+		var py = 0.0
+		var show_collision = false
+		var collision_pt = Vector2.ZERO
 		
-		# 交叉禁止图标
-		var cross_c = Color(0.8, 0.35, 0.2, 0.25)
-		draw_line(Vector2(cx - 8, cy - 8 + 2), Vector2(cx + 8, cy + 8 + 2), cross_c, 1.5, true)
-		draw_line(Vector2(cx + 8, cy - 8 + 2), Vector2(cx - 8, cy + 8 + 2), cross_c, 1.5, true)
+		# 将撞击点改去左侧墙面，物理上绝对不可能与窗口内部路径重合，彻底杜绝穿模感
+		var hit_x = win.position.x - r - 1.5 
 		
-		var ground_y = win.end.y + 10
-		draw_line(Vector2(cx - 80, ground_y), Vector2(cx + 80, ground_y), Color(0.3, 0.4, 0.6, 0.3), 1.0, true)
-		
-		var cycle = fmod(_time * 0.4, 2.0)
-		var px: float
-		var py = ground_y - r
-		var spark_x = 0.0
-		var spark_dir = 1.0
-		var show_spark = false
-		
-		if cycle < 1.0:
-			var phase = cycle
-			var approach_end = win.position.x - r - 8
-			if phase < 0.5:
-				px = cx - 75 + (phase / 0.5) * (approach_end - (cx - 75))
-			elif phase < 0.65:
-				var t = (phase - 0.5) / 0.15
-				px = approach_end - sin(t * PI * 0.5) * 18.0
-				py -= sin(t * PI) * 10.0
-				spark_x = win.position.x - 3
-				spark_dir = -1.0
-				show_spark = true
-			else:
-				px = approach_end - 18.0 - ((phase - 0.65) / 0.35) * 20.0
+		if phase < 0.25:
+			# 从左侧水平冲刺向窗口
+			var t = phase / 0.25
+			px = lerpf(cx - 80.0, hit_x, t)
+			py = cy
+			if t > 0.85:
+				show_collision = true
+				collision_pt = Vector2(win.position.x, cy)
+		elif phase < 0.8:
+			# 严格在左侧弹开，做抛物线后空翻重重坠入深渊
+			var t = (phase - 0.25) / 0.55
+			px = lerpf(hit_x, cx - 70.0, t)
+			py = lerpf(cy, cy + 60.0, t) - sin(t * PI) * 15.0
+			if t < 0.15:
+				show_collision = true
+				collision_pt = Vector2(win.position.x, cy)
 		else:
-			var phase = cycle - 1.0
-			var approach_end = win.end.x + r + 8
-			if phase < 0.5:
-				px = cx + 75 - (phase / 0.5) * (cx + 75 - approach_end)
-			elif phase < 0.65:
-				var t = (phase - 0.5) / 0.15
-				px = approach_end + sin(t * PI * 0.5) * 18.0
-				py -= sin(t * PI) * 10.0
-				spark_x = win.end.x + 3
-				spark_dir = 1.0
-				show_spark = true
-			else:
-				px = approach_end + 18.0 + ((phase - 0.65) / 0.35) * 20.0
+			px = -100
+			py = -100
 
-		# 弹开粒子
-		if show_spark:
-			var phase_in_cycle = fmod(cycle, 1.0)
-			if phase_in_cycle >= 0.48 and phase_in_cycle < 0.62:
-				var spark_a = clampf(1.0 - abs(phase_in_cycle - 0.52) / 0.1, 0.0, 1.0) * 0.7
-				for i in range(4):
-					var angle = spark_dir * PI * 0.5 + (float(i) - 1.5) * 0.35
-					var spark_len = 5.0 + float(i) * 2.0
-					var sp = Vector2(spark_x, py)
-					var ep = sp + Vector2(cos(angle), sin(angle)) * spark_len
-					draw_line(sp, ep, Color(1.0, 0.7, 0.2, spark_a), 1.5, true)
+		if show_collision:
+			# 排斥护盾 (朝左展开)
+			draw_arc(collision_pt, 12.0, PI/2, 3*PI/2, 16, Color(1.0, 0.6, 0.2, 0.8), 2.5, true)
+			draw_line(collision_pt - Vector2(0, 15), collision_pt + Vector2(0, 15), Color(1.0, 0.7, 0.4, 0.8), 2.5, true)
+			draw_circle(collision_pt, 3.0, Color(1.0, 0.8, 0.5, 0.6))
 
-		_draw_holo_pet(Vector2(px, py), hue, r)
+		if px > -50.0:
+			_draw_holo_pet(Vector2(px, py), hue, r)
+
+	func _draw_dir_arrow(pos: Vector2, dir: Vector2, color: Color) -> void:
+		var p1 = pos + dir * 4.0
+		var perp = Vector2(-dir.y, dir.x)
+		var p2 = pos - dir * 2.0 + perp * 4.0
+		var p3 = pos - dir * 2.0 - perp * 4.0
+		draw_colored_polygon(PackedVector2Array([p1, p2, p3]), color)
