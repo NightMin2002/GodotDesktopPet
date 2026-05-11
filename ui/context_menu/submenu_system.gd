@@ -194,15 +194,9 @@ func update_position(menu_id: String) -> void:
 	var vp_size = _menu.get_viewport().get_visible_rect().size
 	var panel_w = panel.size.x if panel.size.x > 0 else 160.0
 	# 寻找外层的 PanelContainer 以正确计算面板边缘（包含 padding）
-	var ref_pos = btn_pos
-	var ref_w = btn_size.x
-	var p = trigger_btn.get_parent()
-	while p != null and p != _menu:
-		if p is PanelContainer:
-			ref_pos = p.global_position
-			ref_w = p.size.x
-			break
-		p = p.get_parent()
+	var bounds = _menu.get_panel_bounds_for_button(trigger_btn)
+	var ref_pos = bounds.pos
+	var ref_w = bounds.w
 
 	var gap := 6.0
 	var x: float
@@ -328,15 +322,9 @@ func update_l3_position(menu_id: String) -> void:
 				x = left_x
 	else:
 		# 回退: 基于外层 Panel 边界
-		var ref_pos = trigger_btn.global_position
-		var ref_w = trigger_btn.size.x
-		var p = trigger_btn.get_parent()
-		while p != null and p != _menu:
-			if p is PanelContainer:
-				ref_pos = p.global_position
-				ref_w = p.size.x
-				break
-			p = p.get_parent()
+		var bounds = _menu.get_panel_bounds_for_button(trigger_btn)
+		var ref_pos = bounds.pos
+		var ref_w = bounds.w
 		x = ref_pos.x + ref_w + gap if _menu._menu_side == 1 else ref_pos.x - panel_w - gap
 	var btn_pos = trigger_btn.global_position
 	var btn_size = trigger_btn.size
@@ -460,50 +448,8 @@ func _make_panel() -> PanelContainer:
 	style.content_margin_top = 10
 	style.content_margin_bottom = 10
 	panel.add_theme_stylebox_override("panel", style)
-	panel.draw.connect(_on_panel_draw.bind(panel))
+	panel.draw.connect(_menu.draw_panel_tail.bind(panel))
 	return panel
-
-func _on_panel_draw(panel: PanelContainer) -> void:
-	if not panel.has_meta("trigger_global_y"): return
-	var trigger_global_y: float = panel.get_meta("trigger_global_y")
-	var local_y = trigger_global_y - panel.global_position.y
-	
-	var arr_w = 6.0
-	var arr_h = 16.0
-	var bg_c = Color(0.04, 0.08, 0.16, 0.92)
-	var border_c = Color.from_hsv(EventBus.ui_hue, 0.8, 1.0, 0.8)
-	
-	var pts = PackedVector2Array()
-	var border_pts = PackedVector2Array()
-	var trigger_global_x: float = panel.get_meta("trigger_global_x", 0.0)
-	# 动态判断面板相对于触发器的方位 (如果面板在右边，则其自身中心x > 触发中心x)
-	var is_right_side = (panel.global_position.x + panel.size.x/2.0 > trigger_global_x)
-	
-	if is_right_side:
-		# 面板在触发器右侧，箭头朝左
-		pts.append(Vector2(2.0, local_y - arr_h/2.0))
-		pts.append(Vector2(-arr_w, local_y))
-		pts.append(Vector2(2.0, local_y + arr_h/2.0))
-		
-		# 描边只需画 V 字形外侧
-		border_pts.append(Vector2(0, local_y - arr_h/2.0 + 1.0))
-		border_pts.append(Vector2(-arr_w, local_y))
-		border_pts.append(Vector2(0, local_y + arr_h/2.0 - 1.0))
-	else:
-		# 面板在触发器左侧，箭头朝右
-		var w = panel.size.x
-		pts.append(Vector2(w - 2.0, local_y - arr_h/2.0))
-		pts.append(Vector2(w + arr_w, local_y))
-		pts.append(Vector2(w - 2.0, local_y + arr_h/2.0))
-		
-		border_pts.append(Vector2(w, local_y - arr_h/2.0 + 1.0))
-		border_pts.append(Vector2(w + arr_w, local_y))
-		border_pts.append(Vector2(w, local_y + arr_h/2.0 - 1.0))
-
-	# 1. 盖住面板自带的边框产生一个缺口
-	panel.draw_colored_polygon(pts, bg_c)
-	# 2. 补齐延伸出去的 V 形边框
-	panel.draw_polyline(border_pts, border_c, 2.0, true)
 
 func _on_toggle_pressed(item: Dictionary, target_items: Dictionary) -> void:
 	var btn: Button = target_items[item.id]

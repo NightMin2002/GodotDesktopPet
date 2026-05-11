@@ -1360,3 +1360,59 @@ func _unhandled_input(event: InputEvent) -> void:
 		if not in_hud and not in_submenu:
 			_close_hud()
 			get_viewport().set_input_as_handled()
+
+# ═══════════════════════════════════════════
+# UI 共通工具函数 (提供给子系统调用)
+# ═══════════════════════════════════════════
+
+## 寻找外层的 PanelContainer 以正确计算面板边缘（包含 padding）
+func get_panel_bounds_for_button(btn: Button) -> Dictionary:
+	var ref_pos = btn.global_position
+	var ref_w = btn.size.x
+	var p = btn.get_parent()
+	while p != null and p != self:
+		if p is PanelContainer:
+			ref_pos = p.global_position
+			ref_w = p.size.x
+			break
+		p = p.get_parent()
+	return {"pos": ref_pos, "w": ref_w}
+
+## 为弹出的浮窗面板绘制一个指向触发按钮的小尾巴（三角形）
+func draw_panel_tail(panel: PanelContainer) -> void:
+	if not panel.has_meta("trigger_global_y"): return
+	var trigger_global_y: float = panel.get_meta("trigger_global_y")
+	var trigger_global_x: float = panel.get_meta("trigger_global_x", 0.0)
+	var local_y = trigger_global_y - panel.global_position.y
+	
+	var arr_w = 6.0
+	var arr_h = 16.0
+	var bg_c = Color(0.04, 0.08, 0.16, 0.92)
+	var border_c = Color.from_hsv(EventBus.ui_hue, 0.8, 1.0, 0.8)
+	if panel.has_meta("override_border_c"): border_c = panel.get_meta("override_border_c")
+	
+	var pts = PackedVector2Array()
+	var border_pts = PackedVector2Array()
+	# 动态判断面板相对于触发按钮的方位: 中心X对比
+	var is_right_side = (panel.global_position.x + panel.size.x/2.0 > trigger_global_x)
+	
+	if is_right_side:
+		pts.append(Vector2(2.0, local_y - arr_h/2.0))
+		pts.append(Vector2(-arr_w, local_y))
+		pts.append(Vector2(2.0, local_y + arr_h/2.0))
+		
+		border_pts.append(Vector2(0, local_y - arr_h/2.0 + 1.0))
+		border_pts.append(Vector2(-arr_w, local_y))
+		border_pts.append(Vector2(0, local_y + arr_h/2.0 - 1.0))
+	else:
+		var w = panel.size.x
+		pts.append(Vector2(w - 2.0, local_y - arr_h/2.0))
+		pts.append(Vector2(w + arr_w, local_y))
+		pts.append(Vector2(w - 2.0, local_y + arr_h/2.0))
+		
+		border_pts.append(Vector2(w, local_y - arr_h/2.0 + 1.0))
+		border_pts.append(Vector2(w + arr_w, local_y))
+		border_pts.append(Vector2(w, local_y + arr_h/2.0 - 1.0))
+
+	panel.draw_colored_polygon(pts, bg_c)
+	panel.draw_polyline(border_pts, border_c, panel.get_meta("border_thickness", 2.0), true)

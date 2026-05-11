@@ -99,7 +99,7 @@ func _make_panel(ctrl: Control, desc_text: String, ctrl_size: Vector2) -> PanelC
 	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(desc)
 	_menu.add_child(panel)
-	panel.draw.connect(_on_panel_draw.bind(panel))
+	panel.draw.connect(_menu.draw_panel_tail.bind(panel))
 	return panel
 
 ## 弹簧动画显示
@@ -135,14 +135,13 @@ func _position_panel(entry: Dictionary) -> void:
 		return
 	# 动态查找对应的 L3 面板作为定位参考
 	var l3_panel = _menu._submenu.l3_panels.get(entry.l3_id)
-	var ref_pos: Vector2
-	var ref_w: float
+	var bounds = _menu.get_panel_bounds_for_button(btn)
+	var ref_pos = bounds.pos
+	var ref_w = bounds.w
+	
 	if is_instance_valid(l3_panel) and l3_panel.visible:
 		ref_pos = l3_panel.global_position
 		ref_w = l3_panel.size.x
-	else:
-		ref_pos = btn.global_position
-		ref_w = btn.size.x
 	var btn_pos = btn.global_position
 	var btn_size = btn.size
 	var vp_size = _menu.get_viewport().get_visible_rect().size
@@ -164,42 +163,7 @@ func _position_panel(entry: Dictionary) -> void:
 	panel.set_meta("trigger_global_y", btn_pos.y + btn_size.y / 2.0)
 	panel.queue_redraw()
 
-func _on_panel_draw(panel: PanelContainer) -> void:
-	if not panel.has_meta("trigger_global_y"): return
-	var trigger_global_y: float = panel.get_meta("trigger_global_y")
-	var trigger_global_x: float = panel.get_meta("trigger_global_x", 0.0)
-	var local_y = trigger_global_y - panel.global_position.y
-	
-	var arr_w = 6.0
-	var arr_h = 16.0
-	var bg_c = Color(0.04, 0.08, 0.16, 0.92)
-	var border_c = Color.from_hsv(EventBus.ui_hue, 0.8, 1.0, 0.8)
-	
-	var pts = PackedVector2Array()
-	var border_pts = PackedVector2Array()
-	# 动态判断面板相对于触发按钮的方位 (如果面板在右侧，则其自身中心x > 触发中心x)
-	var is_right_side = (panel.global_position.x + panel.size.x/2.0 > trigger_global_x)
-	
-	if is_right_side:
-		pts.append(Vector2(2.0, local_y - arr_h/2.0))
-		pts.append(Vector2(-arr_w, local_y))
-		pts.append(Vector2(2.0, local_y + arr_h/2.0))
-		
-		border_pts.append(Vector2(0, local_y - arr_h/2.0 + 1.0))
-		border_pts.append(Vector2(-arr_w, local_y))
-		border_pts.append(Vector2(0, local_y + arr_h/2.0 - 1.0))
-	else:
-		var w = panel.size.x
-		pts.append(Vector2(w - 2.0, local_y - arr_h/2.0))
-		pts.append(Vector2(w + arr_w, local_y))
-		pts.append(Vector2(w - 2.0, local_y + arr_h/2.0))
-		
-		border_pts.append(Vector2(w, local_y - arr_h/2.0 + 1.0))
-		border_pts.append(Vector2(w + arr_w, local_y))
-		border_pts.append(Vector2(w, local_y + arr_h/2.0 - 1.0))
 
-	panel.draw_colored_polygon(pts, bg_c)
-	panel.draw_polyline(border_pts, border_c, 2.0, true)
 
 # ═══════════════════════════════════════════
 # 基础预览 Control (共用绘制方法)
