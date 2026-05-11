@@ -1177,20 +1177,16 @@ func _refresh_records_panel() -> void:
 	for i in range(children.size() - 1):
 		children[i].queue_free()
 
-	var games = [
-		{id = "2048", name = "2048", best_key = "best", best_label = "最高"},
-		{id = "snake", name = "贪吃蛇", best_key = "best_len", best_label = "最长"},
-		{id = "minesweeper", name = "扫雷", best_key = "", best_label = ""},
-		{id = "tic_tac_toe", name = "井字棋", best_key = "", best_label = ""},
-	]
+
 	var dim_color = Color(0.4, 0.5, 0.6, 0.6)
 	var val_color = Color(0.6, 0.75, 0.9, 0.85)
 	var insert_idx = 0
 
-	for g in games:
+	for g_id in ["2048", "snake", "minesweeper", "tic_tac_toe"]:
+		var g_name = {"2048": "2048", "snake": "贪吃蛇", "minesweeper": "扫雷", "tic_tac_toe": "井字棋"}[g_id]
 		# 游戏标题
 		var title = Label.new()
-		title.text = g.name
+		title.text = g_name
 		title.add_theme_font_size_override("font_size", 12)
 		title.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.4, 0.9, 0.9))
 		title.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1198,40 +1194,47 @@ func _refresh_records_panel() -> void:
 		_records_container.move_child(title, insert_idx)
 		insert_idx += 1
 
-		var is_pvp = g.id == "tic_tac_toe"
-		if is_pvp:
-			var w = SettingsManager.get_int("game_%s_wins" % g.id, 0)
-			var l = SettingsManager.get_int("game_%s_losses" % g.id, 0)
-			var row = Label.new()
-			row.text = "  胜 %d  负 %d  (对战)" % [w, l]
-			row.add_theme_font_size_override("font_size", 11)
-			row.add_theme_color_override("font_color", dim_color)
-			row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			_records_container.add_child(row)
-			_records_container.move_child(row, insert_idx)
-			insert_idx += 1
+		if g_id == "tic_tac_toe":
+			# 井字棋: 胜/负/平 (PvP，不分用户/宠物)
+			var w = SettingsManager.get_int("game_tic_tac_toe_wins", 0)
+			var l = SettingsManager.get_int("game_tic_tac_toe_losses", 0)
+			var d = SettingsManager.get_int("game_tic_tac_toe_draws", 0)
+			insert_idx = _add_record_row("  胜 %d  负 %d  平 %d" % [w, l, d], dim_color, insert_idx)
 		else:
 			for side in ["我", "宠"]:
-				var prefix = "game_%s_" % g.id if side == "我" else "game_%s_auto_" % g.id
-				var w = SettingsManager.get_int(prefix + "wins", 0)
-				var l = SettingsManager.get_int(prefix + "losses", 0)
-				var txt = "  %s: 胜%d 负%d" % [side, w, l]
-				if g.best_key != "":
-					var b = SettingsManager.get_int(prefix + g.best_key, 0)
-					txt += " %s%d" % [g.best_label, b]
-				var row = Label.new()
-				row.text = txt
-				row.add_theme_font_size_override("font_size", 11)
-				row.add_theme_color_override("font_color", val_color if side == "我" else dim_color)
-				row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-				_records_container.add_child(row)
-				_records_container.move_child(row, insert_idx)
-				insert_idx += 1
+				var prefix = "game_%s_" % g_id if side == "我" else "game_%s_auto_" % g_id
+				var txt = "  %s: " % side
+				match g_id:
+					"2048":
+						var best = SettingsManager.get_int(prefix + "best", 0)
+						var tile = SettingsManager.get_int(prefix + "best_tile", 0)
+						txt += "最高 %d" % best
+						if tile > 0:
+							txt += "  最大块 %d" % tile
+					"snake":
+						var bl = SettingsManager.get_int(prefix + "best_len", 3)
+						var gm = SettingsManager.get_int(prefix + "games", 0)
+						txt += "最长 %d  局数 %d" % [bl, gm]
+					"minesweeper":
+						var w = SettingsManager.get_int(prefix + "wins", 0)
+						var l = SettingsManager.get_int(prefix + "losses", 0)
+						txt += "通关 %d  触雷 %d" % [w, l]
+				insert_idx = _add_record_row(txt, val_color if side == "我" else dim_color, insert_idx)
+
+func _add_record_row(text: String, color: Color, idx: int) -> int:
+	var row = Label.new()
+	row.text = text
+	row.add_theme_font_size_override("font_size", 11)
+	row.add_theme_color_override("font_color", color)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_records_container.add_child(row)
+	_records_container.move_child(row, idx)
+	return idx + 1
 
 func _on_reset_records() -> void:
 	var keys_to_clear = []
 	for gid in ["2048", "minesweeper", "snake", "tic_tac_toe"]:
-		for suffix in ["wins", "losses", "best", "best_len"]:
+		for suffix in ["wins", "losses", "best", "best_len", "best_tile", "games", "draws"]:
 			keys_to_clear.append("game_%s_%s" % [gid, suffix])
 			keys_to_clear.append("game_%s_auto_%s" % [gid, suffix])
 	for key in keys_to_clear:

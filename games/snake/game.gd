@@ -41,7 +41,7 @@ var _score_label: RichTextLabel = null
 var _info_label: Label = null
 var _record_label: RichTextLabel = null
 var _best_length: int = 0  # 历史最长记录 (持久化)
-var _compare_label: Label = null
+
 
 # ── 话术池 (洗牌防重复) ──
 const _POOL_START := [
@@ -338,15 +338,15 @@ func _end_game(won: bool) -> void:
 		var other_len = SettingsManager.get_int(_other_score_key("best_len"), 3)
 		_compare_label.text = "我的最长: %d | 宠物最长: %d" % ([_best_length, other_len] if not _auto_play else [other_len, _best_length])
 	if won:
-		_wins += 1
 		_add_gaming_xp(50)
 		_say(_pick(_q_win, _POOL_WIN))
 	else:
-		_losses += 1
 		_add_gaming_xp(5)
 		_say(_pick(_q_lose, _POOL_LOSE))
+	# 记录局数
+	var games = SettingsManager.get_int(_score_key("games"), 0) + 1
+	SettingsManager.set_int(_score_key("games"), games)
 	_update_labels()
-	_save_scores()
 	_show_restart_bubble()
 	if is_instance_valid(game_viewport):
 		await game_viewport.get_tree().process_frame
@@ -363,8 +363,8 @@ func _on_close_cleanup() -> bool:
 		_game_over = true
 		if is_instance_valid(_tick_timer):
 			_tick_timer.stop()
-		_losses += 1
-		_save_scores()
+		var games = SettingsManager.get_int(_score_key("games"), 0) + 1
+		SettingsManager.set_int(_score_key("games"), games)
 		game_finished.emit(Result.LOSE)
 		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
 			if was_auto:
@@ -562,9 +562,10 @@ func _update_labels() -> void:
 	if _record_label:
 		var best_c = Color.from_hsv(fmod(hue + 0.15, 1.0), 0.45, 0.85).to_html(false)
 		var lose_c = Color(0.85, 0.35, 0.35).to_html(false)
+		var game_count = SettingsManager.get_int(_score_key("games"), 0)
 		_record_label.text = (
 			"[center][color=#" + dim + "]最长 [/color][color=#" + best_c + "]" + str(_best_length)
-			+ "[/color]    [color=#" + dim + "]碰撞 [/color][color=#" + lose_c + "]" + str(_losses)
+			+ "[/color]    [color=#" + dim + "]局数 [/color][color=#" + lose_c + "]" + str(game_count)
 			+ "[/color][/center]"
 		)
 

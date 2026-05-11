@@ -37,7 +37,7 @@ var _flag_count: int = 0           # 已插旗数
 var _timer_running: bool = false
 var _elapsed: float = 0.0
 var _timer_label: Label = null
-var _compare_label: Label = null
+
 
 # ── UI 引用 ──
 var _panel: PanelContainer = null
@@ -490,6 +490,12 @@ func _end_game(won: bool) -> void:
 	_refresh_all_cells()
 	_update_score_label()
 	_save_scores()
+	if _compare_label:
+		var my_w = SettingsManager.get_int(_score_key("wins"), 0)
+		var my_l = SettingsManager.get_int(_score_key("losses"), 0)
+		var pet_w = SettingsManager.get_int(_other_score_key("wins"), 0)
+		var pet_l = SettingsManager.get_int(_other_score_key("losses"), 0)
+		_compare_label.text = "我: %d/%d | 宠: %d/%d" % ([my_w, my_w + my_l, pet_w, pet_w + pet_l] if not _auto_play else [pet_w, pet_w + pet_l, my_w, my_w + my_l])
 	_show_restart_bubble()
 	# 确保面板不超出屏幕
 	if is_instance_valid(game_viewport):

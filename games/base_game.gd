@@ -45,6 +45,7 @@ var _chrome_side: int = 1                  # 按钮朝向 (1=右侧, -1=左侧)
 var _chrome_dragging: bool = false
 var _chrome_drag_offset: Vector2 = Vector2.ZERO
 var _pending_speech: String = ""                 # _say() 在气泡创建前调用时暂存
+var _compare_label: Label = null                 # 双方成绩对比行
 
 # ── 全息合成视口 (合成面板+悬浮组件的完整画面) ──
 var _holo_viewport: SubViewport = null

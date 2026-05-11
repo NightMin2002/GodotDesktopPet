@@ -18,12 +18,13 @@ var _cells: Array = []       # Array[Array[PanelContainer]]
 var _cell_labels: Array = [] # Array[Array[Label]]
 var _score_value: Label = null
 var _best_value: Label = null
-var _compare_label: Label = null
+
 
 # ── 游戏状态 ──
 var _board: Array = []  # Array[Array[int]] 4x4, 0=空
 var _score: int = 0
 var _best: int = 0
+var _best_tile: int = 0  # 最大单块数字 (2048/4096...)
 
 var _reached_2048: bool = false
 var _animating: bool = false  # 动画进行中, 阻止输入
@@ -94,6 +95,7 @@ func get_tutorial_steps() -> Array[Dictionary]:
 func start() -> void:
 	_load_scores()
 	_best = SettingsManager.get_int(_score_key("best"), 0)
+	_best_tile = SettingsManager.get_int(_score_key("best_tile"), 0)
 	_build_ui()
 	_reset_game()
 	_say(_pick(_q_start, _POOL_START))
@@ -352,7 +354,6 @@ func _do_move(dir: Vector2i) -> void:
 			_say(_pick(_q_lose, _POOL_LOSE))
 			_show_restart_bubble()
 			_add_gaming_xp(5 + _score / 500 * 5)  # 基础 5 + 分数加成
-			_save_scores()
 			_save_best()
 			game_finished.emit(Result.WIN if _reached_2048 else Result.LOSE)
 	)
@@ -441,6 +442,8 @@ func _compress_and_merge_tracked(line: Array) -> Dictionary:
 			moves.append({from = src[i + 1], to = dest})
 			merged.append(dest)
 			_score += new_val
+			if new_val > _best_tile:
+				_best_tile = new_val
 			if new_val >= 2048 and not _reached_2048 and not _simulating:
 				_reached_2048 = true
 				_say(_pick(_q_win, _POOL_WIN))
@@ -528,6 +531,7 @@ func _update_score() -> void:
 ## 保存最高分到 SettingsManager
 func _save_best() -> void:
 	SettingsManager.set_int(_score_key("best"), _best)
+	SettingsManager.set_int(_score_key("best_tile"), _best_tile)
 
 func _get_tile_color(value: int, hue: float) -> Color:
 	match value:
@@ -621,7 +625,6 @@ func _on_close_cleanup() -> bool:
 	var was_auto = _auto_play
 	if not _game_over:
 		_game_over = true
-		_save_scores()
 		_save_best()
 		game_finished.emit(Result.LOSE)
 		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):

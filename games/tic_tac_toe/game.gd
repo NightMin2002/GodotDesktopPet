@@ -100,7 +100,7 @@ func get_tutorial_steps() -> Array[Dictionary]:
 
 func start() -> void:
 	_load_scores()
-	_draws = SettingsManager.get_int("game_tic_tac_toe_draws", 0)
+	_draws = SettingsManager.get_int(_score_key("draws"), 0)
 	_build_ui()
 	_reset_board()
 	_say(_pick(_q_start, _POOL_START))
@@ -229,7 +229,7 @@ func _end_game(result: Result, win_line: Array) -> void:
 			_say(_pick(_q_draw, _POOL_DRAW))
 	_update_score_label()
 	_save_scores()
-	SettingsManager.set_int("game_tic_tac_toe_draws", _draws)
+	SettingsManager.set_int(_score_key("draws"), _draws)
 	_show_restart_bubble()
 	# 按钮显示后重新确保不超出屏幕
 	await game_viewport.get_tree().process_frame
