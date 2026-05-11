@@ -55,8 +55,10 @@ func update(delta: float) -> bool:
 	# 计算冲击波爆炸圈扩散和消散
 	var active_shocks: Array[Dictionary] = []
 	for shock in shockwaves:
-		shock["radius"] += 400.0 * delta
-		shock["alpha"] -= 1.8 * delta
+		shock["radius"] += 350.0 * delta
+		shock["alpha"] -= 1.6 * delta
+		if shock.has("thickness"):
+			shock["thickness"] = maxf(0.5, shock["thickness"] - 12.0 * delta)
 		if shock["alpha"] > 0:
 			active_shocks.append(shock)
 	if shockwaves.size() > 0:
@@ -94,8 +96,8 @@ func update(delta: float) -> bool:
 
 func trigger_shockwave() -> void:
 	# 双层高能震荡波，瞬间爆发
-	shockwaves.append({"local_pos": Vector2.ZERO, "radius": pet.PET_RADIUS, "alpha": 1.0})
-	shockwaves.append({"local_pos": Vector2.ZERO, "radius": pet.PET_RADIUS * 0.4, "alpha": 0.5})
+	shockwaves.append({"local_pos": Vector2.ZERO, "radius": pet.PET_RADIUS, "alpha": 1.0, "thickness": 6.0})
+	shockwaves.append({"local_pos": Vector2.ZERO, "radius": pet.PET_RADIUS * 0.4, "alpha": 0.8, "thickness": 2.5})
 
 func get_shockwave_count() -> int:
 	return shockwaves.size()
@@ -115,7 +117,15 @@ func _render_shockwaves(canvas: CanvasItem) -> void:
 		else:
 			# 虹彩: 彩虹循环
 			effect_color = Color.from_hsv(fmod(hue_time + pet.palette.effective_hue() - _PetColorPalette.DEFAULT_HUE, 1.0), 0.6, 1.0, shock["alpha"])
-		canvas.draw_arc(shock["local_pos"], shock["radius"], 0, TAU, 32, effect_color, 4.0, true)
+		
+		# 核心扩散光晕
+		var glow_color = effect_color
+		glow_color.a *= 0.15
+		var thickness = shock.get("thickness", 4.0)
+		canvas.draw_circle(shock["local_pos"], maxf(0.1, shock["radius"] - thickness), glow_color)
+		
+		# 致密外环
+		canvas.draw_arc(shock["local_pos"], shock["radius"], 0, TAU, 32, effect_color, thickness, true)
 
 func _render_trail(canvas: CanvasItem) -> void:
 	var trail_size = trail_history.size()
@@ -139,10 +149,11 @@ func _render_trail(canvas: CanvasItem) -> void:
 			trail_color = Color.from_hsv(fmod(hue_time + pet_hue - _PetColorPalette.DEFAULT_HUE + ratio * 0.3, 1.0), 0.65, 1.0, ratio * 0.7)
 		colors.append(trail_color)
 		
-		var fade_radius = pet.PET_RADIUS * ratio * 0.85
-		var core_color = trail_color
-		core_color.a = ratio * 0.15
-		canvas.draw_circle(local_pos, fade_radius, core_color)
+		if i % 3 == 0 and i > 0:
+			var fade_radius = pet.PET_RADIUS * ratio * 0.85
+			var core_color = trail_color
+			core_color.a = ratio * 0.15
+			canvas.draw_circle(local_pos, fade_radius, core_color)
 		
 	# 最后用高聚焦光束线描绘骨干
 	canvas.draw_polyline_colors(points, colors, pet.PET_RADIUS * 0.5, true)
@@ -241,6 +252,10 @@ func _draw_lightning(points: PackedVector2Array, canvas: CanvasItem, intensity: 
 	# 第2层: 白色闪电内核
 	var core = Color(0.9, 0.95, 1.0, alpha)
 	canvas.draw_polyline(points, core, 2.5 * intensity + 1.5, true)
+	
+	# 两端电弧集结点的高光
+	canvas.draw_circle(points[0], 3.0, Color(1.0, 1.0, 1.0, alpha * 0.8))
+	canvas.draw_circle(points[-1], 3.0, Color(1.0, 1.0, 1.0, alpha * 0.8))
 
 # ── 屏幕穿越辅助 (取直接距离和环绕距离中的最短) ──
 
