@@ -185,8 +185,11 @@ func _setup_window() -> void:
 	screen_rect = DisplayServer.screen_get_usable_rect()
 	
 	var window := get_window()
-	window.position = Vector2i(screen_rect.position)
-	window.size = Vector2i(screen_rect.size)
+	# 窗口位置/大小比屏幕各多 1px (四边各扩 1px)
+	# 修复: 窗口与屏幕完全等大时, 某些 Windows+GPU 组合会触发全屏独占检测,
+	# 跳过 DWM 桌面合成, 导致透明背景变黑屏 (Godot 已知问题 #109693/#107582)
+	window.position = Vector2i(screen_rect.position.x - 1, screen_rect.position.y - 1)
+	window.size = Vector2i(screen_rect.size.x + 2, screen_rect.size.y + 2)
 	window.transparent = true
 	window.borderless = true
 	window.always_on_top = true
@@ -195,7 +198,7 @@ func _setup_window() -> void:
 	get_viewport().transparent_bg = true
 	
 	print("[DesktopPet] 屏幕可用区域: ", screen_rect)
-	print("[DesktopPet] 窗口大小: ", window.size)
+	print("[DesktopPet] 窗口大小: ", window.size, " (±1px 防全屏独占黑屏)")
 
 # ── 屏幕边界 ──
 var _wall_left: StaticBody2D
