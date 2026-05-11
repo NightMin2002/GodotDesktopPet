@@ -99,6 +99,7 @@ func _make_panel(ctrl: Control, desc_text: String, ctrl_size: Vector2) -> PanelC
 	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(desc)
 	_menu.add_child(panel)
+	panel.draw.connect(_on_panel_draw.bind(panel))
 	return panel
 
 ## 弹簧动画显示
@@ -159,6 +160,43 @@ func _position_panel(entry: Dictionary) -> void:
 	var y = btn_pos.y + btn_size.y / 2.0 - panel.size.y / 2.0
 	y = clampf(y, 8.0, vp_size.y - panel.size.y - 8.0)
 	panel.position = Vector2(x, y)
+	panel.set_meta("trigger_global_y", btn_pos.y + btn_size.y / 2.0)
+	panel.queue_redraw()
+
+func _on_panel_draw(panel: PanelContainer) -> void:
+	if not panel.has_meta("trigger_global_y"): return
+	var trigger_global_y: float = panel.get_meta("trigger_global_y")
+	var local_y = trigger_global_y - panel.global_position.y
+	
+	var arr_w = 6.0
+	var arr_h = 16.0
+	var bg_c = Color(0.04, 0.08, 0.16, 0.92)
+	var border_c = Color.from_hsv(EventBus.ui_hue, 0.8, 1.0, 0.8)
+	
+	var pts = PackedVector2Array()
+	var border_pts = PackedVector2Array()
+	var is_right_side = (_menu._menu_side == 1)
+	
+	if is_right_side:
+		pts.append(Vector2(2.0, local_y - arr_h/2.0))
+		pts.append(Vector2(-arr_w, local_y))
+		pts.append(Vector2(2.0, local_y + arr_h/2.0))
+		
+		border_pts.append(Vector2(0, local_y - arr_h/2.0 + 1.0))
+		border_pts.append(Vector2(-arr_w, local_y))
+		border_pts.append(Vector2(0, local_y + arr_h/2.0 - 1.0))
+	else:
+		var w = panel.size.x
+		pts.append(Vector2(w - 2.0, local_y - arr_h/2.0))
+		pts.append(Vector2(w + arr_w, local_y))
+		pts.append(Vector2(w - 2.0, local_y + arr_h/2.0))
+		
+		border_pts.append(Vector2(w, local_y - arr_h/2.0 + 1.0))
+		border_pts.append(Vector2(w + arr_w, local_y))
+		border_pts.append(Vector2(w, local_y + arr_h/2.0 - 1.0))
+
+	panel.draw_colored_polygon(pts, bg_c)
+	panel.draw_polyline(border_pts, border_c, 2.0, true)
 
 # ═══════════════════════════════════════════
 # 基础预览 Control (共用绘制方法)
