@@ -958,6 +958,7 @@ func _build_debug_behavior_submenu() -> void:
 		{"label": "自动对弈", "behavior": "_auto_game_2048", "desc": "宠物自己玩一局 2048"},
 		{"label": "自动扫雷", "behavior": "_auto_game_mine", "desc": "宠物自己玩一局扫雷"},
 		{"label": "自动导航", "behavior": "_auto_game_snake", "desc": "宠物自己玩一局贪吃蛇"},
+		{"label": "自动堆叠", "behavior": "_auto_game_tetris", "desc": "宠物自己玩一局俄罗斯方块"},
 	]
 
 	for item in debug_items:
@@ -1281,6 +1282,8 @@ func _on_debug_behavior_pressed(behavior: String) -> void:
 		EventBus.launch_game_auto.emit("minesweeper")
 	elif behavior == "_auto_game_snake":
 		EventBus.launch_game_auto.emit("snake")
+	elif behavior == "_auto_game_tetris":
+		EventBus.launch_game_auto.emit("tetris")
 	else:
 		EventBus.trigger_idle_behavior.emit(behavior)
 
