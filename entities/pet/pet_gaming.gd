@@ -83,24 +83,15 @@ func render_hologram() -> void:
 	pet.draw_set_transform(Vector2.ZERO, -pet.rotation, Vector2.ONE)
 
 	var side = holo_side
-	# 近端微微与宠物重叠, 营造 3D 前景感
-	var gap = pet.PET_RADIUS * -0.4
+	# 固定尺寸: 所有游戏的全息迷你屏大小/位置一致
+	var gap = pet.PET_RADIUS * 0.1  # 近端留一小段空隙
 
 	# 获取全息合成纹理 (面板 + 悬浮组件的完整画面)
 	var viewport_tex: Texture2D = null
 	if game:
 		viewport_tex = game.get_holo_texture()
-	var holo_w: float
-	var holo_h: float
-	if viewport_tex and viewport_tex.get_size().y > 0:
-		var tex_size = viewport_tex.get_size()
-		# 动态计算宽高比 (合成视口大小随重开按钮显隐变化)
-		var aspect = tex_size.x / tex_size.y
-		holo_h = pet.PET_RADIUS * 2.5
-		holo_w = holo_h * aspect
-	else:
-		holo_w = pet.PET_RADIUS * 1.6
-		holo_h = pet.PET_RADIUS * 1.6
+	var holo_w: float = pet.PET_RADIUS * 2.0
+	var holo_h: float = pet.PET_RADIUS * 2.5
 
 	# 全息屏中心
 	var cx = side * (gap + holo_w * 0.5)
@@ -155,18 +146,9 @@ func get_holo_screen_rect() -> Rect2:
 	if not active or not game:
 		return Rect2()
 	var side = holo_side
-	var gap_val = pet.PET_RADIUS * -0.4
-	var viewport_tex: Texture2D = game.get_holo_texture() if game else null
-	var holo_w: float
-	var holo_h: float
-	if viewport_tex and viewport_tex.get_size().y > 0:
-		var tex_size = viewport_tex.get_size()
-		var aspect = tex_size.x / tex_size.y
-		holo_h = pet.PET_RADIUS * 2.5
-		holo_w = holo_h * aspect
-	else:
-		holo_w = pet.PET_RADIUS * 1.6
-		holo_h = pet.PET_RADIUS * 1.6
+	var gap_val = pet.PET_RADIUS * 0.1
+	var holo_w: float = pet.PET_RADIUS * 2.0
+	var holo_h: float = pet.PET_RADIUS * 2.5
 	var cx = side * (gap_val + holo_w * 0.5)
 	var cy = 0.0
 	# 转到屏幕坐标

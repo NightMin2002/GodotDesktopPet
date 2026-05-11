@@ -566,7 +566,8 @@ func _end_game() -> void:
 func _end_game_maxed() -> void:
 	_game_over = true
 	_persist_scores()
-	_say("...自检完成。堆叠模块运行正常。")
+	if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
+		_pet.show_local_bubble("...自检完成。堆叠模块运行正常。")
 	_update_labels()
 	_show_restart_bubble()
 	game_finished.emit(Result.WIN)

@@ -933,6 +933,7 @@ func _disable_clone_input(node: Node) -> void:
 		_disable_clone_input(child)
 
 ## 更新全息视口布局 (重算包围盒 + 定位克隆体)
+## 使用理想位置 (基于面板坐标系, 不受屏幕边缘 clamp 影响)
 func _update_holo_layout() -> void:
 	if not is_instance_valid(_holo_viewport) or not is_instance_valid(game_container):
 		return
@@ -941,26 +942,66 @@ func _update_holo_layout() -> void:
 	var gc_size = game_container.size
 	var gap := 8.0
 
-	# 计算所有元素的包围盒 (始终包含全部元素空间, 防止显隐跳动)
-	var bounds = Rect2(gc_pos, gc_size)
-	for node in [_title_bubble, _connector, _side_container]:
-		if is_instance_valid(node):
-			bounds = bounds.merge(Rect2(node.position, node.size))
-	# 发言气泡
-	if is_instance_valid(_speech_bubble):
-		var bubble: PanelContainer = _speech_bubble.get_meta("_bubble") as PanelContainer
-		if bubble:
-			bounds = bounds.merge(Rect2(bubble.position, bubble.size))
-	# 重开按钮: 始终用固定常量预留空间 (无论显隐, 防止视口跳变)
-	var rb_reserve_pos = Vector2(
+	# ── 计算理想位置 (以面板为基准, 不 clamp 到屏幕) ──
+	var title_size = _title_bubble.size if is_instance_valid(_title_bubble) else Vector2(100, 30)
+	var ideal_title = Vector2(
+		gc_pos.x + (gc_size.x - title_size.x) / 2.0,
+		gc_pos.y - title_size.y - gap
+	)
+
+	var conn_top = ideal_title.y + title_size.y
+	var conn_h = maxf(gc_pos.y - conn_top, 1.0)
+	var ideal_conn = Vector2(gc_pos.x + gc_size.x / 2.0, conn_top)
+	var ideal_conn_size = Vector2(1, conn_h)
+
+	var side_size = _side_container.size if is_instance_valid(_side_container) else Vector2(40, 80)
+	var ideal_side: Vector2
+	if _chrome_side > 0:
+		ideal_side = Vector2(gc_pos.x + gc_size.x + gap, gc_pos.y)
+	else:
+		ideal_side = Vector2(gc_pos.x - side_size.x - gap, gc_pos.y)
+
+	var rb_pos = Vector2(
 		gc_pos.x + (gc_size.x - _RESTART_RESERVE.x) / 2.0,
 		gc_pos.y + gc_size.y + _RESTART_GAP
 	)
-	bounds = bounds.merge(Rect2(rb_reserve_pos, _RESTART_RESERVE))
-	# 如果按钮可见且实际 size 更大, 也能包含
+
+	# 发言气泡理想位置
+	var ideal_bubble_pos := Vector2.ZERO
+	var ideal_bubble_size := Vector2.ZERO
+	var ideal_arrow_pos := Vector2.ZERO
+	var ideal_arrow_size := Vector2(8, 12)
+	var has_speech := false
+	if is_instance_valid(_speech_bubble):
+		var bubble: PanelContainer = _speech_bubble.get_meta("_bubble") as PanelContainer
+		if bubble:
+			has_speech = true
+			ideal_bubble_size = bubble.size
+			var speech_side = -_chrome_side
+			var arrow_w := 8.0
+			if speech_side > 0:
+				ideal_bubble_pos = Vector2(gc_pos.x + gc_size.x + gap + arrow_w, gc_pos.y + 8.0)
+				ideal_arrow_pos = Vector2(ideal_bubble_pos.x - arrow_w, ideal_bubble_pos.y + ideal_bubble_size.y / 2.0 - 6.0)
+			else:
+				ideal_bubble_pos = Vector2(gc_pos.x - ideal_bubble_size.x - gap - arrow_w, gc_pos.y + 8.0)
+				ideal_arrow_pos = Vector2(ideal_bubble_pos.x + ideal_bubble_size.x, ideal_bubble_pos.y + ideal_bubble_size.y / 2.0 - 6.0)
+
+	# ── 包围盒 (理想位置) ──
+	var bounds = Rect2(gc_pos, gc_size)
+	bounds = bounds.merge(Rect2(ideal_title, title_size))
+	if conn_h > 1:
+		bounds = bounds.merge(Rect2(ideal_conn, ideal_conn_size))
+	bounds = bounds.merge(Rect2(ideal_side, side_size))
+	bounds = bounds.merge(Rect2(rb_pos, _RESTART_RESERVE))
 	if is_instance_valid(_restart_bubble) and _restart_bubble.visible:
-		bounds = bounds.merge(Rect2(_restart_bubble.position, _restart_bubble.size))
-	bounds = bounds.grow(2)  # 2px 边距
+		var rb_ideal = Vector2(
+			gc_pos.x + (gc_size.x - _restart_bubble.size.x) / 2.0,
+			gc_pos.y + gc_size.y + gap
+		)
+		bounds = bounds.merge(Rect2(rb_ideal, _restart_bubble.size))
+	if has_speech:
+		bounds = bounds.merge(Rect2(ideal_bubble_pos, ideal_bubble_size))
+	bounds = bounds.grow(2)
 
 	# 更新视口大小
 	_holo_viewport.size = Vector2i(int(bounds.size.x), int(bounds.size.y))
@@ -971,35 +1012,37 @@ func _update_holo_layout() -> void:
 		_holo_game_rect.position = gc_pos - offset
 		_holo_game_rect.size = gc_size
 
-	# 定位克隆体 (转换到视口内部坐标系)
-	if is_instance_valid(_holo_title) and is_instance_valid(_title_bubble):
-		_holo_title.position = _title_bubble.position - offset
-		_holo_title.size = _title_bubble.size
+	# 定位克隆体 (用理想位置)
+	if is_instance_valid(_holo_title):
+		_holo_title.position = ideal_title - offset
+		_holo_title.size = title_size
 
-	if is_instance_valid(_holo_connector) and is_instance_valid(_connector):
-		_holo_connector.position = _connector.position - offset
-		_holo_connector.size = _connector.size
-		_holo_connector.visible = _connector.visible
+	if is_instance_valid(_holo_connector):
+		_holo_connector.position = ideal_conn - offset
+		_holo_connector.size = ideal_conn_size
+		_holo_connector.visible = conn_h > 1
 
-	if is_instance_valid(_holo_side) and is_instance_valid(_side_container):
-		_holo_side.position = _side_container.position - offset
+	if is_instance_valid(_holo_side):
+		_holo_side.position = ideal_side - offset
 
 	if is_instance_valid(_holo_restart) and is_instance_valid(_restart_bubble):
-		_holo_restart.position = _restart_bubble.position - offset
+		var rb_ideal = Vector2(
+			gc_pos.x + (gc_size.x - _restart_bubble.size.x) / 2.0,
+			gc_pos.y + gc_size.y + gap
+		)
+		_holo_restart.position = rb_ideal - offset
 		_holo_restart.size = _restart_bubble.size
 		_holo_restart.visible = _restart_bubble.visible
 
-	if is_instance_valid(_holo_speech) and is_instance_valid(_speech_bubble):
-		var bubble: PanelContainer = _speech_bubble.get_meta("_bubble") as PanelContainer
+	if is_instance_valid(_holo_speech) and has_speech:
 		var holo_bubble: PanelContainer = _holo_speech.get_meta("_bubble") as PanelContainer
 		var holo_arrow: Control = _holo_speech.get_meta("_arrow") as Control
-		var orig_arrow: Control = _speech_bubble.get_meta("_arrow") as Control
-		if bubble and holo_bubble:
-			holo_bubble.position = bubble.position - offset
-			holo_bubble.size = bubble.size
-		if orig_arrow and holo_arrow:
-			holo_arrow.position = orig_arrow.position - offset
-			holo_arrow.size = orig_arrow.size
+		if holo_bubble:
+			holo_bubble.position = ideal_bubble_pos - offset
+			holo_bubble.size = ideal_bubble_size
+		if holo_arrow:
+			holo_arrow.position = ideal_arrow_pos - offset
+			holo_arrow.size = ideal_arrow_size
 			holo_arrow.queue_redraw()
 
 ## 获取全息合成纹理 (供 pet_gaming.gd 渲染)
