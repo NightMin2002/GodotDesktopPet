@@ -33,7 +33,8 @@ func build() -> void:
 	_register_radio("gait", 0, "g_jump", GaitJumpPreview.new(),  "纯蹦跳抛物移动，绝不贴地", Vector2(180, 100))
 	_register_radio("gait", 1, "g_roll", GaitRollPreview.new(),  "纯滚动贴地平移，绝不跳跃", Vector2(180, 100))
 	_register_radio("gait", 2, "g_mix",  GaitMixedPreview.new(), "二者结合，动静自如的平衡", Vector2(180, 100))
-
+	# ── 模式预览 (L3: "mode") ──
+	_register_toggle("eye_track", "mode", EyeTrackPreview.new(), "随着鼠标移动，宠物始终注视着光标", Vector2(180, 100))
 ## 每帧定位跟踪 (由 context_menu._process 调用)
 func update_positions() -> void:
 	for entry in _entries.values():
@@ -912,3 +913,116 @@ class GaitMixedPreview extends ViewBase:
 
 		_draw_holo_pet_rot(Vector2(px, py), hue, r, rot)
 
+# ═══════════════════════════════════════════
+# 动画预览 Control: 模式 - 指针跟踪
+# ═══════════════════════════════════════════
+class EyeTrackPreview extends ViewBase:
+	var _time: float = 0.0
+
+	func _process(delta: float) -> void:
+		_time += delta
+		queue_redraw()
+
+	func _draw_replica_pet(center: Vector2, hue: float, r: float, look_offset: Vector2, blink: float) -> void:
+		var outline_c = Color.from_hsv(hue, 0.8, 0.2, 1.0)
+		var main_c = Color.from_hsv(hue, 0.7, 0.5, 1.0)
+		var dark_blue = Color.from_hsv(hue, 0.6, 0.3, 1.0)
+		
+		# 1. 外壳与金属边框
+		draw_circle(center, r + 1.2, outline_c, true, -1.0, true)
+		draw_circle(center, r, main_c, true, -1.0, true)
+		var border_radius = r * 0.85
+		draw_arc(center, border_radius, 0, TAU, 32, Color(1.0, 1.0, 1.0, 0.8), 1.2, true)
+		
+		# 2. 十字底座面板
+		var base_r = r * 0.68
+		var tip_dist = border_radius - 1.0
+		draw_circle(center, base_r, dark_blue, true, -1.0, true)
+		for i in range(4):
+			var angle = i * PI / 2.0 + PI / 4.0
+			var tip_pos = center + Vector2(cos(angle), sin(angle)) * tip_dist
+			var half_hw = PI / 10.0
+			var left_base = center + Vector2(cos(angle - half_hw), sin(angle - half_hw)) * (base_r * 0.95)
+			var right_base = center + Vector2(cos(angle + half_hw), sin(angle + half_hw)) * (base_r * 0.95)
+			draw_polygon(PackedVector2Array([left_base, tip_pos, right_base]), PackedColorArray([dark_blue, dark_blue, dark_blue]))
+			
+		# 3. 单向大眼球 (巩膜与虹膜)
+		var iris_scale = maxf(0.01, 1.0 - blink * 0.95)
+		if iris_scale > 0.05:
+			# 巩膜 (眼白)
+			draw_circle(center, r * 0.54 * iris_scale, Color(0.85, 0.88, 0.92, 1.0), true, -1.0, true)
+			# 虹膜结构 (带有追视偏移)
+			var pup_pos = center + look_offset * iris_scale
+			draw_circle(pup_pos, r * 0.42 * iris_scale, Color.from_hsv(hue, 0.4, 0.8, 1.0), true, -1.0, true)
+			draw_circle(pup_pos, r * 0.28 * iris_scale, Color.from_hsv(hue, 0.6, 0.5, 1.0), true, -1.0, true)
+			draw_circle(pup_pos, r * 0.16 * iris_scale, Color.from_hsv(hue, 0.8, 0.15, 1.0), true, -1.0, true)
+			# 瞳孔高光反射
+			var highlight_offset = pup_pos + Vector2(-r * 0.08, -r * 0.10) * iris_scale
+			draw_circle(highlight_offset, r * 0.11 * iris_scale, Color(1, 1, 1, iris_scale * 0.85), true, -1.0, true)
+			draw_circle(highlight_offset, r * 0.06 * iris_scale, Color(1, 1, 1, iris_scale), true, -1.0, true)
+		
+		# 4. 机械闭眼挡板遮罩
+		if blink > 0.01:
+			var sclera_r = r * 0.54
+			var close_px = sclera_r * blink * 1.5
+			if close_px >= 0.5:
+				var flat_y = -sclera_r + close_px
+				flat_y = clampf(flat_y, -sclera_r + 0.1, sclera_r - 0.1)
+				var dx = sqrt(maxf(0.0, sclera_r*sclera_r - flat_y*flat_y))
+				var pts = PackedVector2Array()
+				var arc_steps = 16
+				var arc_r = sclera_r + 0.5
+				var start_angle = atan2(flat_y, -dx)
+				var end_angle = atan2(flat_y, dx)
+				if start_angle > end_angle: start_angle -= TAU
+				pts.append(Vector2(-dx, flat_y))
+				pts.append(Vector2(dx, flat_y))
+				for i in range(1, arc_steps):
+					var a = lerpf(end_angle, start_angle + TAU, float(i)/arc_steps)
+					pts.append(Vector2(cos(a), sin(a)) * arc_r)
+				
+				var global_pts = PackedVector2Array()
+				for pt in pts: global_pts.append(center + pt)
+				draw_colored_polygon(global_pts, dark_blue)
+				draw_polyline(global_pts, dark_blue, 1.0, true)
+
+	func _draw() -> void:
+		var cx = size.x / 2.0
+		var cy = size.y / 2.0
+		var center = Vector2(cx, cy)
+		var r = 18.0 # 稍微放大以展示完美复刻的眼部细节！
+		var hue = EventBus.ui_hue
+		
+		# 模拟光标靶点 (红色激光笔)
+		var target_pos = center + Vector2(sin(_time * 1.8) * 55.0, cos(_time * 2.5) * 25.0)
+		var dot_c = Color(1.0, 0.2, 0.3, 0.9)
+		draw_circle(target_pos, 2.0, dot_c)
+		draw_arc(target_pos, 5.0 + sin(_time * 12.0) * 1.5, 0, TAU, 16, Color(1.0, 0.2, 0.3, 0.4), 1.0, true)
+		
+		# 相对靶点的注视偏置计算
+		var diff = target_pos - center
+		var dist = diff.length()
+		var look_dir = diff.normalized()
+		var max_offset = r * 0.18 # 原版瞳孔活动范围大约是这个比例
+		var look_offset = look_dir * (max_offset * minf(dist / 60.0, 1.0))
+		
+		# 随机眨眼逻辑 (更贴近原版)
+		var blink = 0.0
+		var phase = fmod(_time, 3.5)
+		if phase < 0.1:
+			blink = sin(phase / 0.1 * PI)
+			
+		# 完全采用实体复刻渲染！
+		_draw_replica_pet(center, hue, r, look_offset, blink)
+		
+		# 追踪扫描虚线
+		var scan_c = Color.from_hsv(hue, 0.7, 1.0, 0.2)
+		var dash_len = 3.0
+		var dash_gap = 4.0
+		var curr = r * 1.5
+		while curr < dist - 8.0:
+			var p1 = center + look_dir * curr
+			curr += dash_len
+			var p2 = center + look_dir * minf(curr, dist - 8.0)
+			draw_line(p1, p2, scan_c, 1.0, true)
+			curr += dash_gap
