@@ -212,9 +212,9 @@ func _build_sec_behavior() -> void:
 
 	# L3 子菜单
 	_submenu.create_radio("window_mode", [
-		{"value": 0, "label": "自由漫游", "desc": "在窗口间自由行走"},
-		{"value": 1, "label": "窗口封闭", "desc": "被困在当前窗口内"},
-		{"value": 2, "label": "窗口排斥", "desc": "无法进入任何窗口"},
+		{"value": 0, "label": "自由漫游"},
+		{"value": 1, "label": "窗口封闭"},
+		{"value": 2, "label": "窗口排斥"},
 	], _on_radio_window_mode, 3)
 	_submenu._l3_parent_map["window_mode"] = "sec_behavior"
 
