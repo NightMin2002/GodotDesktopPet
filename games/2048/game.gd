@@ -198,6 +198,8 @@ func _build_ui() -> void:
 			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 			label.add_theme_font_size_override("font_size", 22)
+			label.add_theme_constant_override("outline_size", 5)
+			label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.5))
 			label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			cell.add_child(label)
 
@@ -384,6 +386,8 @@ func _make_clone(value: int, pos: Vector2i, hue: float) -> Dictionary:
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_font_size_override("font_size", _get_font_size(value))
 	label.add_theme_color_override("font_color", _get_text_color(value))
+	label.add_theme_constant_override("outline_size", 5)
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.5))
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	cell.add_child(label)
 	_board_area.add_child(cell)
@@ -505,6 +509,8 @@ func _update_cells() -> void:
 			# 文字样式
 			label.add_theme_color_override("font_color", _get_text_color(val))
 			label.add_theme_font_size_override("font_size", _get_font_size(val))
+			label.add_theme_constant_override("outline_size", 5 if val > 0 else 0)
+			label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.5))
 
 ## 新方块弹入动画 (scale 0 -> 1)
 func _animate_spawn(pos: Vector2i) -> void:
@@ -684,6 +690,20 @@ func _auto_play_step() -> void:
 	if _game_over:
 		_auto_finish_and_close()
 		return
+	# 自玩达到 2048: 主动收手
+	if _reached_2048:
+		_game_over = true
+		_save_best()
+		game_finished.emit(Result.WIN)
+		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
+			var win_lines = [
+				"...矩阵推演完成。合并模块运行正常。",
+				"...2048。目标达成。自行退出。",
+				"...运算结束。结果在预期范围内。",
+			]
+			_pet.show_local_bubble(win_lines[randi() % win_lines.size()])
+		_auto_finish_and_close()
+		return
 	if _animating:
 		return
 	var dir = _ai_pick_move()
@@ -697,20 +717,177 @@ func _auto_play_step() -> void:
 		var hi = lerpf(0.7, 0.2, spd_factor)
 		_auto_timer.wait_time = randf_range(lo, hi)
 
-## AI 策略: 角落贪心法 (DOWN > LEFT > RIGHT > UP)
+## AI 策略: Expectimax 搜索 (期望最大化)
 func _ai_pick_move() -> Vector2i:
-	var priorities = [Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1)]
 	# 按熟练度决定失误率
 	if randf() < _get_mistake_rate():
-		priorities.shuffle()
-	for dir in priorities:
-		if _would_move(dir):
-			return dir
-	return Vector2i.ZERO
+		var dirs = [Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1)]
+		dirs.shuffle()
+		for d in dirs:
+			if _would_move(d):
+				return d
+		return Vector2i.ZERO
+
+	# Expectimax 搜索 (空格少时加深)
+	var empty_count = _count_empty_sim(_board)
+	var depth = 3 if empty_count <= 6 else 2
+	var best_dir = Vector2i.ZERO
+	var best_score = -1e18
+	for dir in [Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1)]:
+		var sim = _sim_move(_board, dir)
+		if not sim.moved:
+			continue
+		var score = _expectimax(sim.board, depth - 1, false)
+		if score > best_score:
+			best_score = score
+			best_dir = dir
+	return best_dir
+
+## Expectimax 递归
+func _expectimax(board: Array, depth: int, is_max: bool) -> float:
+	if depth <= 0:
+		return _eval_board(board)
+	if is_max:
+		var best = -1e18
+		var any_moved = false
+		for dir in [Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1)]:
+			var sim = _sim_move(board, dir)
+			if not sim.moved:
+				continue
+			any_moved = true
+			best = maxf(best, _expectimax(sim.board, depth - 1, false))
+		return best if any_moved else _eval_board(board)
+	else:
+		# 期望层: 枚举空格 x {2, 4}
+		var empties: Array = []
+		for y in range(GRID):
+			for x in range(GRID):
+				if board[y][x] == 0:
+					empties.append(Vector2i(x, y))
+		if empties.is_empty():
+			return _eval_board(board)
+		# 空格过多时采样 (性能)
+		if empties.size() > 6:
+			empties.shuffle()
+			empties.resize(6)
+		var total = 0.0
+		for cell in empties:
+			for val in [2, 4]:
+				var prob = 0.9 if val == 2 else 0.1
+				var nb = _copy_board(board)
+				nb[cell.y][cell.x] = val
+				total += prob * _expectimax(nb, depth - 1, true)
+		return total / empties.size()
+
+## 纯函数: 模拟移动 (不碰游戏状态)
+func _sim_move(board: Array, dir: Vector2i) -> Dictionary:
+	var nb: Array = []
+	for y in range(GRID):
+		nb.append(board[y].duplicate())
+	var moved = false
+	if dir.x != 0:
+		for y in range(GRID):
+			var line: Array = []
+			for x in range(GRID): line.append(nb[y][x])
+			if dir.x > 0: line.reverse()
+			var res = _sim_compress(line)
+			if dir.x > 0: res.reverse()
+			for x in range(GRID):
+				if nb[y][x] != res[x]: moved = true
+				nb[y][x] = res[x]
+	else:
+		for x in range(GRID):
+			var line: Array = []
+			for y in range(GRID): line.append(nb[y][x])
+			if dir.y > 0: line.reverse()
+			var res = _sim_compress(line)
+			if dir.y > 0: res.reverse()
+			for y in range(GRID):
+				if nb[y][x] != res[y]: moved = true
+				nb[y][x] = res[y]
+	return {board = nb, moved = moved}
+
+## 压缩合并 (纯函数, 返回行数组)
+func _sim_compress(line: Array) -> Array:
+	var c: Array = []
+	for v in line:
+		if v != 0: c.append(v)
+	var res: Array = []
+	var i = 0
+	while i < c.size():
+		if i + 1 < c.size() and c[i] == c[i + 1]:
+			res.append(c[i] * 2)
+			i += 2
+		else:
+			res.append(c[i])
+			i += 1
+	while res.size() < GRID:
+		res.append(0)
+	return res
+
+func _copy_board(board: Array) -> Array:
+	var nb: Array = []
+	for y in range(GRID):
+		nb.append(board[y].duplicate())
+	return nb
+
+func _count_empty_sim(board: Array) -> int:
+	var count = 0
+	for y in range(GRID):
+		for x in range(GRID):
+			if board[y][x] == 0: count += 1
+	return count
+
+## 棋盘评估: 单调性 + 平滑度 + 空格数 + 角落奖励
+func _eval_board(board: Array) -> float:
+	var empty = 0
+	var max_val = 0
+	for y in range(GRID):
+		for x in range(GRID):
+			if board[y][x] == 0: empty += 1
+			if board[y][x] > max_val: max_val = board[y][x]
+
+	# 单调性: 行/列递增或递减倾向
+	var mono = 0.0
+	for y in range(GRID):
+		var inc = 0.0; var dec = 0.0
+		for x in range(GRID - 1):
+			var a = _log2(board[y][x]); var b = _log2(board[y][x + 1])
+			if a > b: dec += b - a
+			else: inc += a - b
+		mono += maxf(inc, dec)
+	for x in range(GRID):
+		var inc = 0.0; var dec = 0.0
+		for y in range(GRID - 1):
+			var a = _log2(board[y][x]); var b = _log2(board[y + 1][x])
+			if a > b: dec += b - a
+			else: inc += a - b
+		mono += maxf(inc, dec)
+
+	# 平滑度: 相邻差异惩罚
+	var smooth = 0.0
+	for y in range(GRID):
+		for x in range(GRID):
+			if board[y][x] > 0:
+				var v = _log2(board[y][x])
+				if x + 1 < GRID and board[y][x + 1] > 0:
+					smooth -= absf(v - _log2(board[y][x + 1]))
+				if y + 1 < GRID and board[y + 1][x] > 0:
+					smooth -= absf(v - _log2(board[y + 1][x]))
+
+	# 角落奖励
+	var corner = 0.0
+	if max_val == board[0][0] or max_val == board[0][3] or \
+	   max_val == board[3][0] or max_val == board[3][3]:
+		corner = _log2(max_val)
+
+	return mono * 1.0 + smooth * 0.1 + float(empty) * 2.7 + corner * 1.0
+
+func _log2(val: int) -> float:
+	return log(val) / log(2) if val > 0 else 0.0
 
 ## 检测某个方向是否有效 (不修改状态)
 func _would_move(dir: Vector2i) -> bool:
-	# 保存状态
 	var saved_board: Array = []
 	for y in range(GRID):
 		saved_board.append(_board[y].duplicate())

@@ -35,6 +35,10 @@ var _eat_flash: float = 0.0           # 吃到食物时的闪光
 var _just_ate: bool = false           # 本 tick 是否刚吃了食物
 var _bg_pupil_pos: Vector2 = Vector2.ZERO # 背景单眼的平滑插值位置
 
+# ── Hamiltonian Cycle (AI 自玩用) ──
+var _cycle_order: Array = []     # [y][x] → 回路序号 (0..143)
+var _cycle_path: Array = []      # [序号] → Vector2i 位置
+
 # ── UI 引用 ──
 var _panel: PanelContainer = null
 var _grid_renderer = null  # _GridRenderer 实例
@@ -252,6 +256,7 @@ func _reset_game() -> void:
 	_just_ate = false
 	_spawn_food()
 	_update_speed()
+	_build_hamiltonian_cycle()
 	_update_labels()
 	_hide_restart_bubble()
 	if is_instance_valid(_tick_timer):
@@ -676,53 +681,64 @@ func _auto_play_step() -> void:
 	if _game_over:
 		_auto_finish_and_close()
 
-## AI 策略: 贪心寻路 + 开放空间评估 + 安全回退
+## AI 策略: 智能追食 + Hamiltonian Cycle 兜底
+## 主策略: 选离食物最近且不会困死自己的方向 (看起来聪明)
+## 兜底: 跟 Hamiltonian Cycle 走 (保证不死)
 func _ai_pick_dir() -> Vector2i:
 	var head = _snake[0]
-	var options = [DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT]
-	options.erase(-_dir)
+	if _cycle_order.is_empty():
+		return _dir
+	var head_idx = _cycle_order[head.y][head.x]
+	var N = GRID * GRID
+
+	# 兜底: 沿 Hamiltonian Cycle 前进 (100% 安全)
+	var next_idx = (head_idx + 1) % N
+	var next_pos = _cycle_path[next_idx]
+	var cycle_dir = next_pos - head
 
 	# 按熟练度决定失误率
 	if randf() < _get_mistake_rate():
+		var options = [DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT]
 		options.shuffle()
 		for d in options:
 			if _is_safe(head + d):
 				return d
-		return _dir
+		return cycle_dir
 
-	# 评分每个安全方向
+	# 智能追食: 选离食物最近 + 不会困死自己的方向
 	var best_dir = Vector2i.ZERO
-	var best_score = -9999.0
-	for d in options:
-		var next_pos = head + d
-		if not _is_safe(next_pos):
+	var best_dist = 9999
+	for d in [DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT]:
+		var np = head + d
+		if not _is_safe(np):
 			continue
-		var score := 0.0
-		var dist_now = absi(head.x - _food.x) + absi(head.y - _food.y)
-		var dist_new = absi(next_pos.x - _food.x) + absi(next_pos.y - _food.y)
-		if dist_new < dist_now:
-			score += 10.0
-		score += minf(float(_count_reachable(next_pos)), 80.0) * 0.3
-		if score > best_score:
-			best_score = score
+		# 安全验证: 移动后可达空间 >= 蛇身长度 (不会困住自己)
+		var reachable = _count_reachable_from(np)
+		if reachable < _snake.size():
+			continue
+		var food_dist = absi(np.x - _food.x) + absi(np.y - _food.y)
+		if food_dist < best_dist:
+			best_dist = food_dist
 			best_dir = d
 
-	# 安全回退: 没有评分方向时, 选可达空间最大的安全方向
-	if best_dir == Vector2i.ZERO:
-		var fallback_dir = Vector2i.ZERO
-		var fallback_reach = -1
-		for d in options:
-			if _is_safe(head + d):
-				var reach = _count_reachable(head + d)
-				if reach > fallback_reach:
-					fallback_reach = reach
-					fallback_dir = d
-		if fallback_dir != Vector2i.ZERO:
-			return fallback_dir
-		# 真的无路可走 (必死)
-		return _dir
+	if best_dir != Vector2i.ZERO:
+		return best_dir
 
-	return best_dir
+	# 二级兜底: Hamiltonian Cycle (需验证安全)
+	if _is_safe(head + cycle_dir):
+		return cycle_dir
+
+	# 三级兜底: 选可达空间最大的安全方向 (绝对不撞)
+	var emer_dir = _dir
+	var emer_reach = -1
+	for d in [DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT]:
+		var np = head + d
+		if _is_safe(np):
+			var r = _count_reachable_from(np)
+			if r > emer_reach:
+				emer_reach = r
+				emer_dir = d
+	return emer_dir
 
 func _is_safe(pos: Vector2i) -> bool:
 	if pos.x < 0 or pos.x >= GRID or pos.y < 0 or pos.y >= GRID:
@@ -732,22 +748,73 @@ func _is_safe(pos: Vector2i) -> bool:
 			return false
 	return true
 
-func _count_reachable(from: Vector2i) -> int:
+## Flood fill: 从某位置出发可到达的空间数量
+## 提前截断: 够用了就不继续 (性能)
+func _count_reachable_from(from: Vector2i) -> int:
 	var visited: Dictionary = {}
+	# 蛇身 (排除尾巴, 因为下一步尾巴会移走)
 	for i in range(_snake.size() - 1):
 		visited[_snake[i]] = true
 	var queue: Array[Vector2i] = [from]
 	visited[from] = true
 	var count := 0
-	# 搜索深度受等级影响 (Lv.1: 60 → Lv.10: 144=全图)
-	var level = SettingsManager.get_gaming_level()
-	var max_steps: int = 60 + level * 9  # 60→150
-	while queue.size() > 0 and count < max_steps:
+	var need = _snake.size() + 2  # 只要够用就行
+	while queue.size() > 0:
 		var cur = queue.pop_front()
 		count += 1
+		if count >= need:
+			return count  # 提前截断
 		for d in [DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT]:
 			var np = cur + d
 			if np.x >= 0 and np.x < GRID and np.y >= 0 and np.y < GRID and not visited.has(np):
 				visited[np] = true
 				queue.append(np)
 	return count
+
+## 生成 Hamiltonian Cycle (蛇形扫描回路)
+## 路径: 第0行全部向右 → 奇数行向左(1~11列) → 偶数行向右(1~11列)
+##       → 最后一行全部向左 → 第0列向上回到起点
+func _build_hamiltonian_cycle() -> void:
+	_cycle_order.clear()
+	_cycle_path.clear()
+	for y in range(GRID):
+		var row: Array = []
+		row.resize(GRID)
+		row.fill(0)
+		_cycle_order.append(row)
+
+	var index = 0
+	var path: Array[Vector2i] = []
+
+	# 第 0 行: 全部向右 (0..GRID-1)
+	for x in range(GRID):
+		_cycle_order[0][x] = index
+		path.append(Vector2i(x, 0))
+		index += 1
+
+	# 中间行 (1..GRID-2): 在 1~GRID-1 列间蜂形扫描
+	for y in range(1, GRID - 1):
+		if y % 2 == 1:  # 奇数行: 右到左 (GRID-1 → 1)
+			for x in range(GRID - 1, 0, -1):
+				_cycle_order[y][x] = index
+				path.append(Vector2i(x, y))
+				index += 1
+		else:  # 偶数行: 左到右 (1 → GRID-1)
+			for x in range(1, GRID):
+				_cycle_order[y][x] = index
+				path.append(Vector2i(x, y))
+				index += 1
+
+	# 最后一行: 全部向左 (GRID-1 → 0)
+	for x in range(GRID - 1, -1, -1):
+		_cycle_order[GRID - 1][x] = index
+		path.append(Vector2i(x, GRID - 1))
+		index += 1
+
+	# 第 0 列向上返回 (GRID-2 → 1)
+	for y in range(GRID - 2, 0, -1):
+		_cycle_order[y][0] = index
+		path.append(Vector2i(0, y))
+		index += 1
+
+	_cycle_path = path
