@@ -672,7 +672,12 @@ func _auto_play_step() -> void:
 	if dir != Vector2i.ZERO:
 		_do_move(dir)
 	if is_instance_valid(_auto_timer):
-		_auto_timer.wait_time = randf_range(0.25, 0.55)
+		# 操作速度受等级影响 (Lv.1: 0.4~0.7s → Lv.10: 0.08~0.2s)
+		var rate = _get_mistake_rate()
+		var spd_factor = 1.0 - rate / 0.10
+		var lo = lerpf(0.4, 0.08, spd_factor)
+		var hi = lerpf(0.7, 0.2, spd_factor)
+		_auto_timer.wait_time = randf_range(lo, hi)
 
 ## AI 策略: 角落贪心法 (DOWN > LEFT > RIGHT > UP)
 func _ai_pick_move() -> Vector2i:

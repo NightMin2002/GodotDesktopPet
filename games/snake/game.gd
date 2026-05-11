@@ -663,7 +663,9 @@ func _count_reachable(from: Vector2i) -> int:
 	var queue: Array[Vector2i] = [from]
 	visited[from] = true
 	var count := 0
-	var max_steps := 60
+	# 搜索深度受等级影响 (Lv.1: 60 → Lv.10: 144=全图)
+	var level = SettingsManager.get_gaming_level()
+	var max_steps: int = 60 + level * 9  # 60→150
 	while queue.size() > 0 and count < max_steps:
 		var cur = queue.pop_front()
 		count += 1

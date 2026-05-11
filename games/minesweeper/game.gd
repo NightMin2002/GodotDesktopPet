@@ -712,7 +712,12 @@ func _auto_play_step() -> void:
 		if not _flagged[action.idx]:
 			_toggle_flag(action.idx)
 	if is_instance_valid(_auto_timer):
-		_auto_timer.wait_time = randf_range(0.3, 0.7)
+		# 操作速度受等级影响 (Lv.1: 0.5~0.9s → Lv.10: 0.1~0.25s)
+		var rate = _get_mistake_rate()  # 0.10→0.0
+		var spd_factor = 1.0 - rate / 0.10  # 0.0→1.0
+		var lo = lerpf(0.5, 0.1, spd_factor)
+		var hi = lerpf(0.9, 0.25, spd_factor)
+		_auto_timer.wait_time = randf_range(lo, hi)
 
 ## AI 策略: 约束求解 + 概率猜测
 func _ai_pick_action() -> Dictionary:
