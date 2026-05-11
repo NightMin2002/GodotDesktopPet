@@ -145,8 +145,53 @@ func _add_gaming_xp(amount: int) -> void:
 				"经验积累到位。Lv.%d。" % new_level,
 			]
 			_pet.show_local_bubble(lines[randi() % lines.size()])
-	else:
-		_say("+%d XP" % amount)
+	_show_xp_popup(amount)
+
+## XP 飘字动画 (面板底部, 带背景, 向上浮起淡出)
+func _show_xp_popup(amount: int) -> void:
+	if not is_instance_valid(game_container):
+		return
+	var parent = game_container.get_parent()
+	if not is_instance_valid(parent):
+		return
+
+	var hue = EventBus.ui_hue
+
+	# 带背景的小标签
+	var tag = PanelContainer.new()
+	var bg = StyleBoxFlat.new()
+	bg.bg_color = Color(0.04, 0.06, 0.12, 0.85)
+	bg.border_color = Color.from_hsv(fmod(hue + 0.1, 1.0), 0.5, 0.8, 0.4)
+	bg.set_border_width_all(1)
+	bg.set_corner_radius_all(8)
+	bg.content_margin_left = 10
+	bg.content_margin_right = 10
+	bg.content_margin_top = 4
+	bg.content_margin_bottom = 4
+	tag.add_theme_stylebox_override("panel", bg)
+	tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tag.z_index = 50
+
+	var label = Label.new()
+	label.text = "+%d XP" % amount
+	label.add_theme_font_size_override("font_size", 13)
+	label.add_theme_color_override("font_color", Color.from_hsv(fmod(hue + 0.1, 1.0), 0.5, 1.0, 0.9))
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tag.add_child(label)
+
+	parent.add_child(tag)
+
+	# 定位: 面板底部居中
+	var panel_pos = game_container.global_position
+	var panel_size = game_container.size
+	tag.position = Vector2(panel_pos.x + panel_size.x * 0.5 - 30, panel_pos.y + panel_size.y - 10)
+
+	# 动画: 上浮 35px + 淡出
+	var tween = parent.create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(tag, "position:y", tag.position.y - 35.0, 1.5).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	tween.tween_property(tag, "modulate:a", 0.0, 1.5).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+	tween.chain().tween_callback(tag.queue_free)
 
 ## 获取 AI 失误率
 func _get_mistake_rate() -> float:
