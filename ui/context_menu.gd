@@ -945,7 +945,6 @@ func _build_debug_behavior_submenu() -> void:
 		{"label": "自动对弈", "behavior": "_auto_game_2048", "desc": "宠物自己玩一局 2048"},
 		{"label": "自动扫雷", "behavior": "_auto_game_mine", "desc": "宠物自己玩一局扫雷"},
 		{"label": "自动导航", "behavior": "_auto_game_snake", "desc": "宠物自己玩一局贪吃蛇"},
-		{"label": "经验注入", "behavior": "_add_xp", "desc": "注入 200 游戏经验值 (调试用)"},
 	]
 
 	for item in debug_items:
@@ -1030,6 +1029,39 @@ func _build_profile_panel() -> void:
 	vbox.add_child(rate_label)
 	_profile_labels["rate"] = rate_label
 
+	# 操作按钮行
+	var btn_row = HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 6)
+	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_child(btn_row)
+
+	var btn_style_normal = StyleBoxFlat.new()
+	btn_style_normal.bg_color = Color(0.15, 0.18, 0.28, 0.7)
+	btn_style_normal.set_corner_radius_all(4)
+	btn_style_normal.content_margin_left = 8
+	btn_style_normal.content_margin_right = 8
+	btn_style_normal.content_margin_top = 3
+	btn_style_normal.content_margin_bottom = 3
+	var btn_style_hover = StyleBoxFlat.new()
+	btn_style_hover.bg_color = Color(0.25, 0.3, 0.45, 0.8)
+	btn_style_hover.set_corner_radius_all(4)
+	btn_style_hover.content_margin_left = 8
+	btn_style_hover.content_margin_right = 8
+	btn_style_hover.content_margin_top = 3
+	btn_style_hover.content_margin_bottom = 3
+
+	for item in [{"label": "-", "action": "down"}, {"label": "∝", "action": "reset"}, {"label": "+", "action": "up"}]:
+		var btn = Button.new()
+		btn.text = item.label
+		btn.add_theme_font_size_override("font_size", 14)
+		btn.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9, 0.8))
+		btn.add_theme_stylebox_override("normal", btn_style_normal)
+		btn.add_theme_stylebox_override("hover", btn_style_hover)
+		btn.add_theme_stylebox_override("pressed", btn_style_hover)
+		var action = item.action
+		btn.pressed.connect(func(): _on_profile_action(action))
+		btn_row.add_child(btn)
+
 	panel.mouse_entered.connect(func(): _submenu.on_l3_panel_enter())
 	panel.mouse_exited.connect(func(): _submenu.on_l3_panel_exit())
 	add_child(panel)
@@ -1054,6 +1086,34 @@ func _refresh_profile_panel() -> void:
 			fill_style.bg_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.85, 0.8)
 	if _profile_labels.has("rate"):
 		_profile_labels["rate"].text = "失误率: %.1f%%" % (info.rate * 100.0)
+
+func _on_profile_action(action: String) -> void:
+	var pet_node = _get_pet()
+	var level = SettingsManager.get_gaming_level()
+	if action == "up":
+		if level >= SettingsManager.MAX_LEVEL:
+			if pet_node: pet_node.show_local_bubble("...已是最高等级。")
+			return
+		var target_xp = SettingsManager.LEVEL_XP[mini(level, SettingsManager.MAX_LEVEL - 1)]
+		SettingsManager.set_int("gaming_xp", target_xp)
+		if pet_node: pet_node.show_local_bubble("...后台训练模块的数据已同步。Lv.%d。" % SettingsManager.get_gaming_level())
+	elif action == "down":
+		if level <= 1:
+			if pet_node: pet_node.show_local_bubble("...已经 Lv.1。没有可回退的数据。")
+			return
+		var target_xp = SettingsManager.LEVEL_XP[level - 2]
+		SettingsManager.set_int("gaming_xp", target_xp)
+		if pet_node: pet_node.show_local_bubble("训练数据回退。Lv.%d。...不太理解目的。" % SettingsManager.get_gaming_level())
+	elif action == "reset":
+		SettingsManager.set_int("gaming_xp", 0)
+		if pet_node: pet_node.show_local_bubble("检测到用户越权清除训练数据。...已批准。")
+	_refresh_profile_panel()
+
+func _get_pet() -> Node:
+	var main_n = get_tree().root.get_node_or_null("Main")
+	if main_n and "pet_instances" in main_n and main_n.pet_instances.size() > 0:
+		return main_n.pet_instances[0]
+	return null
 
 func _on_debug_behavior_pressed(behavior: String) -> void:
 	_tooltip.panel.hide()
@@ -1093,12 +1153,6 @@ func _on_debug_behavior_pressed(behavior: String) -> void:
 		EventBus.launch_game_auto.emit("minesweeper")
 	elif behavior == "_auto_game_snake":
 		EventBus.launch_game_auto.emit("snake")
-	elif behavior == "_add_xp":
-		SettingsManager.add_gaming_xp(200)
-		var lv = SettingsManager.get_gaming_level()
-		var main_n = get_tree().root.get_node_or_null("Main")
-		if main_n and "pet_instances" in main_n and main_n.pet_instances.size() > 0:
-			main_n.pet_instances[0].show_local_bubble("+200 XP。当前 Lv.%d。" % lv)
 	else:
 		EventBus.trigger_idle_behavior.emit(behavior)
 
