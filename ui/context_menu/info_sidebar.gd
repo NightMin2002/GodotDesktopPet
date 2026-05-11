@@ -128,7 +128,7 @@ func update_position(hud: PanelContainer) -> void:
 	var info_w = panel.size.x if panel.size.x > 0 else 120.0
 	var info_h = panel.size.y if panel.size.y > 0 else 200.0
 	var vp = _menu.get_viewport().get_visible_rect().size
-	var gap := 4.0
+	var gap := 6.0
 	var x: float
 	if _menu._menu_side == 1:
 		# 菜单在宠物右侧 → 侧栏放菜单更右侧 (远离宠物)

@@ -146,7 +146,7 @@ func _position_panel(entry: Dictionary) -> void:
 	var btn_size = btn.size
 	var vp_size = _menu.get_viewport().get_visible_rect().size
 	var panel_w = panel.size.x
-	var gap := 16.0
+	var gap := 6.0
 	var x: float
 	if _menu._menu_side == 1:
 		x = ref_pos.x + ref_w + gap

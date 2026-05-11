@@ -44,7 +44,7 @@ func update_position() -> void:
 	var tip_w = panel.size.x
 	var tip_h = panel.size.y
 	var y_pos = btn_pos.y + btn_size.y / 2.0 - tip_h / 2.0
-	var gap := 16.0
+	var gap := 6.0
 	if _menu._menu_side == 1:
 		# 菜单在宠物右侧 → tooltip 优先右侧
 		var right_x = btn_pos.x + btn_size.x + gap
