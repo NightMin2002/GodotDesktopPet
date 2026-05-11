@@ -108,6 +108,7 @@ var _lock_timer: float = -1.0          # 锁定延迟计时 (<0=未着地)
 var _lock_resets: int = 0              # 锁定重置次数
 const MAX_LOCK_RESETS := 15
 const LOCK_DELAY := 0.5
+const MAX_LEVEL := 15          # 自玩满级主动结束
 
 # DAS (Delayed Auto Shift)
 var _das_dir: int = 0                  # -1=左, 0=无, 1=右
@@ -527,6 +528,12 @@ func _do_clear_rows() -> void:
 			_say(text)
 		_level = new_level
 		_drop_interval = maxf(0.1, 1.0 - (_level - 1) * 0.1)
+		# 自玩满级 → 主动收手
+		if _auto_play and _level >= MAX_LEVEL:
+			_clearing_rows.clear()
+			_clear_timer = -1.0
+			_end_game_maxed()
+			return
 
 	_clearing_rows.clear()
 	_clear_timer = -1.0
@@ -541,10 +548,31 @@ func _reset_lock_if_grounded() -> void:
 			_lock_timer = 0.0
 			_lock_resets += 1
 
-## 游戏结束
+## 游戏结束 (溢出)
 func _end_game() -> void:
 	_game_over = true
-	# 保存最高分
+	_persist_scores()
+	# 话术
+	var text = _pick(_q_lose, _POOL_LOSE)
+	if "%d" in text:
+		_say(text % _lines_cleared)
+	else:
+		_say(text)
+	_update_labels()
+	_show_restart_bubble()
+	game_finished.emit(Result.LOSE)
+
+## 自玩满级主动结束 (能力展示完成)
+func _end_game_maxed() -> void:
+	_game_over = true
+	_persist_scores()
+	_say("...自检完成。堆叠模块运行正常。")
+	_update_labels()
+	_show_restart_bubble()
+	game_finished.emit(Result.WIN)
+
+## 持久化战绩 (公用)
+func _persist_scores() -> void:
 	var best = SettingsManager.get_int(_score_key("best"), 0)
 	if _score > best:
 		SettingsManager.set_int(_score_key("best"), _score)
@@ -560,15 +588,7 @@ func _end_game() -> void:
 			_compare_label.text = "操作员: %d | 本机: %d" % [my_best_score, pet_best_score]
 	_add_gaming_xp(5 + _lines_cleared / 10 * 5)
 	_save_scores()
-	# 话术
-	var text = _pick(_q_lose, _POOL_LOSE)
-	if "%d" in text:
-		_say(text % _lines_cleared)
-	else:
-		_say(text)
-	_update_labels()
-	_show_restart_bubble()
-	game_finished.emit(Result.LOSE)
+	_update_score_rich()
 
 func _on_restart() -> void:
 	_reset_game()
@@ -578,13 +598,7 @@ func _on_close_cleanup() -> bool:
 	var was_auto = _auto_play
 	if not _game_over:
 		_game_over = true
-		var games = SettingsManager.get_int(_score_key("games"), 0) + 1
-		SettingsManager.set_int(_score_key("games"), games)
-		SettingsManager.set_int(_score_key("lines"), SettingsManager.get_int(_score_key("lines"), 0) + _lines_cleared)
-		var best = SettingsManager.get_int(_score_key("best"), 0)
-		if _score > best:
-			SettingsManager.set_int(_score_key("best"), _score)
-		_save_scores()
+		_persist_scores()
 		game_finished.emit(Result.LOSE)
 		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
 			if was_auto:
