@@ -33,6 +33,7 @@ var _food_spawn_t: float = 0.0        # 食物出现动画 (0→1)
 var _death_time: float = -1.0         # 死亡动画计时 (<0=未死)
 var _eat_flash: float = 0.0           # 吃到食物时的闪光
 var _just_ate: bool = false           # 本 tick 是否刚吃了食物
+var _bg_pupil_pos: Vector2 = Vector2.ZERO # 背景单眼的平滑插值位置
 
 # ── UI 引用 ──
 var _panel: PanelContainer = null
@@ -411,6 +412,31 @@ func _on_grid_input(event: InputEvent) -> void:
 func _grid_process(delta: float) -> void:
 	_food_time += delta
 	_tick_elapsed += delta
+	
+	# 更新背景监控单眼的追踪插值
+	var c = Vector2(GRID_PX / 2.0, GRID_PX / 2.0)
+	var target: Vector2
+	if _snake.size() > 0:
+		# 利用 lerp_t 获取比格子跳跃更平滑的物理位置
+		var lerp_t = _get_lerp_t()
+		var cur_c = _cell_center(_snake[0])
+		if _prev_snake.size() > 0 and not _game_over:
+			var prev_c = _cell_center(_prev_snake[0])
+			target = prev_c.lerp(cur_c, lerp_t)
+		else:
+			target = cur_c
+	else:
+		target = c
+		
+	var diff = target - c
+	var target_offset = diff * 0.2
+	# 背景巨眼框尺寸: hw=80, hh=30
+	var dist = abs(target_offset.x) / 55.0 + abs(target_offset.y) / 12.0
+	if dist > 1.0:
+		target_offset /= dist
+		
+	_bg_pupil_pos = _bg_pupil_pos.lerp(target_offset, delta * 12.0)
+
 	# 食物出现动画 (0→1, 0.3 秒)
 	if _food_spawn_t < 1.0:
 		_food_spawn_t = minf(_food_spawn_t + delta / 0.3, 1.0)
@@ -442,47 +468,92 @@ func _render(canvas: Control) -> void:
 	var lerp_t = _get_lerp_t()
 
 	# ── 背景 ──
-	canvas.draw_rect(Rect2(0, 0, GRID_PX, GRID_PX), Color(0.03, 0.04, 0.08, 0.95))
+	# 去掉厚重的纯色，加入统一的激光扫描线背景
+	var bg_c = Color.from_hsv(hue, 0.4, 0.05, 0.95)
+	canvas.draw_rect(Rect2(0, 0, GRID_PX, GRID_PX), bg_c)
+	
+	# ── 巨型深潜监视眼 ──
+	var eye_c = Vector2(GRID_PX / 2.0, GRID_PX / 2.0)
+	var c_frame = Color.from_hsv(hue, 0.2, 0.5, 0.15) # 极低透明度，藏在暗处
+	var hw = 80.0
+	var hh = 30.0
+	var frame_pts = PackedVector2Array([
+		eye_c + Vector2(-hw, 0), eye_c + Vector2(0, -hh),
+		eye_c + Vector2(hw, 0), eye_c + Vector2(0, hh)
+	])
+	canvas.draw_polyline(frame_pts + PackedVector2Array([frame_pts[0]]), c_frame, 2.0, true)
+	
+	canvas.draw_line(Vector2(20, eye_c.y), eye_c + Vector2(-hw - 8, 0), c_frame, 1.0, true)
+	canvas.draw_line(eye_c + Vector2(hw + 8, 0), Vector2(GRID_PX - 20, eye_c.y), c_frame, 1.0, true)
 
-	# 吃到闪光 (全屏微闪)
+	var pupil_center = eye_c + _bg_pupil_pos
+	var c_pupil = Color.from_hsv(hue, 0.2, 0.7, 0.25) # 微亮，隐藏在背景与扫描线之间
+	
+	canvas.draw_arc(pupil_center, 15.0, 0, TAU, 32, c_pupil, 2.5, true)
+	canvas.draw_circle(pupil_center, 3.5, c_pupil, true, -1.0, true)
+	
+	var scan_y = fmod(_food_time * 40.0, GRID_PX + 40.0) - 20.0
+	var c_band = Color.from_hsv(hue, 0.3, 0.9, 0.03)
+	canvas.draw_rect(Rect2(0, scan_y, GRID_PX, 12.0), c_band)
+	var c_core = Color.from_hsv(hue, 0.5, 1.0, 0.06)
+	canvas.draw_rect(Rect2(0, scan_y + 5.0, GRID_PX, 1.0), c_core)
+
 	if _eat_flash > 0.01:
 		var flash_c = Color.from_hsv(hue, 0.3, 0.4, _eat_flash * 0.15)
 		canvas.draw_rect(Rect2(0, 0, GRID_PX, GRID_PX), flash_c)
 
-	# ── 网格线 ──
-	var grid_color = Color.from_hsv(hue, 0.15, 0.2, 0.10)
-	for i in range(GRID + 1):
-		var p = float(i * CELL)
-		canvas.draw_line(Vector2(p, 0), Vector2(p, GRID_PX), grid_color, 1.0, true)
-		canvas.draw_line(Vector2(0, p), Vector2(GRID_PX, p), grid_color, 1.0, true)
+	# ── 阵列网格 ──
+	# 使用极微小的十字针脚替代死板的长线，营造医疗/军工测量仪感
+	var grid_color = Color.from_hsv(hue, 0.2, 0.5, 0.15)
+	for x in range(GRID + 1):
+		for y in range(GRID + 1):
+			var cx = x * CELL
+			var cy = y * CELL
+			canvas.draw_line(Vector2(cx - 2, cy), Vector2(cx + 2, cy), grid_color, 1.0, true)
+			canvas.draw_line(Vector2(cx, cy - 2), Vector2(cx, cy + 2), grid_color, 1.0, true)
 
-	# ── 食物 ──
+	# ── 食物 (定位信标) ──
 	if _food.x >= 0:
-		var pulse = 0.7 + sin(_food_time * TAU / 1.5) * 0.3
+		var pulse = 0.7 + sin(_food_time * TAU / 1.0) * 0.3
 		var food_color = Color.from_hsv(fmod(hue + 0.15, 1.0), 0.7, 1.0, pulse)
 		var fc = _cell_center(_food)
-		# 出现动画 (缩放弹入)
+		
 		var spawn_scale = 1.0
 		if _food_spawn_t < 1.0:
-			# ease out back
 			var t = _food_spawn_t
 			spawn_scale = 1.0 - pow(1.0 - t, 3.0) * (1.0 + 2.5 * (1.0 - t))
 			spawn_scale = clampf(spawn_scale, 0.0, 1.2)
-		# 外发光
-		var glow_r = CELL * 0.7 * spawn_scale
-		var glow_color = Color(food_color.r, food_color.g, food_color.b, pulse * 0.2)
-		canvas.draw_circle(fc, glow_r, glow_color, true, -1.0, true)
-		# 中光晕
-		canvas.draw_circle(fc, CELL * 0.45 * spawn_scale, Color(food_color.r, food_color.g, food_color.b, pulse * 0.35), true, -1.0, true)
-		# 内核
-		canvas.draw_circle(fc, CELL * 0.25 * spawn_scale, food_color, true, -1.0, true)
+			
+		# 画一个边长受控的空心旋转菱形
+		var hs = CELL * 0.35 * spawn_scale
+		var rot = _food_time * 2.0
+		var pts = PackedVector2Array()
+		for i in range(4):
+			var a = rot + i * PI / 2.0
+			pts.append(fc + Vector2(cos(a), sin(a)) * hs)
+		pts.append(pts[0])
+		canvas.draw_polyline(pts, food_color, 1.2, true)
+		
+		# 中心十字微芯
+		var cross_s = CELL * 0.15 * spawn_scale
+		canvas.draw_line(fc - Vector2(cross_s, 0), fc + Vector2(cross_s, 0), food_color, 1.0, true)
+		canvas.draw_line(fc - Vector2(0, cross_s), fc + Vector2(0, cross_s), food_color, 1.0, true)
+		
+		# 极简外对焦锁定框 [ ]
+		var bracket_d = CELL * 0.45
+		var br_color = Color.from_hsv(fmod(hue + 0.15, 1.0), 0.5, 1.0, pulse * 0.3)
+		var brk_len = 3.0
+		if spawn_scale >= 0.99:
+			canvas.draw_line(fc + Vector2(-bracket_d, -bracket_d), fc + Vector2(-bracket_d+brk_len, -bracket_d), br_color, 1.0, true)
+			canvas.draw_line(fc + Vector2(-bracket_d, -bracket_d), fc + Vector2(-bracket_d, -bracket_d+brk_len), br_color, 1.0, true)
+			canvas.draw_line(fc + Vector2(bracket_d, bracket_d), fc + Vector2(bracket_d-brk_len, bracket_d), br_color, 1.0, true)
+			canvas.draw_line(fc + Vector2(bracket_d, bracket_d), fc + Vector2(bracket_d, bracket_d-brk_len), br_color, 1.0, true)
 
-	# ── 蛇身 ──
+	# ── 数据链路 (蛇身) ──
 	var snake_len = _snake.size()
 	if snake_len == 0:
 		return
 
-	# 计算每个节段的视觉位置 (平滑插值)
 	var visual_pos: Array[Vector2] = []
 	for i in range(snake_len):
 		var cur_c = _cell_center(_snake[i])
@@ -492,7 +563,7 @@ func _render(canvas: Control) -> void:
 		else:
 			visual_pos.append(cur_c)
 
-	# 从尾到头画, 头在最上层
+	# 独立方块切片，摒弃连线形成进度条视效
 	for i in range(snake_len - 1, -1, -1):
 		var t = float(i) / maxf(1.0, float(snake_len - 1))  # 0=头, 1=尾
 		var seg_sat = lerpf(0.65, 0.25, t)
@@ -500,52 +571,52 @@ func _render(canvas: Control) -> void:
 		var seg_alpha = lerpf(1.0, 0.65, t)
 		var seg_color = Color.from_hsv(hue, seg_sat, seg_val, seg_alpha)
 
-		# 死亡动画: 身体闪红
 		if _death_time >= 0.0:
 			var death_flash = sin(_death_time * TAU * 3.0) * 0.5 + 0.5
 			var death_blend = minf(_death_time * 2.0, 1.0) * 0.6
 			seg_color = seg_color.lerp(Color(1.0, 0.15, 0.1, seg_alpha), death_blend * death_flash)
 
 		var vc = visual_pos[i]
-		var seg_r = lerpf(CELL * 0.42, CELL * 0.32, t)  # 头粗尾细
-
-		# 连接段: 在相邻节段之间画矩形连接
-		if i < snake_len - 1:
-			var next_c = visual_pos[i + 1]
-			var dx = next_c.x - vc.x
-			var dy = next_c.y - vc.y
-			var conn_w = seg_r * 1.4  # 连接带宽度
-			if absf(dx) > 1.0:
-				# 水平连接
-				var cy = vc.y
-				var x1 = minf(vc.x, next_c.x)
-				var x2 = maxf(vc.x, next_c.x)
-				canvas.draw_rect(Rect2(x1, cy - conn_w * 0.5, x2 - x1, conn_w), seg_color)
-			elif absf(dy) > 1.0:
-				# 垂直连接
-				var cx = vc.x
-				var y1 = minf(vc.y, next_c.y)
-				var y2 = maxf(vc.y, next_c.y)
-				canvas.draw_rect(Rect2(cx - conn_w * 0.5, y1, conn_w, y2 - y1), seg_color)
-
-		# 节段圆形
-		canvas.draw_circle(vc, seg_r, seg_color, true, -1.0, true)
-
-		# 头部光环
+		
+		# 方块大小随着头到尾平滑收缩，创造透视纵深感
+		var side = lerpf(CELL * 0.85, CELL * 0.45, t) 
+		var hs = side * 0.5
+		
+		canvas.draw_rect(Rect2(vc.x - hs, vc.y - hs, side, side), seg_color)
+		
+		# 极简尖端探针标志
 		if i == 0:
-			var ring_c = Color.from_hsv(hue, 0.5, 1.0, 0.2)
-			canvas.draw_arc(vc, seg_r + 1.5, 0, TAU, 24, ring_c, 1.0, true)
+			var core_c = Color(1.0, 1.0, 1.0, 0.9)
+			canvas.draw_rect(Rect2(vc.x - hs*0.4, vc.y - hs*0.4, side*0.4, side*0.4), core_c)
+			
+			var ring_c = Color.from_hsv(hue, 0.5, 1.0, 0.6)
+			var hd = hs + 1.5
+			var hl = 3.0
+			# 左上
+			canvas.draw_line(vc + Vector2(-hd, -hd), vc + Vector2(-hd+hl, -hd), ring_c, 1.0, true)
+			canvas.draw_line(vc + Vector2(-hd, -hd), vc + Vector2(-hd, -hd+hl), ring_c, 1.0, true)
+			# 右上
+			canvas.draw_line(vc + Vector2(hd, -hd), vc + Vector2(hd-hl, -hd), ring_c, 1.0, true)
+			canvas.draw_line(vc + Vector2(hd, -hd), vc + Vector2(hd, -hd+hl), ring_c, 1.0, true)
+			# 左下
+			canvas.draw_line(vc + Vector2(-hd, hd), vc + Vector2(-hd+hl, hd), ring_c, 1.0, true)
+			canvas.draw_line(vc + Vector2(-hd, hd), vc + Vector2(-hd, hd-hl), ring_c, 1.0, true)
+			# 右下
+			canvas.draw_line(vc + Vector2(hd, hd), vc + Vector2(hd-hl, hd), ring_c, 1.0, true)
+			canvas.draw_line(vc + Vector2(hd, hd), vc + Vector2(hd, hd-hl), ring_c, 1.0, true)
 
-	# ── 死亡覆盖 ──
+	# ── 寻轨失败阻断 ──
 	if _death_time >= 0.0:
 		var overlay_alpha = minf(_death_time * 1.5, 0.45)
 		canvas.draw_rect(Rect2(0, 0, GRID_PX, GRID_PX), Color(0.05, 0.0, 0.0, overlay_alpha))
-		# 碰撞点红圈脉冲
 		if not _game_won and snake_len > 0:
 			var head_c = _cell_center(_snake[0])
 			var crash_pulse = sin(_death_time * TAU * 2.0) * 0.3 + 0.5
-			canvas.draw_circle(head_c, CELL * 0.6, Color(1.0, 0.2, 0.1, crash_pulse * 0.5), true, -1.0, true)
-			canvas.draw_arc(head_c, CELL * 0.7, 0, TAU, 20, Color(1.0, 0.3, 0.2, crash_pulse * 0.4), 1.5, true)
+			var err_c = Color(1.0, 0.2, 0.1, crash_pulse * 0.8)
+			var err_s = CELL * 0.6
+			canvas.draw_line(head_c + Vector2(-err_s, -err_s), head_c + Vector2(err_s, err_s), err_c, 2.0, true)
+			canvas.draw_line(head_c + Vector2(err_s, -err_s), head_c + Vector2(-err_s, err_s), err_c, 2.0, true)
+			canvas.draw_rect(Rect2(head_c.x - err_s, head_c.y - err_s, err_s*2, err_s*2), Color(1.0, 0.2, 0.1, crash_pulse * 0.2), false, 1.5)
 
 # ══════════════════════════════════════════════
 # 标签更新
