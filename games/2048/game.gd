@@ -123,7 +123,7 @@ func _build_ui() -> void:
 	var outer = MarginContainer.new()
 	outer.add_theme_constant_override("margin_left", 14)
 	outer.add_theme_constant_override("margin_right", 14)
-	outer.add_theme_constant_override("margin_top", 8)
+	outer.add_theme_constant_override("margin_top", 12)
 	outer.add_theme_constant_override("margin_bottom", 6)
 	outer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_panel.add_child(outer)
@@ -139,14 +139,14 @@ func _build_ui() -> void:
 	score_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(score_row)
 
-	_score_value = _create_score_box(score_row, "分数", "0")
-	_best_value = _create_score_box(score_row, "最高", "0")
+	_score_value = _create_score_box(score_row, "[ MERGE ]", "0")
+	_best_value = _create_score_box(score_row, "[ PEAK ]", "0")
 
 	# ── 双方对比行 ──
 	var my_best = SettingsManager.get_int(_score_key("best"), 0)
 	var pet_best = SettingsManager.get_int(_other_score_key("best"), 0)
 	var compare_label = Label.new()
-	compare_label.text = "我: %d | 宠: %d" % [my_best, pet_best]
+	compare_label.text = "操作员: %d | 本机: %d" % [my_best, pet_best]
 	compare_label.add_theme_font_size_override("font_size", 11)
 	compare_label.add_theme_color_override("font_color", Color(0.4, 0.5, 0.6, 0.6))
 	compare_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -158,8 +158,10 @@ func _build_ui() -> void:
 	var board_wrapper = PanelContainer.new()
 	board_wrapper.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var board_bg = StyleBoxFlat.new()
-	board_bg.bg_color = Color(0.06, 0.08, 0.15, 0.8)
-	board_bg.set_corner_radius_all(8)
+	board_bg.bg_color = Color(0.02, 0.03, 0.08, 0.85)
+	board_bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.6, 0.4)
+	board_bg.set_border_width_all(1)
+	board_bg.set_corner_radius_all(0)
 	board_bg.content_margin_left = CELL_GAP
 	board_bg.content_margin_right = CELL_GAP
 	board_bg.content_margin_top = CELL_GAP
@@ -184,9 +186,12 @@ func _build_ui() -> void:
 			cell.size = Vector2(CELL_SIZE, CELL_SIZE)
 			cell.position = _cell_pos(x, y)
 			cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			var hue = EventBus.ui_hue
 			var cell_bg = StyleBoxFlat.new()
-			cell_bg.bg_color = Color(0.08, 0.10, 0.18, 0.5)
-			cell_bg.set_corner_radius_all(6)
+			cell_bg.bg_color = _get_tile_color(0, hue)
+			cell_bg.border_color = Color.from_hsv(hue, 0.4, 0.5, 0.15)
+			cell_bg.set_border_width_all(1)
+			cell_bg.set_corner_radius_all(0)
 			cell.add_theme_stylebox_override("panel", cell_bg)
 
 			var label = Label.new()
@@ -219,8 +224,10 @@ func _create_score_box(parent: HBoxContainer, title: String, initial: String) ->
 	wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	wrapper.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var wrapper_bg = StyleBoxFlat.new()
-	wrapper_bg.bg_color = Color(0.06, 0.08, 0.16, 0.6)
-	wrapper_bg.set_corner_radius_all(6)
+	wrapper_bg.bg_color = Color(0.03, 0.04, 0.10, 0.8)
+	wrapper_bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.6, 0.3)
+	wrapper_bg.set_border_width_all(1)
+	wrapper_bg.set_corner_radius_all(0)
 	wrapper_bg.content_margin_left = 8
 	wrapper_bg.content_margin_right = 8
 	wrapper_bg.content_margin_top = 4
@@ -367,7 +374,9 @@ func _make_clone(value: int, pos: Vector2i, hue: float) -> Dictionary:
 	cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var bg = StyleBoxFlat.new()
 	bg.bg_color = _get_tile_color(value, hue)
-	bg.set_corner_radius_all(6)
+	bg.border_color = Color.from_hsv(hue, 0.5, 0.6, 0.4)
+	bg.set_border_width_all(1)
+	bg.set_corner_radius_all(0)
 	cell.add_theme_stylebox_override("panel", bg)
 	var label = Label.new()
 	label.text = str(value)
@@ -488,7 +497,9 @@ func _update_cells() -> void:
 			# 格子背景色
 			var cell_bg = StyleBoxFlat.new()
 			cell_bg.bg_color = _get_tile_color(val, hue)
-			cell_bg.set_corner_radius_all(6)
+			cell_bg.border_color = Color.from_hsv(hue, 0.5, 0.6, 0.4) if val > 0 else Color.from_hsv(hue, 0.4, 0.5, 0.15)
+			cell_bg.set_border_width_all(1)
+			cell_bg.set_corner_radius_all(0)
 			cell.add_theme_stylebox_override("panel", cell_bg)
 
 			# 文字样式
@@ -526,7 +537,7 @@ func _update_score() -> void:
 		_best_value.text = str(_best)
 	if _compare_label:
 		var other_best = SettingsManager.get_int(_other_score_key("best"), 0)
-		_compare_label.text = "我: %d | 宠: %d" % ([_best, other_best] if not _auto_play else [other_best, _best])
+		_compare_label.text = "操作员: %d | 本机: %d" % ([_best, other_best] if not _auto_play else [other_best, _best])
 
 ## 保存最高分到 SettingsManager
 func _save_best() -> void:
@@ -535,29 +546,29 @@ func _save_best() -> void:
 
 func _get_tile_color(value: int, hue: float) -> Color:
 	match value:
-		0: return Color(0.08, 0.10, 0.18, 0.5)
-		2: return Color.from_hsv(hue, 0.35, 0.20)
-		4: return Color.from_hsv(hue, 0.38, 0.25)
-		8: return Color.from_hsv(hue, 0.42, 0.32)
-		16: return Color.from_hsv(hue, 0.46, 0.40)
-		32: return Color.from_hsv(hue, 0.50, 0.48)
-		64: return Color.from_hsv(hue, 0.52, 0.55)
-		128: return Color.from_hsv(hue, 0.48, 0.62)
-		256: return Color.from_hsv(hue, 0.42, 0.70)
-		512: return Color.from_hsv(hue, 0.36, 0.78)
-		1024: return Color.from_hsv(hue, 0.30, 0.85)
-		2048: return Color.from_hsv(hue, 0.25, 0.92)
-		_: return Color.from_hsv(hue, 0.20, 0.96)
+		0: return Color(0.03, 0.04, 0.08, 0.85)
+		2: return Color.from_hsv(hue, 0.60, 0.25, 0.95)
+		4: return Color.from_hsv(hue, 0.65, 0.35, 0.95)
+		8: return Color.from_hsv(fmod(hue + 0.08, 1.0), 0.70, 0.45, 0.95)
+		16: return Color.from_hsv(fmod(hue + 0.16, 1.0), 0.75, 0.55, 0.95)
+		32: return Color.from_hsv(fmod(hue + 0.24, 1.0), 0.80, 0.65, 0.95)
+		64: return Color.from_hsv(fmod(hue + 0.32, 1.0), 0.85, 0.75, 0.95)
+		128: return Color.from_hsv(fmod(hue + 0.40, 1.0), 0.90, 0.85, 0.95)
+		256: return Color.from_hsv(fmod(hue + 0.48, 1.0), 0.85, 0.95, 0.95)
+		512: return Color.from_hsv(fmod(hue + 0.56, 1.0), 0.70, 0.98, 1.0)
+		1024: return Color.from_hsv(fmod(hue + 0.64, 1.0), 0.50, 1.0, 1.0)
+		2048: return Color.from_hsv(fmod(hue + 0.72, 1.0), 0.20, 1.0, 1.0)
+		_: return Color(0.9, 0.9, 1.0, 1.0)
 
 func _get_text_color(value: int) -> Color:
 	if value == 0:
 		return Color.TRANSPARENT
 	elif value <= 4:
-		return Color(0.55, 0.62, 0.78)
+		return Color(0.6, 0.7, 0.85)
 	elif value <= 64:
-		return Color(0.88, 0.92, 0.98)
+		return Color(0.9, 0.95, 1.0)
 	else:
-		return Color.WHITE
+		return Color(1.0, 1.0, 1.0)
 
 func _get_font_size(value: int) -> int:
 	if value < 100: return 24
