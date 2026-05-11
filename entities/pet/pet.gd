@@ -486,15 +486,15 @@ func _draw() -> void:
 ## 绘制宠物本体 (外壳+眼球+覆盖层), world_offset 用于屏幕穿越双重渲染
 func _draw_body(world_offset: Vector2) -> void:
 	var local_off = world_offset.rotated(-rotation)  # 世界偏移→绘图空间本地偏移
-	var sq = squash.get_scale()
+	var squash_xform = squash.get_deformation_matrix()
 	
-	# 身体 transform + offset
-	var body_xform = Transform2D.IDENTITY
-	body_xform = body_xform.rotated_local(rotation)
-	body_xform = body_xform.scaled(sq)
-	body_xform = body_xform.rotated(-rotation)
-	body_xform.origin += local_off
-	draw_set_transform_matrix(body_xform)
+	# 构建逆向与正向旋转，确保形变在世界坐标系方向生效，却在节点局部绘制空间进行
+	var r_mat = Transform2D(rotation, Vector2.ZERO)
+	var r_inv = Transform2D(-rotation, Vector2.ZERO)
+	var base_xform = r_inv * squash_xform * r_mat
+	
+	base_xform.origin += local_off
+	draw_set_transform_matrix(base_xform)
 	
 	# ── 科幻单眼结构 ──
 	var shell_outline := palette.shift_color(Color(0.08, 0.12, 0.32, 1.0))
@@ -516,9 +516,7 @@ func _draw_body(world_offset: Vector2) -> void:
 		draw_polygon(PackedVector2Array([left_base, tip_pos, right_base]), PackedColorArray([dark_blue, dark_blue, dark_blue]))
 	
 	# 眼球 transform + offset
-	var eye_xform = Transform2D.IDENTITY
-	eye_xform = eye_xform.scaled(sq)
-	eye_xform = eye_xform.rotated(-rotation)
+	var eye_xform = r_inv * squash_xform
 	eye_xform.origin += local_off
 	draw_set_transform_matrix(eye_xform)
 	var blink = eye_behavior.get_blink_amount()
