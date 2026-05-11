@@ -35,6 +35,7 @@ func build() -> void:
 	_register_radio("gait", 2, "g_mix",  GaitMixedPreview.new(), "二者结合，动静自如的平衡", Vector2(180, 100))
 	# ── 模式预览 (L3: "mode") ──
 	_register_toggle("eye_track", "mode", EyeTrackPreview.new(), "随着鼠标移动，宠物始终注视着光标", Vector2(180, 100))
+	_register_toggle("anti_gravity", "mode", AntiGravityPreview.new(), "重力场反转，宠物将吸附在屏幕顶部行走", Vector2(180, 100))
 ## 每帧定位跟踪 (由 context_menu._process 调用)
 func update_positions() -> void:
 	for entry in _entries.values():
@@ -173,7 +174,7 @@ func _position_panel(entry: Dictionary) -> void:
 # 基础预览 Control (共用绘制方法)
 # ═══════════════════════════════════════════
 class ViewBase extends Control:
-	func _draw_holo_pet(center: Vector2, hue: float, r: float = 6.0, rot: float = 0.0, look_offset: Vector2 = Vector2.ZERO, blink: float = 0.0, is_shutter_bottom: bool = false) -> void:
+	func _draw_holo_pet(center: Vector2, hue: float, r: float = 6.0, rot: float = 0.0, look_offset: Vector2 = Vector2.ZERO) -> void:
 		draw_set_transform(center, rot, Vector2.ONE)
 		
 		var outline_c = Color.from_hsv(hue, 0.8, 0.2, 1.0)
@@ -196,43 +197,17 @@ class ViewBase extends Control:
 			var right_base = Vector2(cos(angle + half_hw), sin(angle + half_hw)) * (base_r * 0.95)
 			draw_polygon(PackedVector2Array([left_base, tip_pos, right_base]), PackedColorArray([dark_blue, dark_blue, dark_blue]))
 			
-		var iris_scale = maxf(0.01, 1.0 - blink * 0.95)
-		if iris_scale > 0.05:
-			draw_circle(Vector2.ZERO, r * 0.54 * iris_scale, Color(0.85, 0.88, 0.92, 1.0), true, -1.0, true)
-			var pup_pos = look_offset.rotated(-rot) * iris_scale
-			draw_circle(pup_pos, r * 0.42 * iris_scale, Color.from_hsv(hue, 0.4, 0.8, 1.0), true, -1.0, true)
-			draw_circle(pup_pos, r * 0.28 * iris_scale, Color.from_hsv(hue, 0.6, 0.5, 1.0), true, -1.0, true)
-			draw_circle(pup_pos, r * 0.16 * iris_scale, Color.from_hsv(hue, 0.8, 0.15, 1.0), true, -1.0, true)
-			var highlight_offset = pup_pos + Vector2(-r * 0.08, -r * 0.10) * iris_scale
-			draw_circle(highlight_offset, r * 0.11 * iris_scale, Color(1, 1, 1, iris_scale * 0.85), true, -1.0, true)
-			draw_circle(highlight_offset, r * 0.06 * iris_scale, Color(1, 1, 1, iris_scale), true, -1.0, true)
+		# 完全张开的大眼睛，移除不稳定的眨眼变形
+		var iris_scale = 1.0
+		draw_circle(Vector2.ZERO, r * 0.54, Color(0.85, 0.88, 0.92, 1.0), true, -1.0, true)
+		var pup_pos = look_offset.rotated(-rot)
+		draw_circle(pup_pos, r * 0.42, Color.from_hsv(hue, 0.4, 0.8, 1.0), true, -1.0, true)
+		draw_circle(pup_pos, r * 0.28, Color.from_hsv(hue, 0.6, 0.5, 1.0), true, -1.0, true)
+		draw_circle(pup_pos, r * 0.16, Color.from_hsv(hue, 0.8, 0.15, 1.0), true, -1.0, true)
+		var highlight_offset = pup_pos + Vector2(-r * 0.08, -r * 0.10)
+		draw_circle(highlight_offset, r * 0.11, Color(1, 1, 1, 0.85), true, -1.0, true)
+		draw_circle(highlight_offset, r * 0.06, Color(1, 1, 1, 1.0), true, -1.0, true)
 		
-		if blink > 0.01:
-			var sclera_r = r * 0.54
-			var close_px = sclera_r * blink * 1.5
-			if close_px >= 0.5:
-				var flat_y = (-sclera_r + close_px) if not is_shutter_bottom else (sclera_r - close_px)
-				flat_y = clampf(flat_y, -sclera_r + 0.1, sclera_r - 0.1)
-				var dx = sqrt(maxf(0.0, sclera_r*sclera_r - flat_y*flat_y))
-				var pts = PackedVector2Array()
-				var arc_steps = 16
-				var arc_r = sclera_r + 0.5
-				var start_angle = atan2(flat_y, -dx)
-				var end_angle = atan2(flat_y, dx)
-				if is_shutter_bottom:
-					if start_angle < end_angle: start_angle += TAU
-				else:
-					if start_angle > end_angle: start_angle -= TAU
-					
-				pts.append(Vector2(-dx, flat_y))
-				pts.append(Vector2(dx, flat_y))
-				for i in range(1, arc_steps):
-					var a = lerpf(end_angle, start_angle + (TAU if not is_shutter_bottom else -TAU), float(i)/arc_steps)
-					pts.append(Vector2(cos(a), sin(a)) * arc_r)
-				
-				draw_colored_polygon(pts, dark_blue)
-				draw_polyline(pts, dark_blue, 1.0, true)
-
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 	func _draw_dotted_parabola(start: Vector2, end: Vector2, height_offset: float, color: Color) -> void:
@@ -980,14 +955,8 @@ class EyeTrackPreview extends ViewBase:
 		var max_offset = r * 0.18 # 原版瞳孔活动范围大约是这个比例
 		var look_offset = look_dir * (max_offset * minf(dist / 60.0, 1.0))
 		
-		# 随机眨眼逻辑 (更贴近原版)
-		var blink = 0.0
-		var phase = fmod(_time, 3.5)
-		if phase < 0.1:
-			blink = sin(phase / 0.1 * PI)
-			
-		# 完全采用实体复刻渲染！
-		_draw_holo_pet(center, hue, r, 0.0, look_offset, blink, false)
+		# 采用纯净无眨眼动画的本体渲染
+		_draw_holo_pet(center, hue, r, 0.0, look_offset)
 		
 		# 追踪扫描虚线
 		var scan_c = Color.from_hsv(hue, 0.7, 1.0, 0.2)
@@ -1000,3 +969,65 @@ class EyeTrackPreview extends ViewBase:
 			var p2 = center + look_dir * minf(curr, dist - 8.0)
 			draw_line(p1, p2, scan_c, 1.0, true)
 			curr += dash_gap
+
+# ═══════════════════════════════════════════
+# 动画预览 Control: 模式 - 反重力
+# ═══════════════════════════════════════════
+class AntiGravityPreview extends ViewBase:
+	var _time: float = 0.0
+
+	func _process(delta: float) -> void:
+		_time += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		var cx = size.x / 2.0
+		var r = 14.0
+		var hue = EventBus.ui_hue
+		
+		# 极简科技感天花板与地板
+		var ceil_y = r + 15.0
+		var ground_y = size.y - 15.0
+		
+		draw_line(Vector2(cx - 50, ceil_y), Vector2(cx + 50, ceil_y), Color(0.4, 0.6, 1.0, 0.5), 2.0, true)
+		draw_line(Vector2(cx - 50, ground_y), Vector2(cx + 50, ground_y), Color(0.4, 0.6, 1.0, 0.2), 1.0, true)
+		
+		var loop_time = 4.0
+		var phase = fmod(_time, loop_time)
+		
+		var pet_y = ground_y - r
+		
+		if phase < 1.0:
+			# 在地板
+			pet_y = ground_y - r
+		elif phase < 1.4:
+			# 腾空，冲向天花板
+			var t = (phase - 1.0) / 0.4
+			var eased = ease(t, 2.0)
+			pet_y = lerpf(ground_y - r, ceil_y + r, eased)
+		elif phase < 3.0:
+			# 吸附于天花板
+			pet_y = ceil_y + r
+		else:
+			# 掉落回地板
+			var t = (phase - 3.0) / 0.4
+			var eased = ease(t, 2.0)
+			pet_y = lerpf(ceil_y + r, ground_y - r, eased)
+			
+		# 重力流向指示箭头
+		var arrow_c = Color.from_hsv(hue, 0.6, 1.0, 0.6)
+		if phase > 1.0 and phase < 1.6:
+			# 向上流 (箭头形状为 ^，Y值应当减小，表现出向上的流动)
+			var ay = ceil_y + 25.0 - fmod(_time * 60.0, 15.0)
+			draw_line(Vector2(cx - 24, ay), Vector2(cx, ay - 12), arrow_c, 2.0, true)
+			draw_line(Vector2(cx + 24, ay), Vector2(cx, ay - 12), arrow_c, 2.0, true)
+		elif phase > 3.0 or phase < 0.2:
+			# 向下流 (箭头形状为 v，Y值应当增大，表现出向下的流动)
+			var anim_t = phase if phase < 0.2 else phase - 3.0
+			if anim_t < 0.6:
+				var ay = ground_y - 25.0 + fmod(_time * 60.0, 15.0)
+				draw_line(Vector2(cx - 24, ay), Vector2(cx, ay + 12), arrow_c, 2.0, true)
+				draw_line(Vector2(cx + 24, ay), Vector2(cx, ay + 12), arrow_c, 2.0, true)
+			
+		# 纯净展示，无面部动画
+		_draw_holo_pet(Vector2(cx, pet_y), hue, r)
