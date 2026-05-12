@@ -35,13 +35,17 @@ const GAP_LERP_SPEED := 5.0  # 平滑过渡速度
 # ── 纹理源 (游戏模式通过回调获取) ──
 var _texture_provider: Callable = Callable()  # 返回 Texture2D 的回调
 
-# ── 模块化渲染器 (懒加载) ──
-var _mode_idle: HoloModeIdle
-var _mode_loading: HoloModeLoading
-var _mode_battery: HoloModeBattery
-var _mode_done: HoloModeDone
-var _mode_mail: HoloModeMail
-var _mode_error: HoloModeError
+# ── 模块化渲染器 (字典注册 + 懒加载) ──
+# 新增模式只需: 1) enum 加值  2) 注册表加一行  3) 写渲染器文件
+const _MODE_REGISTRY := {
+	Mode.IDLE:    {"class": "HoloModeIdle",    "label": "待机屏保"},
+	Mode.LOADING: {"class": "HoloModeLoading", "label": "终端引导"},
+	Mode.BATTERY: {"class": "HoloModeBattery", "label": "电源监测"},
+	Mode.DONE:    {"class": "HoloModeDone",    "label": "完成"},
+	Mode.MAIL:    {"class": "HoloModeMail",    "label": "新消息"},
+	Mode.ERROR:   {"class": "HoloModeError",   "label": "警告确认"},
+}
+var _renderers: Dictionary = {}  # Mode -> RefCounted 实例缓存
 
 # ── 待机/加载共享状态 ──
 var _idle_duration: float = 0.0  # 屏保总时长 (0=不自动隐藏)
@@ -156,48 +160,31 @@ func show_battery(screen_side: float, duration: float = 0.0) -> void:
 
 ## 显示终端操作完成 (打勾动画)
 func show_done(screen_side: float, duration: float = 3.0) -> void:
-	if is_terminal_mode:
-		_cleanup_active_mode()
-	side = screen_side
-	mode = Mode.DONE
-	_get_mode_done().init()
-	_idle_duration = duration
-	_idle_elapsed = 0.0
-	visible = true
-	_deploying = true
-	_retracting = false
-	_lock_pet()
-	_create_close_btn("完成")
+	_show_terminal(Mode.DONE, screen_side, duration)
 
 ## 显示邮件通知
 func show_mail(screen_side: float, duration: float = 0.0) -> void:
-	if is_terminal_mode:
-		_cleanup_active_mode()
-	side = screen_side
-	mode = Mode.MAIL
-	_get_mode_mail().init()
-	_idle_duration = duration
-	_idle_elapsed = 0.0
-	visible = true
-	_deploying = true
-	_retracting = false
-	_lock_pet()
-	_create_close_btn("新消息")
+	_show_terminal(Mode.MAIL, screen_side, duration)
 
 ## 显示报错警示
 func show_error(screen_side: float, duration: float = 0.0) -> void:
+	_show_terminal(Mode.ERROR, screen_side, duration)
+
+## 通用终端模式启动 (注册表驱动)
+func _show_terminal(m: Mode, screen_side: float, duration: float = 0.0) -> void:
 	if is_terminal_mode:
 		_cleanup_active_mode()
 	side = screen_side
-	mode = Mode.ERROR
-	_get_mode_error().init()
+	mode = m
+	_get_renderer(m).init()
 	_idle_duration = duration
 	_idle_elapsed = 0.0
 	visible = true
 	_deploying = true
 	_retracting = false
 	_lock_pet()
-	_create_close_btn("警告确认")
+	var label: String = _MODE_REGISTRY[m]["label"] if m in _MODE_REGISTRY else "终端"
+	_create_close_btn(label)
 
 ## 每帧更新 (由 pet._process 调用, 驱动动画)
 func update(delta: float) -> void:
@@ -236,18 +223,11 @@ func update(delta: float) -> void:
 		_update_close_btn_hover()
 		_update_close_btn_position()
 		pet.queue_redraw()
-	# 动画通用逻辑 (共用更新计时器)
+	# 动画通用逻辑 (注册表驱动, 共用更新计时器)
 	if is_terminal_mode and visible:
-		var active_mode
-		if mode == Mode.LOADING: active_mode = _get_mode_loading()
-		elif mode == Mode.BATTERY: active_mode = _get_mode_battery()
-		elif mode == Mode.DONE: active_mode = _get_mode_done()
-		elif mode == Mode.MAIL: active_mode = _get_mode_mail()
-		elif mode == Mode.ERROR: active_mode = _get_mode_error()
-		else: active_mode = _get_mode_idle() # IDLE也有time但有些不一样，不过这样处理时间无妨，这里简化只看时间累加
-		
-		if "time" in active_mode:
-			active_mode.time += delta
+		var active_renderer = _get_renderer(mode)
+		if active_renderer and "time" in active_renderer:
+			active_renderer.time += delta
 		_idle_elapsed += delta
 		if _idle_duration > 0.0 and _idle_elapsed >= _idle_duration and not _retracting:
 			hide()
@@ -322,21 +302,12 @@ func render() -> void:
 		])
 
 	# 根据模式渲染内容
-	match mode:
-		Mode.GAME:
-			_render_game_content(pts, hue)
-		Mode.IDLE:
-			_get_mode_idle().render(pts, hue, _deploy_progress)
-		Mode.LOADING:
-			_get_mode_loading().render(pts, hue, _deploy_progress)
-		Mode.BATTERY:
-			_get_mode_battery().render(pts, hue, _deploy_progress)
-		Mode.DONE:
-			_get_mode_done().render(pts, hue, _deploy_progress)
-		Mode.MAIL:
-			_get_mode_mail().render(pts, hue, _deploy_progress)
-		Mode.ERROR:
-			_get_mode_error().render(pts, hue, _deploy_progress)
+	if mode == Mode.GAME:
+		_render_game_content(pts, hue)
+	elif is_terminal_mode:
+		var renderer = _get_renderer(mode)
+		if renderer:
+			renderer.render(pts, hue, _deploy_progress)
 
 	# 恢复变换
 	pet.draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
@@ -579,44 +550,38 @@ func _render_game_content(pts: PackedVector2Array, _hue: float) -> void:
 		pet.draw_polygon(pts, [Color(1, 1, 1, 0.75)], uvs, viewport_tex)
 
 # ══════════════════════════════════════
-# 渲染器懒加载
+# 渲染器懒加载 (注册表驱动)
 # ══════════════════════════════════════
 
-func _get_mode_idle() -> HoloModeIdle:
-	if not _mode_idle:
-		_mode_idle = HoloModeIdle.new()
-		_mode_idle.screen = self
-	return _mode_idle
+## 通过注册表获取渲染器实例 (懒加载, 首次访问时创建)
+func _get_renderer(m: Mode) -> RefCounted:
+	if m in _renderers:
+		return _renderers[m]
+	if m not in _MODE_REGISTRY:
+		return null
+	var class_name_str: String = _MODE_REGISTRY[m]["class"]
+	# 通过 class_name 全局注册表实例化
+	var script = _resolve_mode_class(class_name_str)
+	if not script:
+		return null
+	var instance = script.new()
+	instance.screen = self
+	_renderers[m] = instance
+	return instance
 
-func _get_mode_loading() -> HoloModeLoading:
-	if not _mode_loading:
-		_mode_loading = HoloModeLoading.new()
-		_mode_loading.screen = self
-	return _mode_loading
-
-func _get_mode_battery() -> HoloModeBattery:
-	if not _mode_battery:
-		_mode_battery = HoloModeBattery.new()
-		_mode_battery.screen = self
-	return _mode_battery
-
-func _get_mode_done() -> HoloModeDone:
-	if not _mode_done:
-		_mode_done = HoloModeDone.new()
-		_mode_done.screen = self
-	return _mode_done
-
-func _get_mode_mail() -> HoloModeMail:
-	if not _mode_mail:
-		_mode_mail = HoloModeMail.new()
-		_mode_mail.screen = self
-	return _mode_mail
-
-func _get_mode_error() -> HoloModeError:
-	if not _mode_error:
-		_mode_error = HoloModeError.new()
-		_mode_error.screen = self
-	return _mode_error
+## 查找全局 class_name 对应的 GDScript
+func _resolve_mode_class(cls: String) -> GDScript:
+	# Godot 4 的全局类名可以直接从 ClassDB 或 ProjectSettings 查找
+	# 但 RefCounted 子类最可靠的方式是通过硬编码映射
+	var map := {
+		"HoloModeIdle": HoloModeIdle,
+		"HoloModeLoading": HoloModeLoading,
+		"HoloModeBattery": HoloModeBattery,
+		"HoloModeDone": HoloModeDone,
+		"HoloModeMail": HoloModeMail,
+		"HoloModeError": HoloModeError,
+	}
+	return map.get(cls, null)
 # ══════════════════════════════════════
 
 ## 将 UV 坐标 (0~1, 0~1) 映射到梯形 pts 的屏幕坐标

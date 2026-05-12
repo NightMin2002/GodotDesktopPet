@@ -436,15 +436,25 @@ func _on_terminal_action(behavior: String) -> void:
 
 	if pet and not pet.gaming.active and not pet.holo_screen.visible:
 		var s: float = -1.0 if pet.global_position.x > pet.boundary_size.x * 0.5 else 1.0
-		if behavior == "_holo_browse":
-			pet.holo_screen.show_idle(s, 25.0)
-		elif behavior == "_holo_loading":
-			pet.holo_screen.show_loading("初始化", s, 10.0)
-		elif behavior == "_holo_battery":
-			pet.holo_screen.show_battery(s, 10.0)
-		elif behavior == "_holo_done":
-			pet.holo_screen.show_done(s, 4.0)
-		elif behavior == "_holo_error":
-			pet.holo_screen.show_error(s, 5.0)
-		elif behavior == "_holo_mail":
-			pet.holo_screen.show_mail(s, 6.0)
+		_dispatch_terminal(pet, behavior, s)
+
+# ── 终端行为分发表 (数据驱动, 新增模式只加一行) ──
+const _TERMINAL_ACTIONS := {
+	"_holo_browse":  {"method": "show_idle",    "duration": 25.0},
+	"_holo_loading": {"method": "show_loading", "duration": 10.0, "arg": "初始化"},
+	"_holo_battery": {"method": "show_battery", "duration": 10.0},
+	"_holo_done":    {"method": "show_done",    "duration": 4.0},
+	"_holo_error":   {"method": "show_error",   "duration": 5.0},
+	"_holo_mail":    {"method": "show_mail",    "duration": 6.0},
+}
+
+func _dispatch_terminal(pet, behavior: String, s: float) -> void:
+	if behavior not in _TERMINAL_ACTIONS:
+		return
+	var cfg = _TERMINAL_ACTIONS[behavior]
+	var method: String = cfg["method"]
+	var dur: float = cfg.get("duration", 0.0)
+	if cfg.has("arg"):
+		pet.holo_screen.call(method, cfg["arg"], s, dur)
+	else:
+		pet.holo_screen.call(method, s, dur)
