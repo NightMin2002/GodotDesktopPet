@@ -39,11 +39,23 @@ func render(pts: PackedVector2Array, _hue: float, deploy: float) -> void:
 	var base_R = 0.16
 	for i in range(rings):
 		var r = base_R + i * 0.16 # 每一环间距很大，直接满铺上方屏幕
-		# 判断当前环是否处于被脉冲波及的高亮波段 (类似流水灯向外扫)
-		var threshold = 0.2 + i * 0.25
-		var is_active = (phase_time > threshold and phase_time < threshold + 0.45)
 		
-		var ring_c = glow_color if is_active else dim_color
+		# 判断当前环是否处于被脉冲波及的高亮波段
+		var threshold = 0.2 + i * 0.25
+		
+		# 引入优雅的缓动点亮与残影退散：极速点亮并缓慢暗去
+		var active_intensity = 0.0
+		var sweep_prog = phase_time - threshold
+		if sweep_prog > 0.0 and sweep_prog < 0.45:
+			if sweep_prog < 0.1: # 0.1秒猛烈高亮
+				active_intensity = sweep_prog / 0.1
+			else: # 0.35秒平缓消散溶解
+				active_intensity = max(0.0, 1.0 - (sweep_prog - 0.1) / 0.35)
+				
+		var is_active = active_intensity > 0.01
+		
+		# 使用平滑插值实现光晕呼吸感
+		var ring_c = dim_color.lerp(glow_color, active_intensity)
 		if not is_active: ring_c.a *= 0.5
 		
 		# 将原本平滑的弧线切分为科技感断裂段落
@@ -61,25 +73,35 @@ func render(pts: PackedVector2Array, _hue: float, deploy: float) -> void:
 			var p2 = screen._map_uv(pts, c_uv.x + cos(a2)*r, c_uv.y + sin(a2)*r)
 			pet.draw_line(p1, p2, ring_c, line_w, true)
 			
-			# 特写光晕：如果被激活，在当前波纹上方额外衍生出一圈极度虚化的超细幻影波增加立体深度感
+			# 特写光晕：如果被激活，上方额外衍生极度虚化的超细幻影波
 			if is_active and (s % 2 == 0):
 				var outer_r = r + 0.025
 				var op1 = screen._map_uv(pts, c_uv.x + cos(a1)*outer_r, c_uv.y + sin(a1)*outer_r)
 				var op2 = screen._map_uv(pts, c_uv.x + cos(a2)*outer_r, c_uv.y + sin(a2)*outer_r)
-				pet.draw_line(op1, op2, Color(glow_color.r, glow_color.g, glow_color.b, alpha*0.4), 1.0, true)
+				var ghost_color = Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.4 * active_intensity)
+				pet.draw_line(op1, op2, ghost_color, 1.0, true)
 
 	# ── 3. 数据包发射粒子 (模拟握手协议发射激光短箭) ──
 	# 当脉冲刚越过原点时，发射高亮数据粒子从内向外刺破信号波
 	if phase_time > 0.2 and phase_time < 0.95:
 		var pack_r = base_R + (phase_time - 0.2) * 1.1 
+		
+		# 为冲出屏幕的数据粒子配置优雅淡出，越飞向远方越融于虚空
+		var pack_alpha = 1.0
+		if phase_time > 0.7:
+			pack_alpha = max(0.0, 1.0 - (phase_time - 0.7) / (0.95 - 0.7))
+		
+		var top_white = Color(1.0, 1.0, 1.0, pack_alpha)
+		var tail_glow = Color(glow_color.r, glow_color.g, glow_color.b, glow_color.a * pack_alpha)
+		
 		# 正左上，正上，正右上 三个主流通信发射朝向
 		for dir_a in [-PI*0.5, -PI*0.7, -PI*0.3]:
 			var pack_pt = screen._map_uv(pts, c_uv.x + cos(dir_a)*pack_r, c_uv.y + sin(dir_a)*pack_r)
-			pet.draw_circle(pack_pt, 2.5, Color.WHITE, true, -1.0, true)
+			pet.draw_circle(pack_pt, 2.5, top_white, true, -1.0, true)
 			# 发射拖尾拉丝
-			var tail_r = max(pack_r - 0.08, dot_r)
+			var tail_r = max(pack_r - 0.08, dot_r + 0.05)
 			var tail_pt = screen._map_uv(pts, c_uv.x + cos(dir_a)*tail_r, c_uv.y + sin(dir_a)*tail_r)
-			pet.draw_line(pack_pt, tail_pt, glow_color, 2.0, true)
+			pet.draw_line(pack_pt, tail_pt, tail_glow, 2.0, true)
 
 	# ── 4. 底部局域网 MAC地址 / IP 地址同步验证读取条 ──
 	var bar_y = 0.88
