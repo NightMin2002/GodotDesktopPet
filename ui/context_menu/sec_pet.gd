@@ -396,6 +396,7 @@ func _build_terminal_l3_panel() -> void:
 		{"label": "未知检索", "behavior": "_holo_query", "desc": "全息屏显示查无此项或异常检索状态"},
 		{"label": "日程提醒", "behavior": "_holo_alarm", "desc": "全息屏显示模拟铃铛闹钟与时钟点阵"},
 		{"label": "碎片清理", "behavior": "_holo_cleanup", "desc": "全息屏显示文件落入垃圾桶粉碎表现"},
+		{"label": "网络巡航", "behavior": "_holo_globe", "desc": "全息屏显示3D全球数据网络模拟监控(彩蛋)"},
 		{"label": "新消息", "behavior": "_holo_mail", "desc": "全息屏显示系统级通知与新邮件待办"},
 		{"label": "终端引导", "behavior": "_holo_loading", "desc": "全息屏显示系统初始化引导序列"},
 		{"label": "待机屏保", "behavior": "_holo_browse", "desc": "弹出全息屏待机屏保 (25秒)"}
@@ -453,6 +454,7 @@ const _TERMINAL_ACTIONS := {
 	"_holo_query":   {"method": "show_query",   "duration": 5.0},
 	"_holo_alarm":   {"method": "show_alarm",   "duration": 8.0},
 	"_holo_cleanup": {"method": "show_cleanup", "duration": 6.0},
+	"_holo_globe":   {"method": "show_globe",   "duration": 10.0},
 	"_holo_mail":    {"method": "show_mail",    "duration": 6.0},
 }
 
