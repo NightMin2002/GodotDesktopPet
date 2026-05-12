@@ -39,7 +39,7 @@ func render(pts: PackedVector2Array, _hue: float, deploy: float) -> void:
 	var tr = Vector2(c_uv.x + env_w, c_uv.y - env_h + env_y_offset)
 	var br = Vector2(c_uv.x + env_w, c_uv.y + env_h + env_y_offset)
 	var bl = Vector2(c_uv.x - env_w, c_uv.y + env_h + env_y_offset)
-	var tc = Vector2(c_uv.x, c_uv.y + env_y_offset)  # 信封内心交点
+	var tc = Vector2(c_uv.x, c_uv.y - env_h * 0.1 + env_y_offset)  # 信封内心交点稍微靠上
 	
 	# 外框
 	var env_outline = PackedVector2Array([
@@ -62,17 +62,17 @@ func render(pts: PackedVector2Array, _hue: float, deploy: float) -> void:
 	])
 	pet.draw_polyline(flap_pts, glow_color, 2.0, true)
 	
-	# 信封底部对角线
-	var bottom_flap1 = PackedVector2Array([
-		screen._map_uv(pts, bl.x, bl.y),
-		screen._map_uv(pts, tc.x, tc.y + 0.02)
+	# 内部信件卡片线条 (替代底部的叉号，表现邮件的内涵)
+	var card_line1 = PackedVector2Array([
+		screen._map_uv(pts, c_uv.x - env_w * 0.4, c_uv.y + env_h * 0.3 + env_y_offset),
+		screen._map_uv(pts, c_uv.x + env_w * 0.4, c_uv.y + env_h * 0.3 + env_y_offset)
 	])
-	var bottom_flap2 = PackedVector2Array([
-		screen._map_uv(pts, br.x, br.y),
-		screen._map_uv(pts, tc.x, tc.y + 0.02)
+	var card_line2 = PackedVector2Array([
+		screen._map_uv(pts, c_uv.x - env_w * 0.4, c_uv.y + env_h * 0.6 + env_y_offset),
+		screen._map_uv(pts, c_uv.x + env_w * 0.4, c_uv.y + env_h * 0.6 + env_y_offset)
 	])
-	pet.draw_polyline(bottom_flap1, Color(base_color.r, base_color.g, base_color.b, alpha * 0.6), 1.5, true)
-	pet.draw_polyline(bottom_flap2, Color(base_color.r, base_color.g, base_color.b, alpha * 0.6), 1.5, true)
+	pet.draw_polyline(card_line1, Color(base_color.r, base_color.g, base_color.b, alpha * 0.6), 1.5, true)
+	pet.draw_polyline(card_line2, Color(base_color.r, base_color.g, base_color.b, alpha * 0.6), 1.5, true)
 	
 	# ── 3. 新消息提醒圆点 (右上角) ──
 	var dot_active = int(time * 4.0) % 2 == 0
@@ -81,40 +81,47 @@ func render(pts: PackedVector2Array, _hue: float, deploy: float) -> void:
 		var dot_center = screen._map_uv(pts, dot_uv.x, dot_uv.y)
 		pet.draw_circle(dot_center, 4.0, Color.from_hsv(0.05, 0.8, 1.0, alpha)) # 红色警告点
 	
-	# ── 4. 底部滚动数据流 (模拟发件人/主题扫描) ──
-	var bar_y = 0.8
-	var bar_w = 0.5
+	# ── 4. 底部状态指示 (纯离散格栅阵列) ──
+	var bar_y = 0.82
+	var bar_w = 0.54
 	var bar_start = 0.5 - bar_w * 0.5
 	var bar_end = 0.5 + bar_w * 0.5
-	pet.draw_line(
-		screen._map_uv(pts, bar_start, bar_y), 
-		screen._map_uv(pts, bar_end, bar_y), 
-		Color(base_color.r, base_color.g, base_color.b, alpha * 0.3), 
-		2.0, true
-	)
 	
-	# 数据块扫描 (机械卡顿感 + 碎裂离散块)
+	# 步进器
 	var step_time = floor(time * 12.0) / 12.0
-	var scan_prog = fmod(step_time * 0.5, 1.0)
 	
-	var blocks = PackedVector2Array()
-	var block_count = 6
-	for b in range(block_count):
-		# 利用 hash 给每块固定的相对偏移和长度，并添加卡顿步进游走
-		var rand_offset = float(hash(b)) / 2147483648.0
-		var rand_len = 0.01 + float(hash(b + 10)) / 2147483648.0 * 0.04
+	var cell_count = 15
+	var cell_w = bar_w / cell_count
+	
+	# 计算扫描头位置 (乒乓往复)
+	var scan_head = int(fmod(step_time * 6.0, cell_count * 2.0))
+	if scan_head >= cell_count:
+		scan_head = (cell_count * 2 - 1) - scan_head
+	
+	var grid_pts = PackedVector2Array()
+	var active_pts = PackedVector2Array()
+	
+	for c in range(cell_count):
+		var cx_start = bar_start + c * cell_w + cell_w * 0.2
+		var cx_end = bar_start + c * cell_w + cell_w * 0.8
+		var pt_a = screen._map_uv(pts, cx_start, bar_y)
+		var pt_b = screen._map_uv(pts, cx_end, bar_y)
 		
-		# 整体偏移
-		var final_prog = fmod(scan_prog + rand_offset, 1.0)
-		var block_x = bar_start + bar_w * final_prog
+		# 基础网格块
+		grid_pts.append(pt_a)
+		grid_pts.append(pt_b)
 		
-		# 剔除超出的部分
-		if block_x >= bar_start and block_x + rand_len <= bar_end:
-			blocks.append(screen._map_uv(pts, block_x, bar_y))
-			blocks.append(screen._map_uv(pts, block_x + rand_len, bar_y))
+		# 高亮扫描块
+		var dist = abs(c - scan_head)
+		if dist <= 1:
+			active_pts.append(pt_a)
+			active_pts.append(pt_b)
 			
-	if blocks.size() > 0:
-		pet.draw_multiline(blocks, glow_color, 2.5, true)
+	# 只绘制纯粹的断续小方块，不再添加平滑底线
+	if grid_pts.size() > 0:
+		pet.draw_multiline(grid_pts, Color(base_color.r, base_color.g, base_color.b, alpha * 0.2), 3.0, true)
+	if active_pts.size() > 0:
+		pet.draw_multiline(active_pts, Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.9), 3.5, true)
 	
 	# 两端角标
 	pet.draw_line(
