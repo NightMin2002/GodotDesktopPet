@@ -3,7 +3,7 @@
 # Phase 2: 支持多显示模式 (游戏 / 待机屏保)
 class_name PetHoloScreen extends RefCounted
 
-enum Mode { OFF, GAME, IDLE, LOADING, BATTERY, DONE, MAIL, ERROR, WARNING, QUERY, ALARM, CLEANUP, GLOBE }
+enum Mode { OFF, GAME, IDLE, LOADING, BATTERY, DONE, MAIL, ERROR, WARNING, QUERY, ALARM, CLEANUP, GLOBE, SYNC }
 
 var pet: RigidBody2D  # 由 pet.gd 注入
 
@@ -49,6 +49,7 @@ const _MODE_REGISTRY := {
 	Mode.ALARM:   {"class": "HoloModeAlarm",   "label": "日程触发"},
 	Mode.CLEANUP: {"class": "HoloModeCleanup", "label": "垃圾清理"},
 	Mode.GLOBE:   {"class": "HoloModeGlobe",   "label": "网络监控"},
+	Mode.SYNC:    {"class": "HoloModeSync",    "label": "网络通信"},
 }
 var _renderers: Dictionary = {}  # Mode -> RefCounted 实例缓存
 
@@ -194,6 +195,10 @@ func show_cleanup(screen_side: float, duration: float = 0.0) -> void:
 ## 显示全球网络侦测彩蛋
 func show_globe(screen_side: float, duration: float = 0.0) -> void:
 	_show_terminal(Mode.GLOBE, screen_side, duration)
+
+## 显示普通级别的通讯或离线状态断点连线扫描
+func show_sync(screen_side: float, duration: float = 0.0) -> void:
+	_show_terminal(Mode.SYNC, screen_side, duration)
 
 ## 通用终端模式启动 (注册表驱动)
 func _show_terminal(m: Mode, screen_side: float, duration: float = 0.0) -> void:
@@ -610,6 +615,7 @@ func _resolve_mode_class(cls: String) -> GDScript:
 		"HoloModeAlarm": HoloModeAlarm,
 		"HoloModeCleanup": HoloModeCleanup,
 		"HoloModeGlobe": HoloModeGlobe,
+		"HoloModeSync": HoloModeSync,
 	}
 	return map.get(cls, null)
 # ══════════════════════════════════════
