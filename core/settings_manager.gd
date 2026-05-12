@@ -1,6 +1,6 @@
 # settings_manager.gd — 持久化设置管理器 (Autoload)
 # 通过 ConfigFile 将用户偏好和提醒数据保存到磁盘
-# Section 分离: "switches" 存 bool, "values" 存 int, "reminders" 存提醒列表
+# Section 分离: "switches" 存 bool, "values" 存 int, "reminders" 存提醒列表, "todos" 存待办事项
 extends Node
 
 const SETTINGS_PATH := "user://settings.cfg"
@@ -93,6 +93,17 @@ func get_reminders() -> Array:
 
 func save_reminders(list: Array) -> void:
 	_config.set_value("reminders", "list", list)
+	_config.save(SETTINGS_PATH)
+
+## 待办事项数据存取
+## 格式: [{"id": "uuid", "text": "任务内容", "done": false, "created": "2025-05-12"}, ...]
+
+func get_todos() -> Array:
+	var data = _config.get_value("todos", "list", [])
+	return data if data is Array else []
+
+func save_todos(list: Array) -> void:
+	_config.set_value("todos", "list", list)
 	_config.save(SETTINGS_PATH)
 
 ## ── 颜色系统 ──

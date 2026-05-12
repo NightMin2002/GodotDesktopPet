@@ -7,6 +7,7 @@ var ctx  # ContextMenu 引用
 var _chatter_btn: Button
 var _clone_btn: Button
 var _reminder_btn: Button
+var _todo_btn: Button
 var _profile_btn: Button
 var _deploy_clone_btn: Button
 var _dismiss_btn: Button
@@ -39,6 +40,13 @@ func build() -> void:
 		ctx._close_and_emit(EventBus.show_reminder_panel)
 	)
 	vbox.add_child(_reminder_btn)
+
+	_todo_btn = ctx._make_menu_btn("待办清单", Color(0.2, 0.85, 1.0, 1))
+	ctx._apply_capsule_style(_todo_btn, Color(0.12, 0.22, 0.42, 0.7), Color(0.4, 0.6, 0.9, 0.5))
+	_todo_btn.pressed.connect(func():
+		ctx._close_and_emit(EventBus.show_todo_panel)
+	)
+	vbox.add_child(_todo_btn)
 
 	_profile_btn = ctx._make_menu_btn("训练数据 [+]", Color(0.2, 0.85, 1.0, 1))
 	vbox.add_child(_profile_btn)

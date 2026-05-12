@@ -80,6 +80,7 @@ func _ready() -> void:
 	
 	# 挂载提醒系统
 	_setup_reminder_system()
+	_setup_todo_system()
 	_setup_pet_chatter()
 	_setup_theme_panel()
 	_setup_platform_style_panel()
@@ -289,6 +290,15 @@ func _setup_reminder_system() -> void:
 		add_child(bubble_node)
 		if pet_instance and bubble_node.has_method("link_pet"):
 			bubble_node.link_pet(pet_instance)
+
+# ── 待办事项系统 ──
+
+func _setup_todo_system() -> void:
+	var todo_script = load("res://ui/todo_panel.gd")
+	if todo_script:
+		var todo_node = CanvasLayer.new()
+		todo_node.set_script(todo_script)
+		add_child(todo_node)
 
 func _setup_theme_panel() -> void:
 	var theme_script = load("res://ui/theme_panel.gd")
