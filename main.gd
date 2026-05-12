@@ -363,6 +363,14 @@ func _setup_todo_system() -> void:
 		var todo_node = CanvasLayer.new()
 		todo_node.set_script(todo_script)
 		add_child(todo_node)
+	# 主动提醒系统
+	var prompt_script = load("res://ui/todo_prompt.gd")
+	if prompt_script:
+		var prompt_node = CanvasLayer.new()
+		prompt_node.set_script(prompt_script)
+		add_child(prompt_node)
+		if pet_instance and prompt_node.has_method("link_pet"):
+			prompt_node.link_pet(pet_instance)
 
 func _setup_theme_panel() -> void:
 	var theme_script = load("res://ui/theme_panel.gd")

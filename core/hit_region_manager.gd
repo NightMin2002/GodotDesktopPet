@@ -114,6 +114,14 @@ func _collect_hit_regions() -> void:
 				rects.append(btn_r.position.y)
 				rects.append(btn_r.size.x)
 				rects.append(btn_r.size.y)
+		# 待办提醒按钮: 矩形
+		if p.has_meta("prompt_btn_rect"):
+			var pr: Rect2 = p.get_meta("prompt_btn_rect")
+			if pr.size != Vector2.ZERO:
+				rects.append(pr.position.x)
+				rects.append(pr.position.y)
+				rects.append(pr.size.x)
+				rects.append(pr.size.y)
 	
 	_hit_circles = circles
 	_hit_rects = rects
@@ -251,6 +259,14 @@ func _update_hit_regions_fallback() -> void:
 				rects.append(_q(btn_r.position.y))
 				rects.append(_q(btn_r.size.x))
 				rects.append(_q(btn_r.size.y))
+		# 待办提醒按钮
+		if p.has_meta("prompt_btn_rect"):
+			var pr: Rect2 = p.get_meta("prompt_btn_rect")
+			if pr.size != Vector2.ZERO:
+				rects.append(_q(pr.position.x))
+				rects.append(_q(pr.position.y))
+				rects.append(_q(pr.size.x))
+				rects.append(_q(pr.size.y))
 
 	# 游戏面板
 	if _main.game_mgr and _main.game_mgr.has_method("get_panel_rects"):

@@ -157,6 +157,7 @@ func _build_debug_behavior_submenu() -> void:
 		{"label": "待解标识", "behavior": "_icon:question", "desc": "显示问号疑问图标"},
 		{"label": "错误标识", "behavior": "_icon:error", "desc": "显示操作失败交叉图标"},
 		{"label": "碎碎念", "behavior": "_chatter", "desc": "立即触发一次碎碎念气泡"},
+		{"label": "待办提醒", "behavior": "_todo_prompt", "desc": "强制触发一次待办主动提醒"},
 		{"label": "空间跳跃", "behavior": "_free_roam", "desc": "触发一次空间跳跃踏板序列"},
 		{"label": "自动对弈", "behavior": "_auto_game_2048", "desc": "宠物自己玩一局 2048"},
 		{"label": "自动扫雷", "behavior": "_auto_game_mine", "desc": "宠物自己玩一局扫雷"},
@@ -195,15 +196,7 @@ func _on_debug_behavior_pressed(behavior: String) -> void:
 	ctx.target = null
 	EventBus.context_menu_toggled.emit(false)
 
-	# 深夜模式拒绝执行
 	var main_node = ctx.get_tree().root.get_node_or_null("Main")
-	if main_node and "pet_instances" in main_node:
-		var pets: Array = main_node.pet_instances
-		if pets.size() > 0:
-			var pet = pets[0]
-			if "nighttime_mode" in pet and pet.nighttime_mode:
-				pet.show_local_bubble("休眠周期中。指令已搁置。")
-				return
 
 	if behavior.begins_with("_icon:"):
 		var icon_type = behavior.substr(6)
@@ -219,6 +212,8 @@ func _on_debug_behavior_pressed(behavior: String) -> void:
 		EventBus.show_reminder_bubble.emit("碎碎念系统未就绪。")
 	elif behavior == "_free_roam":
 		EventBus.trigger_free_roam.emit()
+	elif behavior == "_todo_prompt":
+		EventBus.trigger_todo_prompt.emit()
 	elif behavior == "_auto_game_2048":
 		EventBus.launch_game_auto.emit("2048")
 	elif behavior == "_auto_game_mine":

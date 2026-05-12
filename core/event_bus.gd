@@ -25,6 +25,7 @@ signal force_show_bubble(message: String)  # 强制显示: 中断当前气泡+�
 signal show_reminder_panel
 signal show_todo_panel                                # 打开/关闭待办事项面板
 signal todo_count_changed(pending: int, total: int)   # 待办数量变化 (供宠物主动行为用)
+signal trigger_todo_prompt                            # 调试: 强制触发待办主动提醒
 
 # ── 窗口交互模式 ──
 signal window_mode_changed(mode: int)  # 0=FREE, 1=CONFINED, 2=REPELLED
