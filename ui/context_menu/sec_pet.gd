@@ -48,6 +48,10 @@ func build() -> void:
 	vbox.add_child(records_btn)
 	ctx._bind_l3_trigger(records_btn, "game_records", "sec_pet")
 
+	var terminal_btn = ctx._make_menu_btn("个人终端 [+]", Color(0.2, 0.85, 1.0, 1))
+	vbox.add_child(terminal_btn)
+	ctx._bind_l3_trigger(terminal_btn, "holo_terminal", "sec_pet")
+
 	panel.mouse_entered.connect(func(): ctx._submenu.on_panel_enter())
 	panel.mouse_exited.connect(func(): ctx._submenu.on_panel_exit())
 	ctx.add_child(panel)
@@ -67,6 +71,8 @@ func build() -> void:
 	_build_profile_panel()
 	# L3: 游戏战绩
 	_build_records_l3_panel()
+	# L3: 个人终端
+	_build_terminal_l3_panel()
 
 # ── 碎碎念回调 ──
 
@@ -373,3 +379,60 @@ func _on_reset_records() -> void:
 	refresh_records()
 	var pet_node = _get_pet()
 	if pet_node: pet_node.show_local_bubble("对局数据已清除。...确认归零。")
+
+# ── 个人终端 ──
+
+func _build_terminal_l3_panel() -> void:
+	var panel = ctx._submenu._make_panel()
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+	panel.add_child(vbox)
+
+	var items := [
+		{"label": "终端引导", "behavior": "_holo_loading", "desc": "全息屏显示系统初始化引导序列"},
+		{"label": "待机屏保", "behavior": "_holo_browse", "desc": "弹出全息屏待机屏保 (25秒)"}
+	]
+
+	for item in items:
+		var btn = Button.new()
+		btn.flat = true
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.add_theme_font_size_override("font_size", 19)
+		btn.add_theme_color_override("font_color", Color(0.8, 0.9, 1, 1))
+		btn.add_theme_color_override("font_hover_color", Color(0.2, 0.85, 1.0, 1))
+		btn.text = item.label
+		var behavior = item.behavior
+		btn.pressed.connect(func(): _on_terminal_action(behavior))
+		if item.has("desc"):
+			var desc_text = item.desc
+			var b = btn
+			btn.mouse_entered.connect(func(): ctx._tooltip.show_for(b, desc_text, true))
+			btn.mouse_exited.connect(func(): ctx._tooltip.show_for(b, desc_text, false))
+		vbox.add_child(btn)
+
+	panel.mouse_entered.connect(func(): ctx._submenu.on_l3_panel_enter())
+	panel.mouse_exited.connect(func(): ctx._submenu.on_l3_panel_exit())
+	ctx.add_child(panel)
+	ctx._submenu.l3_panels["holo_terminal"] = panel
+	ctx._submenu._l3_parent_map["holo_terminal"] = "sec_pet"
+
+func _on_terminal_action(behavior: String) -> void:
+	ctx._tooltip.panel.hide()
+	ctx._submenu.hide_all_instant()
+	ctx.hud.hide()
+	ctx._sidebar.panel.hide()
+	ctx.target = null
+	EventBus.context_menu_toggled.emit(false)
+
+	# 深夜模式拒绝执行
+	var pet = _get_pet()
+	if pet and "nighttime_mode" in pet and pet.nighttime_mode:
+		pet.show_local_bubble("休眠周期中。指令已搁置。")
+		return
+
+	if pet and not pet.gaming.active and not pet.holo_screen.visible:
+		var s: float = -1.0 if pet.global_position.x > pet.boundary_size.x * 0.5 else 1.0
+		if behavior == "_holo_browse":
+			pet.holo_screen.show_idle(s, 25.0)
+		elif behavior == "_holo_loading":
+			pet.holo_screen.show_loading("初始化", s, 10.0)

@@ -551,50 +551,110 @@ func _init_idle_data() -> void:
 	for i in range(8):
 		_idle_data_lines.append(randf())
 
-## 加载模式: 旋转弧线 + 脉冲环 (透视映射)
+## 引导模式: 终端初始化序列 (透视映射)
 func _render_loading_content(pts: PackedVector2Array, hue: float, _w: float, _h: float) -> void:
 	var alpha = _deploy_progress * 0.6
 	# 底色
 	pet.draw_polygon(pts, [Color(0.02, 0.04, 0.08, alpha)])
 
 	var content_alpha = alpha * _deploy_progress
+	var base_color = Color.from_hsv(hue, 0.5, 0.9, content_alpha)
 
-	# ── 主旋转弧线 (透视映射) ──
-	var spin_angle = _loading_time * TAU * 0.4  # ~2.5 秒一圈
-	var arc_len = PI * 0.8  # 144° 弧段
-	var arc_color = Color.from_hsv(hue, 0.5, 0.9, content_alpha * 0.85)
-	var arc_r = 0.25  # UV 空间半径
-	var arc_line = PackedVector2Array()
-	for i in range(24):
-		var t = float(i) / 23.0
-		var a = spin_angle + t * arc_len
-		var u = 0.5 + cos(a) * arc_r
-		var v = 0.5 + sin(a) * arc_r
-		arc_line.append(_map_uv(pts, u, v))
-	pet.draw_polyline(arc_line, arc_color, 1.5, true)
+	# ── 中心数据核心 (呼吸十字与扫描场) ──
+	var pulse = 0.5 + 0.5 * sin(_loading_time * 8.0)
+	var core_size = 0.03 + 0.01 * pulse
+	var c_uv = Vector2(0.5, 0.42) # 稍微靠上
+	var core_pts = PackedVector2Array([
+		_map_uv(pts, c_uv.x, c_uv.y - core_size),
+		_map_uv(pts, c_uv.x + core_size, c_uv.y),
+		_map_uv(pts, c_uv.x, c_uv.y + core_size),
+		_map_uv(pts, c_uv.x - core_size, c_uv.y)
+	])
+	pet.draw_polygon(core_pts, [Color(base_color.r, base_color.g, base_color.b, content_alpha * (0.4 + 0.4*pulse))])
 
-	# 弧头光点
-	var head_a = spin_angle + arc_len
-	var dot_uv = _map_uv(pts, 0.5 + cos(head_a) * arc_r, 0.5 + sin(head_a) * arc_r)
-	pet.draw_circle(dot_uv, 2.0, Color(arc_color.r, arc_color.g, arc_color.b, content_alpha), true, -1.0, true)
+	# ── 内圈数据流 (连续旋转多边形) ──
+	var inner_r = 0.14
+	var inner_spin = -_loading_time * TAU * 0.25
+	var inner_lines = PackedVector2Array()
+	var sides = 6
+	for i in range(sides + 1):
+		var a = inner_spin + float(i % sides) / sides * TAU
+		inner_lines.append(_map_uv(pts, c_uv.x + cos(a)*inner_r, c_uv.y + sin(a)*inner_r))
+	pet.draw_polyline(inner_lines, Color(base_color.r, base_color.g, base_color.b, content_alpha * 0.4), 1.0, true)
 
-	# 弧尾渐隐尾迹
-	var trail_line = PackedVector2Array()
-	for i in range(12):
-		var t = float(i) / 11.0
-		var a = spin_angle - PI * 0.3 + t * PI * 0.3
-		trail_line.append(_map_uv(pts, 0.5 + cos(a) * arc_r, 0.5 + sin(a) * arc_r))
-	pet.draw_polyline(trail_line, Color(arc_color.r, arc_color.g, arc_color.b, content_alpha * 0.25), 0.8, true)
+	# ── 外圈引导刻度 (机械卡顿步进旋转) ──
+	var outer_r = 0.26
+	# 加强卡顿感: 每秒滴答 8 次，且每次跳动角度更大
+	var step_time = floor(_loading_time * 8.0) / 8.0
+	var outer_spin = step_time * TAU * 0.2
+	var dashes = PackedVector2Array()
+	var dash_count = 18
+	var dash_fill = 0.6 # 实线占比
+	for i in range(dash_count):
+		var a1 = outer_spin + float(i) / dash_count * TAU
+		var a2 = a1 + (TAU / dash_count) * dash_fill
+		dashes.append(_map_uv(pts, c_uv.x + cos(a1)*outer_r, c_uv.y + sin(a1)*outer_r))
+		dashes.append(_map_uv(pts, c_uv.x + cos(a2)*outer_r, c_uv.y + sin(a2)*outer_r))
+	if dashes.size() > 0:
+		pet.draw_multiline(dashes, Color(base_color.r, base_color.g, base_color.b, content_alpha * 0.7), 2.0, true)
 
-	# ── 外环脉冲 (透视映射) ──
-	var pulse = 0.6 + sin(_loading_time * 3.0) * 0.4
-	var ring_r = arc_r * 1.4
-	var ring_color = Color.from_hsv(hue, 0.3, 0.7, content_alpha * 0.15 * pulse)
-	var ring_line = PackedVector2Array()
-	for i in range(33):
-		var a = float(i) / 32.0 * TAU
-		ring_line.append(_map_uv(pts, 0.5 + cos(a) * ring_r, 0.5 + sin(a) * ring_r))
-	pet.draw_polyline(ring_line, ring_color, 0.6, true)
+	# ── 右侧高频随机数据流 (模拟读取区块) ──
+	var barcode_start_u = 0.9
+	var barcode_v = 0.2
+	var bar_count = 6
+	var bars = PackedVector2Array()
+	for i in range(bar_count):
+		# 利用特定时间的哈希随机性来做一闪一闪的读取感
+		var is_active = (hash(i + int(_loading_time * 15.0)) % 10) > 4
+		if is_active:
+			var bu = barcode_start_u + (float(i) / bar_count) * 0.05
+			var b_height = 0.02 + (hash(i * 3 + int(_loading_time * 5.0)) % 10) * 0.01
+			bars.append(_map_uv(pts, bu, barcode_v))
+			bars.append(_map_uv(pts, bu, barcode_v + b_height))
+	if bars.size() > 0:
+		pet.draw_multiline(bars, Color(base_color.r, base_color.g, base_color.b, content_alpha * 0.8), 1.5, true)
+
+	# ── 扇区扫描指针 ──
+	var pointer_a = outer_spin + PI
+	var p_start = _map_uv(pts, c_uv.x + cos(pointer_a)*(inner_r+0.02), c_uv.y + sin(pointer_a)*(inner_r+0.02))
+	var p_end = _map_uv(pts, c_uv.x + cos(pointer_a)*(outer_r-0.02), c_uv.y + sin(pointer_a)*(outer_r-0.02))
+	pet.draw_line(p_start, p_end, Color(base_color.r, base_color.g, base_color.b, content_alpha * 0.9), 1.5, true)
+
+	# ── 底侧刻度和进度条 ──
+	var bar_y = 0.82
+	var bar_w = 0.64
+	var bar_start = 0.5 - bar_w * 0.5
+	var bar_end = 0.5 + bar_w * 0.5
+	
+	# 进度圈刻度点 (上中下各带结构设计)
+	var dots = PackedVector2Array()
+	var dot_count = 12
+	for d in range(dot_count + 1):
+		var dx = bar_start + (float(d) / dot_count) * bar_w
+		dots.append(_map_uv(pts, dx, bar_y - 0.03))
+		dots.append(_map_uv(pts, dx, bar_y - 0.01))
+		dots.append(_map_uv(pts, dx, bar_y + 0.03))
+		dots.append(_map_uv(pts, dx, bar_y + 0.05))
+	if dots.size() > 0:
+		pet.draw_multiline(dots, Color(base_color.r, base_color.g, base_color.b, content_alpha * 0.25), 1.0, true)
+
+	# 进度槽背景 (双线镂空设计)
+	pet.draw_line(_map_uv(pts, bar_start, bar_y), _map_uv(pts, bar_end, bar_y), Color(base_color.r, base_color.g, base_color.b, content_alpha * 0.15), 3.0, true)
+
+	# 进度条填充 (非线性+刻意断块读取)
+	var prog = fmod(pow(fmod(_loading_time * 0.35, 1.0), 1.5), 1.0)
+	# 离散化：切成 25 块，还原“一卡一卡”的扇区读取机械感
+	prog = floor(prog * 25.0) / 25.0
+	var fill_end = bar_start + bar_w * prog
+	if fill_end > bar_start + 0.01:
+		pet.draw_line(_map_uv(pts, bar_start, bar_y), _map_uv(pts, fill_end, bar_y), base_color, 2.5, true)
+
+	# 两端点缀锚向 (加固机能感)
+	pet.draw_line(_map_uv(pts, bar_start, bar_y - 0.05), _map_uv(pts, bar_start, bar_y + 0.05), base_color, 2.0, true)
+	pet.draw_line(_map_uv(pts, bar_start - 0.02, bar_y - 0.02), _map_uv(pts, bar_start - 0.02, bar_y + 0.02), base_color, 1.0, true)
+	
+	pet.draw_line(_map_uv(pts, bar_end, bar_y - 0.05), _map_uv(pts, bar_end, bar_y + 0.05), base_color, 2.0, true)
+	pet.draw_line(_map_uv(pts, bar_end + 0.02, bar_y - 0.02), _map_uv(pts, bar_end + 0.02, bar_y + 0.02), base_color, 1.0, true)
 
 	# ── 角落装饰线 + 边框 ──
 	var corner_len_f = 0.12
