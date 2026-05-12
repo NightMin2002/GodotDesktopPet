@@ -1,5 +1,6 @@
 # pet_gaming.gd — 宠物游戏态管理器 (RefCounted)
-# 管理游戏态行为: 锁定宠物、踏板升降、瞳孔跟踪、全息迷你屏渲染
+# 管理游戏态行为: 锁定宠物、踏板升降、瞳孔跟踪
+# 全息屏渲染已委托给 PetHoloScreen
 # 从 pet.gd 抽离，与 PetEffects / EyeBehavior / IdleBehaviors 等子系统同级
 class_name PetGaming
 extends RefCounted
@@ -9,7 +10,6 @@ var pet: RigidBody2D  # 由 pet.gd 注入
 # ── 游戏态状态 ──
 var active: bool = false
 var game: RefCounted = null  # 当前游戏引用 (BaseGame)
-var holo_side: float = 1.0  # 全息屏方向: 1=右侧, -1=左侧
 
 # ── 悬浮踏板 ──
 var _platform: StaticBody2D = null  # 游戏态悬浮踏板
@@ -28,11 +28,13 @@ func on_gaming_changed(is_active: bool, game_ref: RefCounted) -> void:
 		# 取消正在进行的空间跳跃 (清理踏板+状态)
 		if pet.free_roam_sys.active:
 			pet.free_roam_sys.finish()
-		# 决定全息屏在宠物哪边
+		# 决定全息屏在宠物哪边并激活
+		var screen_side: float
 		if pet.global_position.x > pet.boundary_size.x * 0.5:
-			holo_side = -1.0
+			screen_side = -1.0
 		else:
-			holo_side = 1.0
+			screen_side = 1.0
+		pet.holo_screen.show_game(game.get_holo_texture, screen_side)
 		# 高阻尼停下来 (保留重力，在空中会自然落地)
 		pet.linear_damp = 20.0
 		pet.linear_velocity = Vector2.ZERO
@@ -43,6 +45,8 @@ func on_gaming_changed(is_active: bool, game_ref: RefCounted) -> void:
 		_spawn_platform()
 	else:
 		pet.eye_behavior.forced_look_dir = Vector2.ZERO
+		# 隐藏全息屏
+		pet.holo_screen.hide()
 		# 清除踏板
 		_remove_platform()
 		# 设置空间跳跃冷却 (退出游戏后 60 秒内不触发 roam)
@@ -55,7 +59,7 @@ func on_gaming_changed(is_active: bool, game_ref: RefCounted) -> void:
 func update(delta: float) -> void:
 	if not active:
 		return
-	pet.eye_behavior.forced_look_dir = Vector2(holo_side, 0.15)
+	pet.eye_behavior.forced_look_dir = Vector2(pet.holo_screen.side, 0.15)
 	pet.linear_velocity = Vector2.ZERO
 	# 踏板上升驱动
 	if _lift_phase == 1 and is_instance_valid(_platform):
@@ -76,86 +80,10 @@ func update(delta: float) -> void:
 	if pet.current_state_name != "idle" and pet.is_settled():
 		pet.transition_to("idle")
 
-## 全息迷你屏渲染 (由 pet.gd._draw() 调用)
-func render_hologram() -> void:
-	var hue = EventBus.ui_hue
-	# 在世界坐标系中绘制 (反旋转刚体旋转)
-	pet.draw_set_transform(Vector2.ZERO, -pet.rotation, Vector2.ONE)
-
-	var side = holo_side
-	# 固定尺寸: 所有游戏的全息迷你屏大小/位置一致
-	var gap = pet.PET_RADIUS * 0.1  # 近端留一小段空隙
-
-	# 获取全息合成纹理 (面板 + 悬浮组件的完整画面)
-	var viewport_tex: Texture2D = null
-	if game:
-		viewport_tex = game.get_holo_texture()
-	var holo_w: float = pet.PET_RADIUS * 2.0
-	var holo_h: float = pet.PET_RADIUS * 2.5
-
-	# 全息屏中心
-	var cx = side * (gap + holo_w * 0.5)
-	var cy = 0.0  # 垂直居中于宠物中心
-
-	# 投影支架线
-	var near_edge_x = cx - side * holo_w * 0.5  # 靠近宠物的边
-	var beam_start = Vector2(side * pet.PET_RADIUS * 0.6, 0)
-	var beam_end = Vector2(near_edge_x, cy)
-	pet.draw_line(beam_start, beam_end, Color.from_hsv(hue, 0.3, 0.8, 0.2), 0.8, true)
-	pet.draw_circle(beam_start, 1.5, Color.from_hsv(hue, 0.4, 1.0, 0.4), true, -1.0, true)
-
-	# 梯形透视: 靠近宠物的边上下收缩，远离的边保持原高
-	var half_w = holo_w / 2.0
-	var half_h = holo_h / 2.0
-	var shrink = 0.15  # 近端收缩比例 (15%)
-	var near_half_h = half_h * (1.0 - shrink)  # 近端半高 (较短)
-	var far_half_h = half_h                     # 远端半高 (原高)
-
-	# 微后仰: 顶部向远离宠物方向偏移，模拟屏幕微倾
-	var tilt = side * holo_w * 0.16
-
-	# 梯形 4 个顶点 (左上→右上→右下→左下)
-	var pts: PackedVector2Array
-	if side > 0:  # 全息屏在右侧: 左边(近端)窄，右边(远端)宽
-		pts = PackedVector2Array([
-			Vector2(cx - half_w + tilt, cy - near_half_h),  # 左上 (近, 后仰)
-			Vector2(cx + half_w + tilt, cy - far_half_h),   # 右上 (远, 后仰)
-			Vector2(cx + half_w, cy + far_half_h),           # 右下 (远)
-			Vector2(cx - half_w, cy + near_half_h),          # 左下 (近)
-		])
-	else:  # 全息屏在左侧: 右边(近端)窄，左边(远端)宽
-		pts = PackedVector2Array([
-			Vector2(cx - half_w + tilt, cy - far_half_h),   # 左上 (远, 后仰)
-			Vector2(cx + half_w + tilt, cy - near_half_h),  # 右上 (近, 后仰)
-			Vector2(cx + half_w, cy + near_half_h),          # 右下 (近)
-			Vector2(cx - half_w, cy + far_half_h),           # 左下 (远)
-		])
-	var uvs = PackedVector2Array([
-		Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)
-	])
-
-	# 合成纹理映射到梯形 (面板 + 悬浮组件的完整画面)
-	if viewport_tex:
-		pet.draw_polygon(pts, [Color(1, 1, 1, 0.75)], uvs, viewport_tex)
-
-	# 恢复变换
-	pet.draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
-
 ## 返回全息迷你屏在屏幕上的包围矩形 (供游戏面板定位时避让)
+## 委托给 PetHoloScreen
 func get_holo_screen_rect() -> Rect2:
-	if not active or not game:
-		return Rect2()
-	var side = holo_side
-	var gap_val = pet.PET_RADIUS * 0.1
-	var holo_w: float = pet.PET_RADIUS * 2.0
-	var holo_h: float = pet.PET_RADIUS * 2.5
-	var cx = side * (gap_val + holo_w * 0.5)
-	var cy = 0.0
-	# 转到屏幕坐标
-	var pet_screen = pet.get_global_transform_with_canvas().get_origin()
-	var rect_x = pet_screen.x + cx - holo_w * 0.5 - 4.0
-	var rect_y = pet_screen.y + cy - holo_h * 0.5 - 4.0
-	return Rect2(rect_x, rect_y, holo_w + 8.0, holo_h + 8.0)
+	return pet.holo_screen.get_screen_rect()
 
 # ── 踏板管理 (私有) ──
 

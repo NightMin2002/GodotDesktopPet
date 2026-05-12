@@ -47,14 +47,8 @@ var _chrome_drag_offset: Vector2 = Vector2.ZERO
 var _pending_speech: String = ""                 # _say() 在气泡创建前调用时暂存
 var _compare_label: Label = null                 # 双方成绩对比行
 
-# ── 全息合成视口 (合成面板+悬浮组件的完整画面) ──
-var _holo_viewport: SubViewport = null
-var _holo_game_rect: TextureRect = null
-var _holo_title: Control = null
-var _holo_connector: Control = null
-var _holo_side: Control = null
-var _holo_restart: Control = null
-var _holo_speech: Control = null
+# ── 全息合成器 (委托给 HoloCompositor) ──
+var _holo: HoloCompositor = null
 
 # ── 元数据 (子类覆写) ──
 
@@ -358,12 +352,8 @@ func _say(text: String) -> void:
 		return
 	_speech_label.text = text
 	# 同步全息克隆体的文字
-	if is_instance_valid(_holo_speech):
-		var holo_bubble = _holo_speech.get_meta("_bubble") as PanelContainer
-		if holo_bubble and holo_bubble.get_child_count() > 0:
-			var holo_label = holo_bubble.get_child(0) as Label
-			if holo_label:
-				holo_label.text = text
+	if _holo:
+		_holo.sync_speech_text(text)
 	if is_instance_valid(_speech_bubble):
 		_speech_bubble.modulate = Color(1.4, 1.4, 1.4, 1.0)
 		var owner_node: Node = null
@@ -628,8 +618,9 @@ func _setup_floating_chrome(game_name: String, on_close: Callable, on_restart: C
 	# 等布局完成后定位
 	await parent.get_tree().process_frame
 	_update_chrome_positions()
-	# 先创建全息合成视口 (此时各组件位置正确, 包围盒精确)
-	_setup_holo_viewport()
+	# 先创建全息合成器 (此时各组件位置正确, 包围盒精确)
+	_holo = HoloCompositor.new()
+	_holo.setup(_get_holo_chrome_refs())
 	# 再启动入场动画 (动画会临时修改位置/透明度, 不影响全息布局)
 	_animate_chrome_in()
 
@@ -756,6 +747,9 @@ func _show_restart_bubble() -> void:
 	if not is_instance_valid(_restart_bubble) or not is_instance_valid(game_container):
 		return
 	_restart_bubble.show()
+	# 同步全息克隆体可见性
+	if _holo:
+		_holo.sync_restart_visible(true)
 	# 检查面板下方是否有足够空间放置按钮 (用固定常量, 和预留空间一致)
 	var gc_pos = game_container.position
 	var gc_size = game_container.size
@@ -764,9 +758,6 @@ func _show_restart_bubble() -> void:
 		var shift = needed_bottom - screen_size.y
 		game_container.position.y = maxf(gc_pos.y - shift, 8.0)
 	_update_chrome_positions()
-	# 同步全息克隆体可见性
-	if is_instance_valid(_holo_restart):
-		_holo_restart.show()
 	# 弹入动画
 	_restart_bubble.modulate.a = 0.0
 	_restart_bubble.scale = Vector2(0.5, 0.5)
@@ -780,9 +771,9 @@ func _show_restart_bubble() -> void:
 func _hide_restart_bubble() -> void:
 	if is_instance_valid(_restart_bubble):
 		_restart_bubble.hide()
-	if is_instance_valid(_holo_restart):
-		_holo_restart.hide()
-	_update_holo_layout()
+	if _holo:
+		_holo.sync_restart_visible(false)
+		_holo.update_layout(_get_holo_chrome_refs())
 
 ## 判断按钮应该在面板哪一侧 (远离宠物)
 func _determine_chrome_side() -> int:
@@ -885,7 +876,8 @@ func _update_chrome_positions() -> void:
 	# 教程面板
 	_position_tutorial()
 	# 全息合成视口布局同步
-	_update_holo_layout()
+	if _holo:
+		_holo.update_layout(_get_holo_chrome_refs())
 
 ## 标题气泡拖拽 → 带动整个面板移动
 func _on_chrome_drag_input(event: InputEvent) -> void:
@@ -950,204 +942,29 @@ func _animate_chrome_in() -> void:
 		tw.tween_property(_speech_bubble, "modulate:a", 1.0, 0.25).set_delay(0.15)
 
 # ══════════════════════════════════════════════
-# 全息合成视口 (合成面板+悬浮组件, 供全息迷你屏投影)
+# 全息合成 (委托给 HoloCompositor)
 # ══════════════════════════════════════════════
 
-## 创建全息合成视口 (独立 SubViewport, 不显示在屏幕上)
-func _setup_holo_viewport() -> void:
-	if not is_instance_valid(game_container) or not game_viewport:
-		return
-	var parent = game_container.get_parent()
-	if not parent:
-		return
+## 构建传递给 HoloCompositor 的组件引用字典
+func _get_holo_chrome_refs() -> Dictionary:
+	return {
+		"game_viewport": game_viewport,
+		"game_container": game_container,
+		"parent": game_container.get_parent() if is_instance_valid(game_container) else null,
+		"title": _title_bubble,
+		"connector": _connector,
+		"side": _side_container,
+		"restart": _restart_bubble,
+		"speech": _speech_bubble,
+		"chrome_side": _chrome_side,
+	}
 
-	_holo_viewport = SubViewport.new()
-	_holo_viewport.transparent_bg = true
-	_holo_viewport.gui_disable_input = true
-	_holo_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-
-	# 游戏面板内容 (通过 ViewportTexture 实时镜像)
-	_holo_game_rect = TextureRect.new()
-	_holo_game_rect.texture = game_viewport.get_texture()
-	_holo_game_rect.stretch_mode = TextureRect.STRETCH_SCALE
-	_holo_game_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_holo_viewport.add_child(_holo_game_rect)
-
-	# 克隆悬浮组件 (纯视觉副本, 无交互)
-	# 注意: 克隆时入场动画正在执行, 原件可能处于透明/缩小状态
-	# 必须强制重置克隆体的 modulate 和 scale
-	if is_instance_valid(_title_bubble):
-		_holo_title = _title_bubble.duplicate(0)
-		_disable_clone_input(_holo_title)
-		_holo_title.modulate = Color.WHITE
-		_holo_title.scale = Vector2.ONE
-		_holo_viewport.add_child(_holo_title)
-
-	if is_instance_valid(_connector):
-		_holo_connector = _connector.duplicate(0)
-		_holo_connector.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_holo_connector.modulate = Color.WHITE
-		_holo_viewport.add_child(_holo_connector)
-
-	if is_instance_valid(_side_container):
-		_holo_side = _side_container.duplicate(0)
-		_disable_clone_input(_holo_side)
-		_holo_side.modulate = Color.WHITE
-		_holo_side.scale = Vector2.ONE
-		# 子按钮也需要重置 (入场动画逐个设置了子按钮的透明度和缩放)
-		for child in _holo_side.get_children():
-			if child is Control:
-				child.modulate = Color.WHITE
-				child.scale = Vector2.ONE
-		_holo_viewport.add_child(_holo_side)
-
-	if is_instance_valid(_restart_bubble):
-		_holo_restart = _restart_bubble.duplicate(0)
-		_disable_clone_input(_holo_restart)
-		_holo_restart.modulate = Color.WHITE
-		_holo_restart.scale = Vector2.ONE
-		_holo_restart.visible = _restart_bubble.visible
-		_holo_viewport.add_child(_holo_restart)
-
-	if is_instance_valid(_speech_bubble):
-		_holo_speech = _speech_bubble.duplicate(0)
-		_disable_clone_input(_holo_speech)
-		_holo_speech.modulate = Color.WHITE
-		_holo_speech.scale = Vector2.ONE
-		# duplicate(0) 不复制 meta，手动关联子节点引用
-		# wrapper 的子节点顺序: [0]=arrow, [1]=bubble
-		if _holo_speech.get_child_count() >= 2:
-			_holo_speech.set_meta("_arrow", _holo_speech.get_child(0))
-			_holo_speech.set_meta("_bubble", _holo_speech.get_child(1))
-		_holo_viewport.add_child(_holo_speech)
-
-	parent.add_child(_holo_viewport)
-	_update_holo_layout()
-
-## 递归禁用克隆体的鼠标交互
-func _disable_clone_input(node: Node) -> void:
-	if node is Control:
-		(node as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for child in node.get_children():
-		_disable_clone_input(child)
-
-## 更新全息视口布局 (重算包围盒 + 定位克隆体)
-## 使用理想位置 (基于面板坐标系, 不受屏幕边缘 clamp 影响)
-func _update_holo_layout() -> void:
-	if not is_instance_valid(_holo_viewport) or not is_instance_valid(game_container):
-		return
-
-	var gc_pos = game_container.position
-	var gc_size = game_container.size
-	var gap := 8.0
-
-	# ── 计算理想位置 (以面板为基准, 不 clamp 到屏幕) ──
-	var title_size = _title_bubble.size if is_instance_valid(_title_bubble) else Vector2(100, 30)
-	var ideal_title = Vector2(
-		gc_pos.x + (gc_size.x - title_size.x) / 2.0,
-		gc_pos.y - title_size.y - gap
-	)
-
-	var conn_top = ideal_title.y + title_size.y
-	var conn_h = maxf(gc_pos.y - conn_top, 1.0)
-	var ideal_conn = Vector2(gc_pos.x + gc_size.x / 2.0, conn_top)
-	var ideal_conn_size = Vector2(1, conn_h)
-
-	var side_size = _side_container.size if is_instance_valid(_side_container) else Vector2(40, 80)
-	var ideal_side: Vector2
-	if _chrome_side > 0:
-		ideal_side = Vector2(gc_pos.x + gc_size.x + gap, gc_pos.y)
-	else:
-		ideal_side = Vector2(gc_pos.x - side_size.x - gap, gc_pos.y)
-
-	var rb_pos = Vector2(
-		gc_pos.x + (gc_size.x - _RESTART_RESERVE.x) / 2.0,
-		gc_pos.y + gc_size.y + _RESTART_GAP
-	)
-
-	# 发言气泡理想位置
-	var ideal_bubble_pos := Vector2.ZERO
-	var ideal_bubble_size := Vector2.ZERO
-	var ideal_arrow_pos := Vector2.ZERO
-	var ideal_arrow_size := Vector2(8, 12)
-	var has_speech := false
-	if is_instance_valid(_speech_bubble):
-		var bubble: PanelContainer = _speech_bubble.get_meta("_bubble") as PanelContainer
-		if bubble:
-			has_speech = true
-			ideal_bubble_size = bubble.size
-			var speech_side = -_chrome_side
-			var arrow_w := 8.0
-			if speech_side > 0:
-				ideal_bubble_pos = Vector2(gc_pos.x + gc_size.x + gap + arrow_w, gc_pos.y + 8.0)
-				ideal_arrow_pos = Vector2(ideal_bubble_pos.x - arrow_w, ideal_bubble_pos.y + ideal_bubble_size.y / 2.0 - 6.0)
-			else:
-				ideal_bubble_pos = Vector2(gc_pos.x - ideal_bubble_size.x - gap - arrow_w, gc_pos.y + 8.0)
-				ideal_arrow_pos = Vector2(ideal_bubble_pos.x + ideal_bubble_size.x, ideal_bubble_pos.y + ideal_bubble_size.y / 2.0 - 6.0)
-
-	# ── 包围盒 (理想位置) ──
-	var bounds = Rect2(gc_pos, gc_size)
-	bounds = bounds.merge(Rect2(ideal_title, title_size))
-	if conn_h > 1:
-		bounds = bounds.merge(Rect2(ideal_conn, ideal_conn_size))
-	bounds = bounds.merge(Rect2(ideal_side, side_size))
-	bounds = bounds.merge(Rect2(rb_pos, _RESTART_RESERVE))
-	if is_instance_valid(_restart_bubble) and _restart_bubble.visible:
-		var rb_ideal = Vector2(
-			gc_pos.x + (gc_size.x - _restart_bubble.size.x) / 2.0,
-			gc_pos.y + gc_size.y + gap
-		)
-		bounds = bounds.merge(Rect2(rb_ideal, _restart_bubble.size))
-	if has_speech:
-		bounds = bounds.merge(Rect2(ideal_bubble_pos, ideal_bubble_size))
-	bounds = bounds.grow(2)
-
-	# 更新视口大小
-	_holo_viewport.size = Vector2i(int(bounds.size.x), int(bounds.size.y))
-	var offset = bounds.position
-
-	# 定位游戏面板纹理
-	if is_instance_valid(_holo_game_rect):
-		_holo_game_rect.position = gc_pos - offset
-		_holo_game_rect.size = gc_size
-
-	# 定位克隆体 (用理想位置)
-	if is_instance_valid(_holo_title):
-		_holo_title.position = ideal_title - offset
-		_holo_title.size = title_size
-
-	if is_instance_valid(_holo_connector):
-		_holo_connector.position = ideal_conn - offset
-		_holo_connector.size = ideal_conn_size
-		_holo_connector.visible = conn_h > 1
-
-	if is_instance_valid(_holo_side):
-		_holo_side.position = ideal_side - offset
-
-	if is_instance_valid(_holo_restart) and is_instance_valid(_restart_bubble):
-		var rb_ideal = Vector2(
-			gc_pos.x + (gc_size.x - _restart_bubble.size.x) / 2.0,
-			gc_pos.y + gc_size.y + gap
-		)
-		_holo_restart.position = rb_ideal - offset
-		_holo_restart.size = _restart_bubble.size
-		_holo_restart.visible = _restart_bubble.visible
-
-	if is_instance_valid(_holo_speech) and has_speech:
-		var holo_bubble: PanelContainer = _holo_speech.get_meta("_bubble") as PanelContainer
-		var holo_arrow: Control = _holo_speech.get_meta("_arrow") as Control
-		if holo_bubble:
-			holo_bubble.position = ideal_bubble_pos - offset
-			holo_bubble.size = ideal_bubble_size
-		if holo_arrow:
-			holo_arrow.position = ideal_arrow_pos - offset
-			holo_arrow.size = ideal_arrow_size
-			holo_arrow.queue_redraw()
-
-## 获取全息合成纹理 (供 pet_gaming.gd 渲染)
+## 获取全息合成纹理 (供 PetHoloScreen 渲染)
 func get_holo_texture() -> Texture2D:
-	if is_instance_valid(_holo_viewport):
-		return _holo_viewport.get_texture()
+	if _holo:
+		var tex = _holo.get_texture()
+		if tex:
+			return tex
 	if game_viewport:
 		return game_viewport.get_texture()
 	return null
@@ -1161,7 +978,7 @@ func _animate_chrome_out() -> void:
 
 ## 清理悬浮组件
 func _cleanup_chrome() -> void:
-	for node in [_title_bubble, _side_container, _connector, _restart_bubble, _speech_bubble, _holo_viewport]:
+	for node in [_title_bubble, _side_container, _connector, _restart_bubble, _speech_bubble]:
 		if is_instance_valid(node):
 			node.queue_free()
 	_title_bubble = null
@@ -1172,13 +989,9 @@ func _cleanup_chrome() -> void:
 	_speech_label = null
 	_chrome_close_btn = null
 	_help_btn = null
-	_holo_viewport = null
-	_holo_game_rect = null
-	_holo_title = null
-	_holo_connector = null
-	_holo_side = null
-	_holo_restart = null
-	_holo_speech = null
+	if _holo:
+		_holo.cleanup()
+		_holo = null
 
 ## 返回悬浮组件的屏幕矩形 (供 hit_region_manager 注册)
 func get_chrome_rects() -> Array[Rect2]:

@@ -74,6 +74,9 @@ var squash: PetSquash
 # ── 游戏态管理器 (委托给 PetGaming) ──
 var gaming: PetGaming
 
+# ── 全息屏控制器 (委托给 PetHoloScreen) ──
+var holo_screen: PetHoloScreen
+
 func _ready() -> void:
 	# 初始化调色板 (必须在所有子系统之前)
 	if palette == null:
@@ -101,6 +104,10 @@ func _ready() -> void:
 	# 初始化眼球行为控制器 (必须在状态机之前，fall.enter() 会访问 eye_behavior)
 	eye_behavior = EyeBehavior.new()
 	eye_behavior.pet = self
+	
+	# 初始化全息屏控制器 (必须在游戏态管理器之前)
+	holo_screen = PetHoloScreen.new()
+	holo_screen.pet = self
 	
 	# 初始化游戏态管理器 (必须在状态机之前，transition_to() 会访问 gaming.active)
 	gaming = PetGaming.new()
@@ -424,7 +431,7 @@ func _process(delta: float) -> void:
 		_wrap_ghost_offset = Vector2.ZERO
 	
 	# 按需重绘
-	if has_visual_change or linear_velocity.length() > 1.0 or eye_behavior.is_animating() or squash_changed or _wrap_ghost_offset != Vector2.ZERO or gaming.active:
+	if has_visual_change or linear_velocity.length() > 1.0 or eye_behavior.is_animating() or squash_changed or _wrap_ghost_offset != Vector2.ZERO or holo_screen.visible:
 		queue_redraw()
 
 func _physics_process(delta: float) -> void:
@@ -473,9 +480,9 @@ func _draw() -> void:
 		pet_effects.render_arcs(self)
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 	
-	# ── 游戏全息迷你屏 (先画, 让宠物本体覆盖近端, 营造 3D 前景效果) ──
-	if gaming.active and gaming.game:
-		gaming.render_hologram()
+	# ── 全息迷你屏 (先画, 让宠物本体覆盖近端, 营造 3D 前景效果) ──
+	if holo_screen.visible:
+		holo_screen.render()
 
 	# ── 宠物本体 (可能画两次: 正常 + 屏幕穿越幽灵) ──
 	_draw_body(Vector2.ZERO)
