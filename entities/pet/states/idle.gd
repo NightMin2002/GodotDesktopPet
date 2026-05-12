@@ -31,8 +31,8 @@ func exit() -> void:
 func process(delta: float) -> void:
 	idle_timer += delta
 	
-	# ── 游戏态: 锁定 idle，不做任何转换/触发 ──
-	if pet.gaming.active:
+	# ── 游戏态 / 全息屏待机: 锁定 idle，不做任何转换/触发 ──
+	if pet.gaming.active or pet.holo_screen.mode == PetHoloScreen.Mode.IDLE:
 		return
 	
 	# ── 空间跳跃活跃时锁定 idle 状态，不做任何转换 ──
@@ -137,6 +137,15 @@ func input(event: InputEvent) -> void:
 						"...对弈优先级高于触控响应。",
 						"正在计算。稍后处理。",
 						"触控信号已搁置。",
+					]
+					pet.show_local_bubble(lines[randi() % lines.size()])
+					return
+				# 看终端中: 不进入拖拽，给个专属回应
+				if pet.holo_screen.mode == PetHoloScreen.Mode.IDLE:
+					var lines := [
+						"...正在读取数据流。",
+						"终端会话进行中。",
+						"...稍后。",
 					]
 					pet.show_local_bubble(lines[randi() % lines.size()])
 					return

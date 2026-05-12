@@ -105,6 +105,15 @@ func _collect_hit_regions() -> void:
 				rects.append(hud_r.position.y)
 				rects.append(hud_r.size.x)
 				rects.append(hud_r.size.y)
+		
+		# 全息屏关闭按钮: 矩形
+		if p.holo_screen:
+			var btn_r = p.holo_screen.get_close_btn_rect()
+			if btn_r.size != Vector2.ZERO:
+				rects.append(btn_r.position.x)
+				rects.append(btn_r.position.y)
+				rects.append(btn_r.size.x)
+				rects.append(btn_r.size.y)
 	
 	_hit_circles = circles
 	_hit_rects = rects
@@ -233,6 +242,15 @@ func _update_hit_regions_fallback() -> void:
 				rects.append(_q(hud_r.position.y))
 				rects.append(_q(hud_r.size.x))
 				rects.append(_q(hud_r.size.y))
+		
+		# 全息屏关闭按钮
+		if p.holo_screen:
+			var btn_r = p.holo_screen.get_close_btn_rect()
+			if btn_r.size != Vector2.ZERO:
+				rects.append(_q(btn_r.position.x))
+				rects.append(_q(btn_r.position.y))
+				rects.append(_q(btn_r.size.x))
+				rects.append(_q(btn_r.size.y))
 
 	# 游戏面板
 	if _main.game_mgr and _main.game_mgr.has_method("get_panel_rects"):

@@ -165,6 +165,7 @@ func _build_debug_behavior_submenu() -> void:
 		{"label": "自动扫雷", "behavior": "_auto_game_mine", "desc": "宠物自己玩一局扫雷"},
 		{"label": "自动导航", "behavior": "_auto_game_snake", "desc": "宠物自己玩一局贪吃蛇"},
 		{"label": "自动堆叠", "behavior": "_auto_game_tetris", "desc": "宠物自己玩一局俄罗斯方块"},
+		{"label": "个人终端", "behavior": "_holo_browse", "desc": "弹出全息屏待机屏保 (25秒)"},
 	]
 
 	for item in debug_items:
@@ -230,5 +231,13 @@ func _on_debug_behavior_pressed(behavior: String) -> void:
 		EventBus.launch_game_auto.emit("snake")
 	elif behavior == "_auto_game_tetris":
 		EventBus.launch_game_auto.emit("tetris")
+	elif behavior == "_holo_browse":
+		if main_node and "pet_instances" in main_node:
+			var pets: Array = main_node.pet_instances
+			if pets.size() > 0:
+				var pet = pets[0]
+				if not pet.gaming.active and not pet.holo_screen.visible:
+					var s: float = -1.0 if pet.global_position.x > pet.boundary_size.x * 0.5 else 1.0
+					pet.holo_screen.show_idle(s, 25.0)
 	else:
 		EventBus.trigger_idle_behavior.emit(behavior)

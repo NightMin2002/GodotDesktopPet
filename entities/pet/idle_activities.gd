@@ -29,8 +29,9 @@ const INTERVAL_RANGE := {
 
 func _init() -> void:
 	# 注册内置活动 (weight 决定抽中概率)
-	register("free_roam", 3.0, _do_free_roam)   # 移动行为, 常见 (75%)
-	register("auto_game", 1.0, _do_auto_game)   # 稀有事件 (25%)
+	register("free_roam", 3.0, _do_free_roam)     # 移动行为, 常见 (50%)
+	register("holo_browse", 2.0, _do_holo_browse)  # 看屏幕, 较常见 (33%)
+	register("auto_game", 1.0, _do_auto_game)      # 稀有事件 (17%)
 	_roll_next_interval()
 
 # ── 公开接口 ──
@@ -90,6 +91,8 @@ func _can_run(id: String) -> bool:
 			return pet.free_roam_enabled and not pet._roam_active
 		"auto_game":
 			return not pet.gaming.active
+		"holo_browse":
+			return not pet.gaming.active and not pet.holo_screen.visible
 	return true
 
 ## 按权重随机抽取 (只从满足前置条件的活动中选)
@@ -118,3 +121,14 @@ func _do_free_roam() -> void:
 func _do_auto_game() -> void:
 	var games = ["2048", "minesweeper", "snake", "tetris"]
 	EventBus.launch_game_auto.emit(games[randi() % games.size()])
+
+func _do_holo_browse() -> void:
+	# 决定屏幕方向 (和游戏态一样的逻辑)
+	var screen_side: float
+	if pet.global_position.x > pet.boundary_size.x * 0.5:
+		screen_side = -1.0
+	else:
+		screen_side = 1.0
+	# 显示 15~25 秒
+	var duration = randf_range(15.0, 25.0)
+	pet.holo_screen.show_idle(screen_side, duration)
