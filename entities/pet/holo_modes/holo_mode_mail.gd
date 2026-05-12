@@ -93,16 +93,28 @@ func render(pts: PackedVector2Array, _hue: float, deploy: float) -> void:
 		2.0, true
 	)
 	
-	# 数据块游走
-	var block_prog = fmod(time * 0.6, 1.0)
-	var block_x = bar_start + bar_w * block_prog
-	var block_len = 0.1
-	if block_x + block_len <= bar_end:
-		pet.draw_line(
-			screen._map_uv(pts, block_x, bar_y), 
-			screen._map_uv(pts, block_x + block_len, bar_y), 
-			glow_color, 2.5, true
-		)
+	# 数据块扫描 (机械卡顿感 + 碎裂离散块)
+	var step_time = floor(time * 12.0) / 12.0
+	var scan_prog = fmod(step_time * 0.5, 1.0)
+	
+	var blocks = PackedVector2Array()
+	var block_count = 6
+	for b in range(block_count):
+		# 利用 hash 给每块固定的相对偏移和长度，并添加卡顿步进游走
+		var rand_offset = float(hash(b)) / 2147483648.0
+		var rand_len = 0.01 + float(hash(b + 10)) / 2147483648.0 * 0.04
+		
+		# 整体偏移
+		var final_prog = fmod(scan_prog + rand_offset, 1.0)
+		var block_x = bar_start + bar_w * final_prog
+		
+		# 剔除超出的部分
+		if block_x >= bar_start and block_x + rand_len <= bar_end:
+			blocks.append(screen._map_uv(pts, block_x, bar_y))
+			blocks.append(screen._map_uv(pts, block_x + rand_len, bar_y))
+			
+	if blocks.size() > 0:
+		pet.draw_multiline(blocks, glow_color, 2.5, true)
 	
 	# 两端角标
 	pet.draw_line(

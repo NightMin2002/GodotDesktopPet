@@ -85,18 +85,31 @@ func render(pts: PackedVector2Array, _hue: float, deploy: float) -> void:
 			# 实心内芯
 			pet.draw_polyline(draw_pts, check_color, 4.0, true)
 	
-	# ── 4. 底部状态条 (STATUS: CONFIRMED) ──
-	var bar_prog = clampf(time * 2.5 - 0.4, 0.0, 1.0)
+	# ── 4. 底部状态条 (STATUS: CONFIRMED，机械步进卡顿感) ──
+	var step_time = floor(time * 15.0) / 15.0
+	var bar_prog = clampf(step_time * 2.5 - 0.4, 0.0, 1.0)
 	if bar_prog > 0.0:
+		# 使宽度呈现格栅式的离散增长 (分 12 格)
+		var quantized_prog = floor(bar_prog * 12.0) / 12.0
 		var bar_y = 0.8
-		var bar_w = 0.6 * bar_prog
+		var bar_w = 0.6 * quantized_prog
 		var bar_start = 0.5 - bar_w * 0.5
 		var bar_end = 0.5 + bar_w * 0.5
-		pet.draw_line(
-			screen._map_uv(pts, bar_start, bar_y), 
-			screen._map_uv(pts, bar_end, bar_y), 
+		
+		# 将实线打断为刻度断线 (数据块连缀感)
+		var bar_pts = PackedVector2Array()
+		var segment_count = max(1, floor(quantized_prog * 12.0))
+		for i in range(segment_count):
+			var seg_w = 0.6 / 12.0
+			var seg_start = 0.5 - (0.6 * quantized_prog) * 0.5 + i * seg_w
+			var seg_end = seg_start + seg_w * 0.7  # 留 30% 空隙
+			bar_pts.append(screen._map_uv(pts, seg_start, bar_y))
+			bar_pts.append(screen._map_uv(pts, seg_end, bar_y))
+			
+		pet.draw_multiline(
+			bar_pts, 
 			Color(base_color.r, base_color.g, base_color.b, alpha * 0.7), 
-			3.0, true
+			3.5, true
 		)
 		# 装饰性小竖线
 		pet.draw_line(
