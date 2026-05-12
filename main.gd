@@ -265,14 +265,78 @@ func _spawn_pet() -> void:
 		pet_instance.palette.set_hue_degrees(saved_color.hue)
 		pet_instance.palette.set_sat_percent(saved_color.sat)
 		pet_instance.palette.set_val_percent(saved_color.val)
-	pet_instance.position = Vector2(
-		boundary_size.x / 2.0,
-		boundary_size.y / 3.0
-	)
+	
+	# ── 入场动画: 从屏幕左/右侧外弹入 ──
+	var from_left: bool = randf() < 0.5
+	var roll_style: bool = randf() < 0.5  # true=滚动入场, false=斜抛弹入
+	var spawn_margin := 60.0
+	var spawn_x: float
+	if from_left:
+		spawn_x = -spawn_margin
+	else:
+		spawn_x = boundary_size.x + spawn_margin
+	# 地面附近 (地面墙在 boundary_size.y，宠物半径 30)
+	var spawn_y := boundary_size.y - 50.0
+	pet_instance.position = Vector2(spawn_x, spawn_y)
+	
+	# 临时禁用入场侧的墙壁，让宠物从外面穿入
+	var entry_wall: StaticBody2D = _wall_left if from_left else _wall_right
+	if is_instance_valid(entry_wall):
+		entry_wall.get_child(0).disabled = true
+	
 	add_child(pet_instance)
 	pet_instances.append(pet_instance)
 	
-	print("[DesktopPet] 宠物生成于: ", pet_instance.position)
+	# 入场期间临时关闭屏幕穿越 (防止 _update_screen_wrap 传送/画幽灵)
+	var had_wrap: bool = pet_instance.screen_wrap
+	if had_wrap:
+		pet_instance.screen_wrap = false
+	
+	# 延迟一帧施加入场冲量 (等 RigidBody2D 物理就绪)
+	var dir: float = 1.0 if from_left else -1.0
+	_apply_entrance.call_deferred(pet_instance, dir, entry_wall, had_wrap, roll_style)
+	
+	var style_name := "滚动" if roll_style else "弹跳"
+	print("[DesktopPet] 宠物从%s侧%s入场" % [("左" if from_left else "右"), style_name])
+
+## 入场冲量 + 墙壁恢复
+func _apply_entrance(pet: RigidBody2D, dir: float, wall: StaticBody2D, had_wrap: bool, is_roll: bool) -> void:
+	if not is_instance_valid(pet):
+		return
+	if is_roll:
+		# 滚动: 沿地面平推 + 强旋转，优雅自然
+		pet.apply_central_impulse(Vector2(
+			dir * randf_range(400, 600),
+			randf_range(-50, -20),  # 微微离地，不会飞起
+		))
+		pet.apply_torque_impulse(dir * randf_range(4000, 7000))
+	else:
+		# 斜抛: 高抛物线弹入
+		pet.apply_central_impulse(Vector2(
+			dir * randf_range(600, 900),
+			randf_range(-550, -380),
+		))
+		pet.apply_torque_impulse(dir * randf_range(2000, 4000))
+	
+	# 等宠物进入屏幕后恢复墙壁 + 屏幕穿越
+	_restore_after_entrance.call_deferred(pet, wall, had_wrap)
+
+## 轮询等待宠物进入屏幕范围后恢复墙壁碰撞和屏幕穿越
+func _restore_after_entrance(pet: RigidBody2D, wall: StaticBody2D, had_wrap: bool) -> void:
+	if not is_instance_valid(pet):
+		return
+	# 等宠物 x 进入安全范围 (留 80px 余量避免卡墙)
+	while is_instance_valid(pet):
+		var x = pet.global_position.x
+		if x > 80.0 and x < boundary_size.x - 80.0:
+			break
+		await get_tree().process_frame
+	# 恢复屏幕穿越
+	if had_wrap and is_instance_valid(pet):
+		pet.screen_wrap = true
+	# 墙壁: 屏幕穿越模式下不恢复
+	if not had_wrap and is_instance_valid(wall):
+		wall.get_child(0).disabled = false
 
 # ── 提醒系统 ──
 
