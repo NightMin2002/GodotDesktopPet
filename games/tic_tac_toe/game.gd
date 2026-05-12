@@ -120,30 +120,17 @@ func cleanup() -> void:
 # ══════════════════════════════════════════════
 
 func _build_ui() -> void:
-	_panel = PanelContainer.new()
-	_panel.custom_minimum_size = Vector2(280, 0)
-
-	# 面板背景
-	_panel.add_theme_stylebox_override("panel", _create_game_panel_bg())
+	var skel = _create_panel_skeleton(280, {"left": 14, "right": 14, "top": 0, "bottom": 4, "separation": 8})
+	_panel = skel.panel
+	var vbox = skel.vbox
 
 	# ── 全局扫描背景(故障风) ──
 	var glitch_bg = _GlitchBg.new()
 	glitch_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	glitch_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_panel.add_child(glitch_bg)
-
-	var outer = MarginContainer.new()
-	outer.add_theme_constant_override("margin_left", 14)
-	outer.add_theme_constant_override("margin_right", 14)
-	outer.add_theme_constant_override("margin_top", 0)
-	outer.add_theme_constant_override("margin_bottom", 4)
-	outer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_panel.add_child(outer)
-
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 8)
-	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	outer.add_child(vbox)
+	# 将 vbox 父节点移到最前 (glitch_bg 在后面)
+	_panel.move_child(_panel.get_child(0), _panel.get_child_count() - 1)
 
 	# ── 顶部视觉中枢 (机械单眼) ──
 	_eye = _EyeRenderer.new()
@@ -157,16 +144,9 @@ func _build_ui() -> void:
 	vbox.add_child(_grid)
 
 	# ── 战绩 (RichTextLabel + BBCode 彩色) ──
-	var score_rich = RichTextLabel.new()
-	score_rich.bbcode_enabled = true
-	score_rich.fit_content = true
-	score_rich.scroll_active = false
-	score_rich.custom_minimum_size = Vector2(0, 20)
-	score_rich.add_theme_font_size_override("normal_font_size", 12)
-	score_rich.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_score_label = score_rich
+	_score_label = _create_score_rich_label()
 	_update_labels()
-	vbox.add_child(score_rich)
+	vbox.add_child(_score_label)
 
 	# ── 输入处理 + 挂载 + 弹入动画 + 悬浮组件 (统一流程)
 	await _mount_panel(_panel)
@@ -266,16 +246,13 @@ func _on_restart() -> void:
 	_reset_board()
 	_say(_pick(_q_start, _POOL_START))
 
-func _on_close_cleanup() -> bool:
-	# 游戏进行中关闭 -> 算认输
-	if not _game_over:
-		_game_over = true
-		_losses += 1
-		_save_scores()
-		game_finished.emit(Result.LOSE)
-		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
-			_pet.show_local_bubble("对弈中断。...这算你认输。")
-	return true
+func _on_close_extra_cleanup() -> void:
+	SettingsManager.set_int(_score_key("draws"), _draws)
+
+func get_close_speech_pool() -> Array:
+	return ["对弈中断。...这算你认输。"]
+
+# 井字棋没有自玩模式, 不需要 get_auto_close_lines
 
 func _update_labels() -> void:
 	var hue = EventBus.ui_hue

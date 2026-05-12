@@ -154,24 +154,9 @@ func cleanup() -> void:
 # ══════════════════════════════════════════════
 
 func _build_ui() -> void:
-	_panel = PanelContainer.new()
-	_panel.custom_minimum_size = Vector2(COLS * CELL_SIZE + 32, 0)
-
-	# 面板背景
-	_panel.add_theme_stylebox_override("panel", _create_game_panel_bg())
-
-	var outer = MarginContainer.new()
-	outer.add_theme_constant_override("margin_left", 14)
-	outer.add_theme_constant_override("margin_right", 14)
-	outer.add_theme_constant_override("margin_top", 12)
-	outer.add_theme_constant_override("margin_bottom", 4)
-	outer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_panel.add_child(outer)
-
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 6)
-	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	outer.add_child(vbox)
+	var skel = _create_panel_skeleton(COLS * CELL_SIZE + 32, {"left": 14, "right": 14, "top": 12, "bottom": 4, "separation": 6})
+	_panel = skel.panel
+	var vbox = skel.vbox
 
 	# ── 信息栏 (剩余雷数 + 计时) ──
 	var info_wrapper = PanelContainer.new()
@@ -215,13 +200,7 @@ func _build_ui() -> void:
 	var my_l = SettingsManager.get_int(_score_key("losses"), 0)
 	var pet_w = SettingsManager.get_int(_other_score_key("wins"), 0)
 	var pet_l = SettingsManager.get_int(_other_score_key("losses"), 0)
-	_compare_label = Label.new()
-	_compare_label.text = "操作员: %d/%d | 本机: %d/%d" % [my_w, my_w + my_l, pet_w, pet_w + pet_l]
-	_compare_label.add_theme_font_size_override("font_size", 11)
-	_compare_label.add_theme_color_override("font_color", Color(0.4, 0.5, 0.6, 0.6))
-	_compare_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_compare_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(_compare_label)
+	_create_compare_row(vbox, "操作员: %d/%d | 本机: %d/%d" % [my_w, my_w + my_l, pet_w, pet_w + pet_l])
 
 	# ── 雷区格子 (Control 节点树方式) ──
 	var grid_wrapper = CenterContainer.new()
@@ -270,16 +249,9 @@ func _build_ui() -> void:
 	vbox.add_child(grid_wrapper)
 
 	# ── 战绩 ──
-	var score_rich = RichTextLabel.new()
-	score_rich.bbcode_enabled = true
-	score_rich.fit_content = true
-	score_rich.scroll_active = false
-	score_rich.custom_minimum_size = Vector2(0, 20)
-	score_rich.add_theme_font_size_override("normal_font_size", 12)
-	score_rich.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_score_label = score_rich
+	_score_label = _create_score_rich_label()
 	_update_score_label()
-	vbox.add_child(score_rich)
+	vbox.add_child(_score_label)
 
 	# ── 输入处理 + 挂载 + 弹入动画 + 悬浮组件 (统一流程)
 	await _mount_panel(_panel)
@@ -505,21 +477,14 @@ func _on_restart() -> void:
 	_reset_game()
 	_say(_pick(_q_start, _POOL_START))
 
-func _on_close_cleanup() -> bool:
-	var was_auto = _auto_play
-	if not _game_over:
-		_game_over = true
-		_timer_running = false
-		_losses += 1
-		_save_scores()
-		game_finished.emit(Result.LOSE)
-		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
-			if was_auto:
-				var auto_close_lines = ["...？", "...扫描中断。", "威胁评估被终止了。"]
-				_pet.show_local_bubble(auto_close_lines[randi() % auto_close_lines.size()])
-			else:
-				_pet.show_local_bubble(_pick(_q_lose, _POOL_CLOSE_MID))
-	return true
+func _on_close_extra_cleanup() -> void:
+	_timer_running = false
+
+func get_close_speech_pool() -> Array:
+	return _POOL_CLOSE_MID
+
+func get_auto_close_lines() -> Array:
+	return ["...？", "...扫描中断。", "威胁评估被终止了。"]
 
 # ══════════════════════════════════════════════
 # 格子视觉更新 (Control 节点方式)
@@ -673,23 +638,16 @@ func _update_score_label() -> void:
 # 自动操作 (AI 自玩)
 # ══════════════════════════════════════════════
 
-## 启动自动操作模式
-func _start_auto_play() -> void:
-	_auto_play = true
-	var auto_start_lines = [
+func get_auto_start_lines() -> Array:
+	return [
 		"威胁源扫描训练启动。",
 		"...危险区域演练。",
 		"自主扫雷开始。...想接手就点。",
 		"训练中。...观摩可以。",
 	]
-	if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
-		_pet.show_local_bubble(auto_start_lines[randi() % auto_start_lines.size()])
-	if is_instance_valid(game_viewport):
-		await game_viewport.get_tree().create_timer(0.6).timeout
-	if not _auto_play or not is_instance_valid(game_container):
-		return
-	_auto_fade(AUTO_PLAY_ALPHA)
-	_auto_create_timer(0.4)
+
+func get_auto_play_interval() -> float:
+	return 0.4
 
 func _get_takeover_lines() -> Array:
 	return ["...你来？好。", "操作权移交。", "接手确认。...小心地雷。"]

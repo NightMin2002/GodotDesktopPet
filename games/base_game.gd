@@ -114,6 +114,51 @@ func _create_game_panel_bg() -> StyleBoxFlat:
 	bg.content_margin_bottom = 6
 	return bg
 
+## 创建面板骨架 (PanelContainer + MarginContainer + VBoxContainer)
+## 返回 {panel: PanelContainer, vbox: VBoxContainer}
+func _create_panel_skeleton(min_width: float, margins: Dictionary = {}) -> Dictionary:
+	var panel = PanelContainer.new()
+	panel.custom_minimum_size = Vector2(min_width, 0)
+	panel.add_theme_stylebox_override("panel", _create_game_panel_bg())
+
+	var outer = MarginContainer.new()
+	outer.add_theme_constant_override("margin_left", margins.get("left", 14))
+	outer.add_theme_constant_override("margin_right", margins.get("right", 14))
+	outer.add_theme_constant_override("margin_top", margins.get("top", 12))
+	outer.add_theme_constant_override("margin_bottom", margins.get("bottom", 6))
+	outer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(outer)
+
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", margins.get("separation", 8))
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	outer.add_child(vbox)
+
+	return {panel = panel, vbox = vbox}
+
+## 创建双方成绩对比行 (统一样式, 自动挂载到 _compare_label)
+func _create_compare_row(parent: Control, text: String) -> Label:
+	var label = Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", 11)
+	label.add_theme_color_override("font_color", Color(0.4, 0.5, 0.6, 0.6))
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(label)
+	_compare_label = label
+	return label
+
+## 创建战绩 RichTextLabel (统一样式: BBCode + 自适应 + 无滚动)
+func _create_score_rich_label() -> RichTextLabel:
+	var rich = RichTextLabel.new()
+	rich.bbcode_enabled = true
+	rich.fit_content = true
+	rich.scroll_active = false
+	rich.custom_minimum_size = Vector2(0, 20)
+	rich.add_theme_font_size_override("normal_font_size", 12)
+	rich.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return rich
+
 # ── 战绩持久化 ──
 
 ## 战绩存储 key (自玩/手动分开)
@@ -244,6 +289,34 @@ func _auto_destroy_timer() -> void:
 func _auto_play_step() -> void:
 	pass
 
+## 启动自玩 — 模板方法, 子类通过覆写 hook 提供话术和参数
+## 子类只需覆写: get_auto_start_lines(), get_auto_play_interval()
+## 如有特殊启动逻辑(如贪吃蛇需要启动 tick_timer), 覆写 _on_auto_play_started()
+func _start_auto_play() -> void:
+	_auto_play = true
+	var lines = get_auto_start_lines()
+	if lines.size() > 0 and is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
+		_pet.show_local_bubble(lines[randi() % lines.size()])
+	if is_instance_valid(game_viewport):
+		await game_viewport.get_tree().create_timer(0.6).timeout
+	if not _auto_play or not is_instance_valid(game_container):
+		return
+	_auto_fade(AUTO_PLAY_ALPHA)
+	_on_auto_play_started()
+	_auto_create_timer(get_auto_play_interval())
+
+## 子类覆写: 自玩启动话术
+func get_auto_start_lines() -> Array:
+	return ["自主训练开始。", "...自检模式。"]
+
+## 子类覆写: 自玩定时器间隔 (秒)
+func get_auto_play_interval() -> float:
+	return 0.4
+
+## 子类覆写: 自玩启动后的额外初始化 (如启动游戏计时器)
+func _on_auto_play_started() -> void:
+	pass
+
 ## 停止自玩 (用户接管) — 通用逻辑, 子类一般不需要覆写
 func _stop_auto_play() -> void:
 	var was_auto = _auto_play
@@ -319,6 +392,14 @@ func get_default_panel_size() -> Vector2:
 ## 子类覆写: 中途关闭时的吐槽话术 (空字符串 = 不显示)
 func get_close_speech() -> String:
 	return ""
+
+## 子类覆写: 中途关闭话术池 (用于 _pick 抽取, 优先级高于 get_close_speech)
+func get_close_speech_pool() -> Array:
+	return []
+
+## 子类覆写: 自玩被关闭时的话术
+func get_auto_close_lines() -> Array:
+	return ["...？", "...中断。"]
 
 # ── 通用面板管理 ──
 
@@ -419,20 +500,38 @@ func _on_panel_input(event: InputEvent) -> void:
 func _on_restart() -> void:
 	pass
 
-## 子类覆写: 中途关闭前的额外清理 (在退场动画之前调用)
-## 返回 true = 已处理 game_finished 信号, false = 不需要处理
+## 中途关闭处理 — 模板方法 (子类通过 hook 提供话术和特殊清理)
+## 子类需要额外清理时覆写 _on_close_extra_cleanup()
 func _on_close_cleanup() -> bool:
-	return false
+	var was_auto = _auto_play
+	if not _game_over:
+		_game_over = true
+		_on_close_extra_cleanup()
+		_losses += 1
+		_save_scores()
+		game_finished.emit(Result.LOSE)
+		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
+			if was_auto:
+				var lines = get_auto_close_lines()
+				_pet.show_local_bubble(lines[randi() % lines.size()])
+			else:
+				var pool = get_close_speech_pool()
+				if pool.size() > 0:
+					_pet.show_local_bubble(pool[randi() % pool.size()])
+				else:
+					var speech = get_close_speech()
+					if speech != "":
+						_pet.show_local_bubble(speech)
+	return true
+
+## 子类覆写: 中途关闭时的额外清理 (如停计时器、保存特殊数据)
+func _on_close_extra_cleanup() -> void:
+	pass
 
 ## 通用关闭流程: 中途退出处理 + 退场动画 + 发射关闭信号
 func _close_game() -> void:
 	# 子类额外清理
-	var handled = _on_close_cleanup()
-	# 默认中途关闭处理 (子类没处理的话)
-	if not handled:
-		var speech = get_close_speech()
-		if speech != "" and is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
-			_pet.show_local_bubble(speech)
+	_on_close_cleanup()
 	# 退场动画
 	_animate_chrome_out()
 	if is_instance_valid(game_container):

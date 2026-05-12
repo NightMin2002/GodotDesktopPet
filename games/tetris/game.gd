@@ -234,20 +234,9 @@ func cleanup() -> void:
 # ══════════════════════════════════════════════
 
 func _build_ui() -> void:
-	_panel = PanelContainer.new()
-	_panel.custom_minimum_size = Vector2(FIELD_W + SIDEBAR_W + SIDEBAR_GAP + 28, 0)
-	_panel.add_theme_stylebox_override("panel", _create_game_panel_bg())
-
-	var outer = MarginContainer.new()
-	outer.add_theme_constant_override("margin_left", 10)
-	outer.add_theme_constant_override("margin_right", 10)
-	outer.add_theme_constant_override("margin_top", 8)
-	outer.add_theme_constant_override("margin_bottom", 6)
-	_panel.add_child(outer)
-
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 4)
-	outer.add_child(vbox)
+	var skel = _create_panel_skeleton(FIELD_W + SIDEBAR_W + SIDEBAR_GAP + 28, {"left": 10, "right": 10, "top": 8, "bottom": 6, "separation": 4})
+	_panel = skel.panel
+	var vbox = skel.vbox
 
 	# ── 顶部信息栏 ──
 	var header = HBoxContainer.new()
@@ -275,13 +264,7 @@ func _build_ui() -> void:
 	# ── 双方对比行 ──
 	var my_best = SettingsManager.get_int(_score_key("best"), 0)
 	var pet_best = SettingsManager.get_int(_other_score_key("best"), 0)
-	_compare_label = Label.new()
-	_compare_label.text = "操作员: %d | 本机: %d" % [my_best, pet_best]
-	_compare_label.add_theme_font_size_override("font_size", 11)
-	_compare_label.add_theme_color_override("font_color", Color(0.4, 0.5, 0.6, 0.6))
-	_compare_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_compare_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(_compare_label)
+	_create_compare_row(vbox, "操作员: %d | 本机: %d" % [my_best, pet_best])
 
 	# ── 游戏区域 (场地 + 侧栏) ──
 	var grid_wrapper = CenterContainer.new()
@@ -302,16 +285,9 @@ func _build_ui() -> void:
 	vbox.add_child(_lines_label)
 
 	# ── 战绩标签 ──
-	var score_rich = RichTextLabel.new()
-	score_rich.bbcode_enabled = true
-	score_rich.fit_content = true
-	score_rich.scroll_active = false
-	score_rich.custom_minimum_size = Vector2(0, 18)
-	score_rich.add_theme_font_size_override("normal_font_size", 12)
-	score_rich.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_score_label_rich = score_rich
+	_score_label_rich = _create_score_rich_label()
 	_update_score_rich()
-	vbox.add_child(score_rich)
+	vbox.add_child(_score_label_rich)
 
 	await _mount_panel(_panel)
 
@@ -595,19 +571,14 @@ func _on_restart() -> void:
 	_reset_game()
 	_say(_pick(_q_start, _POOL_START))
 
-func _on_close_cleanup() -> bool:
-	var was_auto = _auto_play
-	if not _game_over:
-		_game_over = true
-		_persist_scores()
-		game_finished.emit(Result.LOSE)
-		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
-			if was_auto:
-				var lines_a = ["...？", "...堆叠中断。", "结构优化被终止了。"]
-				_pet.show_local_bubble(lines_a[randi() % lines_a.size()])
-			else:
-				_pet.show_local_bubble("堆叠中断。...这算你放弃。")
-	return true
+func _on_close_extra_cleanup() -> void:
+	_persist_scores()
+
+func get_close_speech_pool() -> Array:
+	return ["堆叠中断。...这算你放弃。"]
+
+func get_auto_close_lines() -> Array:
+	return ["...？", "...堆叠中断。", "结构优化被终止了。"]
 
 # ══════════════════════════════════════════════
 # 输入处理
@@ -905,25 +876,17 @@ func _update_score_rich() -> void:
 # 自动操作 (AI 自玩)
 # ══════════════════════════════════════════════
 
-func _start_auto_play() -> void:
-	_auto_play = true
-	var auto_start_lines = [
+func get_auto_start_lines() -> Array:
+	return [
 		"结构堆叠自主训练启动。",
 		"...排列演练。",
 		"自主堆叠开始。...想接手就按任意键。",
 		"训练中。...观摩可以。",
 	]
-	if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
-		_pet.show_local_bubble(auto_start_lines[randi() % auto_start_lines.size()])
-	if is_instance_valid(game_viewport):
-		await game_viewport.get_tree().create_timer(0.6).timeout
-	if not _auto_play or not is_instance_valid(game_container):
-		return
-	_auto_fade(AUTO_PLAY_ALPHA)
-	# AI 定时器
+
+func get_auto_play_interval() -> float:
 	var rate = _get_mistake_rate()
-	var interval = lerpf(0.08, 0.4, rate / 0.10)
-	_auto_create_timer(interval)
+	return lerpf(0.08, 0.4, rate / 0.10)
 
 func _get_takeover_lines() -> Array:
 	return ["...你来？排列交给你。", "操作权移交。堆叠继续。"]

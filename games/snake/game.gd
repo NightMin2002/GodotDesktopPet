@@ -159,20 +159,9 @@ func cleanup() -> void:
 # ══════════════════════════════════════════════
 
 func _build_ui() -> void:
-	_panel = PanelContainer.new()
-	_panel.custom_minimum_size = Vector2(GRID_PX + 28, 0)
-	_panel.add_theme_stylebox_override("panel", _create_game_panel_bg())
-
-	var outer = MarginContainer.new()
-	outer.add_theme_constant_override("margin_left", 10)
-	outer.add_theme_constant_override("margin_right", 10)
-	outer.add_theme_constant_override("margin_top", 8)
-	outer.add_theme_constant_override("margin_bottom", 6)
-	_panel.add_child(outer)
-
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 6)
-	outer.add_child(vbox)
+	var skel = _create_panel_skeleton(GRID_PX + 28, {"left": 10, "right": 10, "top": 8, "bottom": 6, "separation": 6})
+	_panel = skel.panel
+	var vbox = skel.vbox
 
 	# 顶部: 分数 + 长度
 	var header = HBoxContainer.new()
@@ -197,13 +186,7 @@ func _build_ui() -> void:
 	# ── 双方对比行 ──
 	var my_len = SettingsManager.get_int(_score_key("best_len"), 3)
 	var pet_len = SettingsManager.get_int(_other_score_key("best_len"), 3)
-	_compare_label = Label.new()
-	_compare_label.text = "我的最长: %d | 宠物最长: %d" % [my_len, pet_len]
-	_compare_label.add_theme_font_size_override("font_size", 11)
-	_compare_label.add_theme_color_override("font_color", Color(0.4, 0.5, 0.6, 0.6))
-	_compare_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_compare_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(_compare_label)
+	_create_compare_row(vbox, "我的最长: %d | 宠物最长: %d" % [my_len, pet_len])
 
 	# 网格区域
 	var grid_wrapper = CenterContainer.new()
@@ -215,11 +198,7 @@ func _build_ui() -> void:
 	grid_wrapper.add_child(_grid_renderer)
 
 	# 战绩标签
-	_record_label = RichTextLabel.new()
-	_record_label.bbcode_enabled = true
-	_record_label.fit_content = true
-	_record_label.scroll_active = false
-	_record_label.custom_minimum_size = Vector2(0, 18)
+	_record_label = _create_score_rich_label()
 	vbox.add_child(_record_label)
 
 	_mount_panel(_panel)
@@ -363,22 +342,17 @@ func _on_restart() -> void:
 	_reset_game()
 	_say(_pick(_q_start, _POOL_START))
 
-func _on_close_cleanup() -> bool:
-	var was_auto = _auto_play
-	if not _game_over:
-		_game_over = true
-		if is_instance_valid(_tick_timer):
-			_tick_timer.stop()
-		var games = SettingsManager.get_int(_score_key("games"), 0) + 1
-		SettingsManager.set_int(_score_key("games"), games)
-		game_finished.emit(Result.LOSE)
-		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
-			if was_auto:
-				var lines = ["...？", "...导航中断。", "路径规划被终止了。"]
-				_pet.show_local_bubble(lines[randi() % lines.size()])
-			else:
-				_pet.show_local_bubble(_pick(_q_lose, _POOL_CLOSE_MID))
-	return true
+func _on_close_extra_cleanup() -> void:
+	if is_instance_valid(_tick_timer):
+		_tick_timer.stop()
+	var games = SettingsManager.get_int(_score_key("games"), 0) + 1
+	SettingsManager.set_int(_score_key("games"), games)
+
+func get_close_speech_pool() -> Array:
+	return _POOL_CLOSE_MID
+
+func get_auto_close_lines() -> Array:
+	return ["...？", "...导航中断。", "路径规划被终止了。"]
 
 # ══════════════════════════════════════════════
 # 输入处理
@@ -649,27 +623,22 @@ func _update_labels() -> void:
 # 自动操作 (AI 自玩)
 # ══════════════════════════════════════════════
 
-func _start_auto_play() -> void:
-	_auto_play = true
-	var auto_start_lines = [
+func get_auto_start_lines() -> Array:
+	return [
 		"路径规划自主训练启动。",
 		"...导航演练。",
 		"自主导航开始。...想接手就按方向键。",
 		"训练中。...观摩可以。",
 	]
-	if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
-		_pet.show_local_bubble(auto_start_lines[randi() % auto_start_lines.size()])
-	if is_instance_valid(game_viewport):
-		await game_viewport.get_tree().create_timer(0.6).timeout
-	if not _auto_play or not is_instance_valid(game_container):
-		return
-	_auto_fade(AUTO_PLAY_ALPHA)
+
+func _on_auto_play_started() -> void:
 	if not _started:
 		_started = true
 		if is_instance_valid(_tick_timer):
 			_tick_timer.start()
-	# 自玩定时器仅用于检测游戏结束 (AI 决策在 _tick 里)
-	_auto_create_timer(0.5)
+
+func get_auto_play_interval() -> float:
+	return 0.5
 
 func _get_takeover_lines() -> Array:
 	return ["...你来？好。", "操作权移交。", "接手确认。...小心尾巴。"]
