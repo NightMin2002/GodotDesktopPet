@@ -30,10 +30,12 @@ const GAP_LERP_SPEED := 5.0  # 平滑过渡速度
 # ── 纹理源 (游戏模式通过回调获取) ──
 var _texture_provider: Callable = Callable()  # 返回 Texture2D 的回调
 
-# ── 待机屏保状态 ──
-var _idle_time: float = 0.0  # 屏保运行时间 (用于动画)
-var _idle_data_lines: Array[float] = []  # 数据流行的 y 偏移
-var _idle_scan_y: float = 0.0  # 扫描线 y 位置
+# ── 模块化渲染器 (懒加载) ──
+var _mode_idle: HoloModeIdle
+var _mode_loading: HoloModeLoading
+var _mode_battery: HoloModeBattery
+
+# ── 待机/加载共享状态 ──
 var _idle_duration: float = 0.0  # 屏保总时长 (0=不自动隐藏)
 var _idle_elapsed: float = 0.0  # 屏保已运行时间
 
@@ -46,7 +48,6 @@ var _lift_target_y: float = 0.0
 var _close_btn: Button = null
 
 # ── 加载模式 ──
-var _loading_time: float = 0.0
 var _loading_label_text: String = ""
 
 # ── 关闭互动话术 ──
@@ -80,10 +81,9 @@ func show_game(texture_provider: Callable, screen_side: float) -> void:
 func show_idle(screen_side: float, duration: float = 0.0) -> void:
 	side = screen_side
 	mode = Mode.IDLE
-	_idle_time = 0.0
 	_idle_duration = duration
 	_idle_elapsed = 0.0
-	_init_idle_data()
+	_get_mode_idle().init()
 	# 展开动画
 	visible = true
 	_deploying = true
@@ -119,7 +119,7 @@ func show_loading(label_text: String, screen_side: float, duration: float = 0.0)
 		_cleanup_active_mode()
 	side = screen_side
 	mode = Mode.LOADING
-	_loading_time = 0.0
+	_get_mode_loading().init()
 	_loading_label_text = label_text
 	_idle_duration = duration
 	_idle_elapsed = 0.0
@@ -137,7 +137,7 @@ func show_battery(screen_side: float, duration: float = 0.0) -> void:
 		_cleanup_active_mode()
 	side = screen_side
 	mode = Mode.BATTERY
-	_loading_time = 0.0
+	_get_mode_battery().init()
 	_idle_duration = duration
 	_idle_elapsed = 0.0
 	visible = true
@@ -166,7 +166,7 @@ func update(delta: float) -> void:
 	_update_dynamic_gap(delta)
 	# 屏保动画 + 自动隐藏计时
 	if mode == Mode.IDLE and visible:
-		_idle_time += delta
+		_get_mode_idle().time += delta
 		_idle_elapsed += delta
 		# 到时自动收起
 		if _idle_duration > 0.0 and _idle_elapsed >= _idle_duration and not _retracting:
@@ -185,7 +185,8 @@ func update(delta: float) -> void:
 		pet.queue_redraw()
 	# 动画通用逻辑 (加载/电池模式共享)
 	if (mode == Mode.LOADING or mode == Mode.BATTERY) and visible:
-		_loading_time += delta
+		var active_mode = _get_mode_loading() if mode == Mode.LOADING else _get_mode_battery()
+		active_mode.time += delta
 		_idle_elapsed += delta
 		if _idle_duration > 0.0 and _idle_elapsed >= _idle_duration and not _retracting:
 			hide()
@@ -264,12 +265,11 @@ func render() -> void:
 		Mode.GAME:
 			_render_game_content(pts, hue)
 		Mode.IDLE:
-			_render_idle_content(pts, hue, anim_w, anim_h)
+			_get_mode_idle().render(pts, hue, _deploy_progress)
 		Mode.LOADING:
-			_render_loading_content(pts, hue, anim_w, anim_h)
-
+			_get_mode_loading().render(pts, hue, _deploy_progress)
 		Mode.BATTERY:
-			_render_battery_content(pts, hue, anim_w, anim_h)
+			_get_mode_battery().render(pts, hue, _deploy_progress)
 
 	# 恢复变换
 	pet.draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
@@ -513,336 +513,27 @@ func _render_game_content(pts: PackedVector2Array, _hue: float) -> void:
 	if viewport_tex:
 		pet.draw_polygon(pts, [Color(1, 1, 1, 0.75)], uvs, viewport_tex)
 
-## 待机屏保: 科技机能感 Canvas 绘制 (全UV透视映射升级版)
-func _render_idle_content(pts: PackedVector2Array, hue: float, _w: float, _h: float) -> void:
-	var alpha = _deploy_progress * 0.55  # 屏保比游戏透明一些
-	# 底色: 深色半透明背景
-	pet.draw_polygon(pts, [Color(0.02, 0.04, 0.08, alpha)])
-	var content_alpha = alpha * _deploy_progress
-
-	# ── 1. 背景标定网格 (透视点阵十字) ──
-	var crosses = PackedVector2Array()
-	var cx_size = 0.01
-	var cy_size = 0.015 # 抵消视觉拉伸
-	for gx in range(1, 10):
-		for gy in range(1, 10):
-			var u = gx * 0.1
-			var v = gy * 0.1
-			crosses.append(_map_uv(pts, u - cx_size, v))
-			crosses.append(_map_uv(pts, u + cx_size, v))
-			crosses.append(_map_uv(pts, u, v - cy_size))
-			crosses.append(_map_uv(pts, u, v + cy_size))
-	if crosses.size() > 0:
-		pet.draw_multiline(crosses, Color.from_hsv(hue, 0.3, 0.9, content_alpha * 0.12), 0.8, true)
-
-	# ── 2. 水平扫描仪 (带拖尾透视) ──
-	_idle_scan_y = fmod(_idle_time * 0.5, 1.0)
-	var scan_v = _idle_scan_y
-	var scan_color = Color.from_hsv(hue, 0.4, 0.9, content_alpha * 0.6)
-	pet.draw_line(_map_uv(pts, 0.0, scan_v), _map_uv(pts, 1.0, scan_v), scan_color, 1.2, true)
-	# 扫描透视拖尾
-	for i in range(1, 6):
-		var tv = scan_v - float(i) * 0.02
-		if tv > 0.0:
-			var tail_a = content_alpha * 0.2 * (1.0 - float(i) / 6.0)
-			pet.draw_line(_map_uv(pts, 0.0, tv), _map_uv(pts, 1.0, tv), Color.from_hsv(hue, 0.3, 0.8, tail_a), 0.8, true)
-
-	# ── 3. 垂直神经数据流 (流星雨刻度) ──
-	var u_step = 1.0 / (_idle_data_lines.size() + 1.0)
-	for i in range(_idle_data_lines.size()):
-		var u = u_step * (i + 1)
-		var speed = 0.4 + _idle_data_lines[i] * 0.6
-		var phase = _idle_data_lines[i] * TAU
-		var progress = fmod(_idle_time * speed + phase, 1.0)
-		var length = 0.15 + _idle_data_lines[i] * 0.1
-		var top_v = progress
-		var bot_v = top_v + length
-		if top_v < 1.0:
-			var render_bot_v = minf(bot_v, 1.0)
-			var line_alpha = content_alpha * 0.4 * (0.5 + 0.5 * sin(_idle_time * 2.0 + phase))
-			if line_alpha > 0.05:
-				var p1 = _map_uv(pts, u, top_v)
-				var p2 = _map_uv(pts, u, render_bot_v)
-				pet.draw_line(p1, p2, Color.from_hsv(hue, 0.25, 0.7, line_alpha), 1.2, true)
-				# 底部亮点
-				if render_bot_v < 0.99:
-					pet.draw_circle(p2, 1.5, Color.from_hsv(hue, 0.4, 0.9, line_alpha * 1.5), true, -1.0, true)
-
-	# ── 4. 焦点雷达 / 核心心跳 ──
-	var center_u = 0.5
-	var center_v = 0.45
-	var radar_time = _idle_time * 3.0
-	var pulse = (sin(radar_time) + 1.0) * 0.5
-	var r_u = 0.06 + pulse * 0.015
-	var r_v = 0.09 + pulse * 0.02
-	# 十字准星
-	var cross = PackedVector2Array([
-		_map_uv(pts, center_u - r_u * 1.2, center_v), _map_uv(pts, center_u + r_u * 1.2, center_v),
-		_map_uv(pts, center_u, center_v - r_v * 1.2), _map_uv(pts, center_u, center_v + r_v * 1.2)
-	])
-	pet.draw_multiline(cross, Color.from_hsv(hue, 0.35, 0.85, content_alpha * 0.5), 1.0, true)
-	# 动态呼吸菱形框
-	var diamond = PackedVector2Array([
-		_map_uv(pts, center_u, center_v - r_v * 0.8),
-		_map_uv(pts, center_u + r_u * 0.8, center_v),
-		_map_uv(pts, center_u, center_v + r_v * 0.8),
-		_map_uv(pts, center_u - r_u * 0.8, center_v),
-		_map_uv(pts, center_u, center_v - r_v * 0.8) # 闭合
-	])
-	pet.draw_polyline(diamond, Color.from_hsv(hue, 0.5, 0.9, content_alpha * 0.3 * (0.5 + pulse*0.5)), 1.2, true)
-
-	# ── 5. 底侧状态波形 (心电频段) ──
-	var wave_v = 0.85
-	var wave_pts = PackedVector2Array()
-	var samples = 40
-	var wave_freq = 6.0
-	var wave_speed = 4.0
-	for i in range(samples + 1):
-		var u = 0.05 + (i / float(samples)) * 0.9
-		# 聚焦在中段起伏
-		var dist_to_center = abs(u - 0.5) * 2.0
-		var amp = 0.0
-		if dist_to_center < 0.35:
-			# 剧烈爆发频段 + 高频震荡
-			var activity = sin(_idle_time * wave_speed + u * 15.0) * sin(_idle_time * 15.0)
-			amp = 0.08 * (1.0 - dist_to_center / 0.35) * activity
-		else:
-			# 两侧平缓波形
-			amp = 0.01 * sin(_idle_time * 2.0 + u * wave_freq * 3.0)
-		wave_pts.append(_map_uv(pts, u, wave_v + amp))
-	pet.draw_polyline(wave_pts, Color.from_hsv(hue, 0.4, 0.9, content_alpha * 0.6), 1.5, true)
-	
-	# 波形基准线
-	pet.draw_line(_map_uv(pts, 0.05, wave_v), _map_uv(pts, 0.95, wave_v), Color.from_hsv(hue, 0.3, 0.7, content_alpha * 0.2), 1.0, true)
-
-	# ── 6. 边框护甲与锚点 ──
-	var border_color = Color.from_hsv(hue, 0.35, 0.75, content_alpha * 0.3)
-	var borders = PackedVector2Array([
-		pts[0], pts[1], pts[1], pts[2], pts[2], pts[3], pts[3], pts[0]
-	])
-	pet.draw_multiline(borders, border_color, 1.5, true)
-	
-	# 角落高亮直角三角锚点
-	var corner_alpha = content_alpha * 0.6
-	var cc = Color.from_hsv(hue, 0.4, 0.9, corner_alpha)
-	var cu = 0.08
-	var cv = 0.08
-	pet.draw_polyline(PackedVector2Array([_map_uv(pts, 0, cv), pts[0], _map_uv(pts, cu, 0)]), cc, 2.0, true)
-	pet.draw_polyline(PackedVector2Array([_map_uv(pts, 1-cu, 0), pts[1], _map_uv(pts, 1, cv)]), cc, 2.0, true)
-	pet.draw_polyline(PackedVector2Array([_map_uv(pts, 1, 1-cv), pts[2], _map_uv(pts, 1-cu, 1)]), cc, 2.0, true)
-	pet.draw_polyline(PackedVector2Array([_map_uv(pts, cu, 1), pts[3], _map_uv(pts, 0, 1-cv)]), cc, 2.0, true)
-
-## 初始化屏保数据
-func _init_idle_data() -> void:
-	_idle_data_lines.clear()
-	for i in range(8):
-		_idle_data_lines.append(randf())
-
-## 引导模式: 终端初始化序列 (透视映射)
-func _render_loading_content(pts: PackedVector2Array, hue: float, _w: float, _h: float) -> void:
-	var alpha = _deploy_progress * 0.6
-	# 底色
-	pet.draw_polygon(pts, [Color(0.02, 0.04, 0.08, alpha)])
-
-	var content_alpha = alpha * _deploy_progress
-	var base_color = Color.from_hsv(hue, 0.5, 0.9, content_alpha)
-
-	# ── 中心数据核心 (呼吸十字与扫描场) ──
-	var pulse = 0.5 + 0.5 * sin(_loading_time * 8.0)
-	var core_size = 0.03 + 0.01 * pulse
-	var c_uv = Vector2(0.5, 0.42) # 稍微靠上
-	var core_pts = PackedVector2Array([
-		_map_uv(pts, c_uv.x, c_uv.y - core_size),
-		_map_uv(pts, c_uv.x + core_size, c_uv.y),
-		_map_uv(pts, c_uv.x, c_uv.y + core_size),
-		_map_uv(pts, c_uv.x - core_size, c_uv.y)
-	])
-	pet.draw_polygon(core_pts, [Color(base_color.r, base_color.g, base_color.b, content_alpha * (0.4 + 0.4*pulse))])
-
-	# ── 内圈数据流 (连续旋转多边形) ──
-	var inner_r = 0.14
-	var inner_spin = -_loading_time * TAU * 0.25
-	var inner_lines = PackedVector2Array()
-	var sides = 6
-	for i in range(sides + 1):
-		var a = inner_spin + float(i % sides) / sides * TAU
-		inner_lines.append(_map_uv(pts, c_uv.x + cos(a)*inner_r, c_uv.y + sin(a)*inner_r))
-	pet.draw_polyline(inner_lines, Color(base_color.r, base_color.g, base_color.b, content_alpha * 0.4), 1.0, true)
-
-	# ── 外圈引导刻度 (机械卡顿步进旋转) ──
-	var outer_r = 0.26
-	# 加强卡顿感: 每秒滴答 8 次，且每次跳动角度更大
-	var step_time = floor(_loading_time * 8.0) / 8.0
-	var outer_spin = step_time * TAU * 0.2
-	var dashes = PackedVector2Array()
-	var dash_count = 18
-	var dash_fill = 0.6 # 实线占比
-	for i in range(dash_count):
-		var a1 = outer_spin + float(i) / dash_count * TAU
-		var a2 = a1 + (TAU / dash_count) * dash_fill
-		dashes.append(_map_uv(pts, c_uv.x + cos(a1)*outer_r, c_uv.y + sin(a1)*outer_r))
-		dashes.append(_map_uv(pts, c_uv.x + cos(a2)*outer_r, c_uv.y + sin(a2)*outer_r))
-	if dashes.size() > 0:
-		pet.draw_multiline(dashes, Color(base_color.r, base_color.g, base_color.b, content_alpha * 0.7), 2.0, true)
-
-	# ── 右侧高频随机数据流 (模拟读取区块) ──
-	var barcode_start_u = 0.9
-	var barcode_v = 0.2
-	var bar_count = 6
-	var bars = PackedVector2Array()
-	for i in range(bar_count):
-		# 利用特定时间的哈希随机性来做一闪一闪的读取感
-		var is_active = (hash(i + int(_loading_time * 15.0)) % 10) > 4
-		if is_active:
-			var bu = barcode_start_u + (float(i) / bar_count) * 0.05
-			var b_height = 0.02 + (hash(i * 3 + int(_loading_time * 5.0)) % 10) * 0.01
-			bars.append(_map_uv(pts, bu, barcode_v))
-			bars.append(_map_uv(pts, bu, barcode_v + b_height))
-	if bars.size() > 0:
-		pet.draw_multiline(bars, Color(base_color.r, base_color.g, base_color.b, content_alpha * 0.8), 1.5, true)
-
-	# ── 扇区扫描指针 ──
-	var pointer_a = outer_spin + PI
-	var p_start = _map_uv(pts, c_uv.x + cos(pointer_a)*(inner_r+0.02), c_uv.y + sin(pointer_a)*(inner_r+0.02))
-	var p_end = _map_uv(pts, c_uv.x + cos(pointer_a)*(outer_r-0.02), c_uv.y + sin(pointer_a)*(outer_r-0.02))
-	pet.draw_line(p_start, p_end, Color(base_color.r, base_color.g, base_color.b, content_alpha * 0.9), 1.5, true)
-
-	# ── 底侧刻度和进度条 ──
-	var bar_y = 0.82
-	var bar_w = 0.64
-	var bar_start = 0.5 - bar_w * 0.5
-	var bar_end = 0.5 + bar_w * 0.5
-	
-	# 进度圈刻度点 (上中下各带结构设计)
-	var dots = PackedVector2Array()
-	var dot_count = 12
-	for d in range(dot_count + 1):
-		var dx = bar_start + (float(d) / dot_count) * bar_w
-		dots.append(_map_uv(pts, dx, bar_y - 0.03))
-		dots.append(_map_uv(pts, dx, bar_y - 0.01))
-		dots.append(_map_uv(pts, dx, bar_y + 0.03))
-		dots.append(_map_uv(pts, dx, bar_y + 0.05))
-	if dots.size() > 0:
-		pet.draw_multiline(dots, Color(base_color.r, base_color.g, base_color.b, content_alpha * 0.25), 1.0, true)
-
-	# 进度槽背景 (双线镂空设计)
-	pet.draw_line(_map_uv(pts, bar_start, bar_y), _map_uv(pts, bar_end, bar_y), Color(base_color.r, base_color.g, base_color.b, content_alpha * 0.15), 3.0, true)
-
-	# 进度条填充 (非线性+刻意断块读取)
-	var prog = fmod(pow(fmod(_loading_time * 0.35, 1.0), 1.5), 1.0)
-	# 离散化：切成 25 块，还原“一卡一卡”的扇区读取机械感
-	prog = floor(prog * 25.0) / 25.0
-	var fill_end = bar_start + bar_w * prog
-	if fill_end > bar_start + 0.01:
-		pet.draw_line(_map_uv(pts, bar_start, bar_y), _map_uv(pts, fill_end, bar_y), base_color, 2.5, true)
-
-	# 两端点缀锚向 (加固机能感)
-	pet.draw_line(_map_uv(pts, bar_start, bar_y - 0.05), _map_uv(pts, bar_start, bar_y + 0.05), base_color, 2.0, true)
-	pet.draw_line(_map_uv(pts, bar_start - 0.02, bar_y - 0.02), _map_uv(pts, bar_start - 0.02, bar_y + 0.02), base_color, 1.0, true)
-	
-	pet.draw_line(_map_uv(pts, bar_end, bar_y - 0.05), _map_uv(pts, bar_end, bar_y + 0.05), base_color, 2.0, true)
-	pet.draw_line(_map_uv(pts, bar_end + 0.02, bar_y - 0.02), _map_uv(pts, bar_end + 0.02, bar_y + 0.02), base_color, 1.0, true)
-
-	# ── 角落装饰线 + 边框 ──
-	var corner_len_f = 0.12
-	var corner_color = Color.from_hsv(hue, 0.3, 0.7, content_alpha * 0.3)
-	for ci in range(4):
-		var cp = pts[ci]
-		var next_i = (ci + 1) % 4
-		var prev_i = (ci + 3) % 4
-		var to_next = (pts[next_i] - cp).normalized() * (pts[next_i] - cp).length() * corner_len_f
-		var to_prev = (pts[prev_i] - cp).normalized() * (pts[prev_i] - cp).length() * corner_len_f
-		pet.draw_line(cp, cp + to_next, corner_color, 0.5, true)
-		pet.draw_line(cp, cp + to_prev, corner_color, 0.5, true)
-	var border_color = Color.from_hsv(hue, 0.35, 0.75, content_alpha * 0.2)
-	for ei in range(4):
-		pet.draw_line(pts[ei], pts[(ei + 1) % 4], border_color, 0.5, true)
-
-## 电池状态模式: 全息动态电源监控 (透视映射)
-func _render_battery_content(pts: PackedVector2Array, hue: float, _w: float, _h: float) -> void:
-	var alpha = _deploy_progress * 0.6
-	pet.draw_polygon(pts, [Color(0.02, 0.04, 0.08, alpha)])
-	var content_alpha = alpha * _deploy_progress
-	var base_color = Color.from_hsv(hue, 0.5, 0.9, content_alpha)
-
-	var center_u = 0.5
-	var center_v = 0.42
-
-	# ── 电池外框 (横向) ──
-	var bw = 0.22
-	var bh = 0.12
-	var rect_pts = PackedVector2Array([
-		_map_uv(pts, center_u - bw, center_v - bh),
-		_map_uv(pts, center_u + bw, center_v - bh),
-		_map_uv(pts, center_u + bw, center_v + bh),
-		_map_uv(pts, center_u - bw, center_v + bh),
-		_map_uv(pts, center_u - bw, center_v - bh)
-	])
-	pet.draw_polyline(rect_pts, base_color, 2.0, true)
-
-	# ── 正极凸起 ──
-	var nub_w = 0.03
-	var nub_h = 0.05
-	var nub_pts = PackedVector2Array([
-		_map_uv(pts, center_u + bw, center_v - nub_h),
-		_map_uv(pts, center_u + bw + nub_w, center_v - nub_h),
-		_map_uv(pts, center_u + bw + nub_w, center_v + nub_h),
-		_map_uv(pts, center_u + bw, center_v + nub_h)
-	])
-	pet.draw_polygon(nub_pts, [base_color])
-
-	# ── 充电进度条 (脉冲分块) ──
-	var blocks = 5
-	var fill_pct = 0.25 + sin(_loading_time * TAU / 4.0) * 0.25  # 模拟充能 0% ~ 50%
-	var active_blocks = int(fill_pct * blocks) + 1  # 至少闪1格
-	var pad_u = 0.03
-	var pad_v = 0.04
-	var block_w = ((bw - pad_u) * 2.0) / blocks
-	
-	for i in range(blocks):
-		var alpha_mult = 1.0 if i < active_blocks else 0.15
-		if i == active_blocks - 1:
-			alpha_mult = 0.4 + 0.6 * abs(sin(_loading_time * 8.0))
-			
-		var b_start_u = center_u - bw + pad_u + i * block_w + 0.01
-		var b_end_u = b_start_u + block_w - 0.02
-		
-		var b_pts = PackedVector2Array([
-			_map_uv(pts, b_start_u, center_v - bh + pad_v),
-			_map_uv(pts, b_end_u, center_v - bh + pad_v),
-			_map_uv(pts, b_end_u, center_v + bh - pad_v),
-			_map_uv(pts, b_start_u, center_v + bh - pad_v)
-		])
-		pet.draw_polygon(b_pts, [Color.from_hsv(hue, 0.4, 0.9, content_alpha * alpha_mult)])
-
-	# ── 底部大电流波形 ──
-	var wave_v = 0.78
-	var wave_pts = PackedVector2Array()
-	var samples = 40
-	for i in range(samples + 1):
-		var u = 0.1 + (float(i) / samples) * 0.8
-		var amp = 0.08 * sin(_loading_time * 12.0 + u * 25.0) * (1.0 - abs(u - 0.5)*2.0)
-		wave_pts.append(_map_uv(pts, u, wave_v + amp))
-	pet.draw_polyline(wave_pts, Color.from_hsv(hue, 0.4, 0.9, content_alpha * 0.6), 1.5, true)
-	pet.draw_line(_map_uv(pts, 0.1, wave_v), _map_uv(pts, 0.9, wave_v), Color.from_hsv(hue, 0.3, 0.7, content_alpha * 0.2), 1.0, true)
-
-	# ── 外围机能角标 ──
-	var corner_len_f = 0.12
-	var corner_color = Color.from_hsv(hue, 0.3, 0.7, content_alpha * 0.4)
-	for ci in range(4):
-		var cp = pts[ci]
-		var next_i = (ci + 1) % 4
-		var prev_i = (ci + 3) % 4
-		var to_next = (pts[next_i] - cp).normalized() * (pts[next_i] - cp).length() * corner_len_f
-		var to_prev = (pts[prev_i] - cp).normalized() * (pts[prev_i] - cp).length() * corner_len_f
-		pet.draw_line(cp, cp + to_next, corner_color, 1.0, true)
-		pet.draw_line(cp, cp + to_prev, corner_color, 1.0, true)
-	var border_color = Color.from_hsv(hue, 0.35, 0.75, content_alpha * 0.2)
-	for ei in range(4):
-		pet.draw_line(pts[ei], pts[(ei + 1) % 4], border_color, 0.8, true)
-
 # ══════════════════════════════════════
-# 透视映射工具
+# 渲染器懒加载
+# ══════════════════════════════════════
+
+func _get_mode_idle() -> HoloModeIdle:
+	if not _mode_idle:
+		_mode_idle = HoloModeIdle.new()
+		_mode_idle.screen = self
+	return _mode_idle
+
+func _get_mode_loading() -> HoloModeLoading:
+	if not _mode_loading:
+		_mode_loading = HoloModeLoading.new()
+		_mode_loading.screen = self
+	return _mode_loading
+
+func _get_mode_battery() -> HoloModeBattery:
+	if not _mode_battery:
+		_mode_battery = HoloModeBattery.new()
+		_mode_battery.screen = self
+	return _mode_battery
 # ══════════════════════════════════════
 
 ## 将 UV 坐标 (0~1, 0~1) 映射到梯形 pts 的屏幕坐标
