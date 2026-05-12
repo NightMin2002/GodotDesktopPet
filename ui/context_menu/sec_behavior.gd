@@ -152,7 +152,7 @@ func _build_debug_behavior_submenu() -> void:
 	var debug_items := [
 		{"label": "眼睑下垂", "behavior": "drowsy", "desc": "模拟困倦半闭眼效果"},
 
-		{"label": "邮件标识", "behavior": "_icon:mail", "desc": "显示未读邮件图标"},
+
 		{"label": "警告标识", "behavior": "_icon:alert", "desc": "显示警告感叹号图标"},
 		{"label": "待解标识", "behavior": "_icon:question", "desc": "显示问号疑问图标"},
 		{"label": "错误标识", "behavior": "_icon:error", "desc": "显示操作失败交叉图标"},

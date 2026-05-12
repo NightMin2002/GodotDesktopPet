@@ -3,7 +3,7 @@
 # Phase 2: 支持多显示模式 (游戏 / 待机屏保)
 class_name PetHoloScreen extends RefCounted
 
-enum Mode { OFF, GAME, IDLE, LOADING, BATTERY, DONE }
+enum Mode { OFF, GAME, IDLE, LOADING, BATTERY, DONE, MAIL }
 
 var pet: RigidBody2D  # 由 pet.gd 注入
 
@@ -40,6 +40,7 @@ var _mode_idle: HoloModeIdle
 var _mode_loading: HoloModeLoading
 var _mode_battery: HoloModeBattery
 var _mode_done: HoloModeDone
+var _mode_mail: HoloModeMail
 
 # ── 待机/加载共享状态 ──
 var _idle_duration: float = 0.0  # 屏保总时长 (0=不自动隐藏)
@@ -167,6 +168,21 @@ func show_done(screen_side: float, duration: float = 3.0) -> void:
 	_lock_pet()
 	_create_close_btn("完成")
 
+## 显示邮件通知
+func show_mail(screen_side: float, duration: float = 0.0) -> void:
+	if is_terminal_mode:
+		_cleanup_active_mode()
+	side = screen_side
+	mode = Mode.MAIL
+	_get_mode_mail().init()
+	_idle_duration = duration
+	_idle_elapsed = 0.0
+	visible = true
+	_deploying = true
+	_retracting = false
+	_lock_pet()
+	_create_close_btn("新消息")
+
 ## 每帧更新 (由 pet._process 调用, 驱动动画)
 func update(delta: float) -> void:
 	# 展开动画
@@ -204,12 +220,13 @@ func update(delta: float) -> void:
 		_update_close_btn_hover()
 		_update_close_btn_position()
 		pet.queue_redraw()
-	# 动画通用逻辑 (加载/电池/完成模式共享)
-	if (mode == Mode.LOADING or mode == Mode.BATTERY or mode == Mode.DONE) and visible:
+	# 动画通用逻辑 (加载/电池/完成/邮件模式共享)
+	if (mode == Mode.LOADING or mode == Mode.BATTERY or mode == Mode.DONE or mode == Mode.MAIL) and visible:
 		var active_mode
 		if mode == Mode.LOADING: active_mode = _get_mode_loading()
 		elif mode == Mode.BATTERY: active_mode = _get_mode_battery()
-		else: active_mode = _get_mode_done()
+		elif mode == Mode.DONE: active_mode = _get_mode_done()
+		else: active_mode = _get_mode_mail()
 		
 		active_mode.time += delta
 		_idle_elapsed += delta
@@ -297,6 +314,8 @@ func render() -> void:
 			_get_mode_battery().render(pts, hue, _deploy_progress)
 		Mode.DONE:
 			_get_mode_done().render(pts, hue, _deploy_progress)
+		Mode.MAIL:
+			_get_mode_mail().render(pts, hue, _deploy_progress)
 
 	# 恢复变换
 	pet.draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
@@ -565,6 +584,12 @@ func _get_mode_done() -> HoloModeDone:
 		_mode_done = HoloModeDone.new()
 		_mode_done.screen = self
 	return _mode_done
+
+func _get_mode_mail() -> HoloModeMail:
+	if not _mode_mail:
+		_mode_mail = HoloModeMail.new()
+		_mode_mail.screen = self
+	return _mode_mail
 # ══════════════════════════════════════
 
 ## 将 UV 坐标 (0~1, 0~1) 映射到梯形 pts 的屏幕坐标
