@@ -12,6 +12,11 @@ var visible: bool = false
 var side: float = 1.0  # 全息屏方向: 1=右侧, -1=左侧
 var mode: Mode = Mode.OFF
 
+## 是否处于终端模式 (非 OFF / 非 GAME 的任何模式)
+## 新增模式时无需修改，自动纳入
+var is_terminal_mode: bool:
+	get: return mode != Mode.OFF and mode != Mode.GAME
+
 # ── 展开/收起动画 ──
 var _deploy_progress: float = 0.0  # 0.0=完全收起, 1.0=完全展开
 var _deploying: bool = false
@@ -66,7 +71,7 @@ const CLOSE_LINES := [
 ## 显示全息屏 (游戏模式: 接收纹理回调)
 func show_game(texture_provider: Callable, screen_side: float) -> void:
 	# 如果当前在待机/加载/电池模式, 先清理干净
-	if mode in [Mode.IDLE, Mode.LOADING, Mode.BATTERY, Mode.DONE]:
+	if is_terminal_mode:
 		_cleanup_active_mode()
 	side = screen_side
 	_texture_provider = texture_provider
@@ -116,7 +121,7 @@ func hide() -> void:
 ## label_text: 状态文字 (如 "LOADING", "SYS.CHECK")
 func show_loading(label_text: String, screen_side: float, duration: float = 0.0) -> void:
 	# 如果当前在其他模式, 先清理
-	if mode in [Mode.IDLE, Mode.LOADING, Mode.BATTERY, Mode.DONE]:
+	if is_terminal_mode:
 		_cleanup_active_mode()
 	side = screen_side
 	mode = Mode.LOADING
@@ -134,7 +139,7 @@ func show_loading(label_text: String, screen_side: float, duration: float = 0.0)
 
 ## 显示全息屏 (电池状态模式)
 func show_battery(screen_side: float, duration: float = 0.0) -> void:
-	if mode in [Mode.IDLE, Mode.LOADING, Mode.BATTERY, Mode.DONE]:
+	if is_terminal_mode:
 		_cleanup_active_mode()
 	side = screen_side
 	mode = Mode.BATTERY
@@ -149,7 +154,7 @@ func show_battery(screen_side: float, duration: float = 0.0) -> void:
 
 ## 显示终端操作完成 (打勾动画)
 func show_done(screen_side: float, duration: float = 3.0) -> void:
-	if mode in [Mode.IDLE, Mode.LOADING, Mode.BATTERY, Mode.DONE]:
+	if is_terminal_mode:
 		_cleanup_active_mode()
 	side = screen_side
 	mode = Mode.DONE
@@ -392,8 +397,6 @@ func _update_dynamic_gap(delta: float) -> void:
 	match mode:
 		Mode.GAME:
 			target_ratio = GAP_GAME
-		Mode.IDLE, Mode.LOADING, Mode.BATTERY, Mode.DONE:
-			target_ratio = GAP_TERMINAL
 		_:
 			target_ratio = GAP_TERMINAL
 	var target = pet.PET_RADIUS * clampf(target_ratio, GAP_MIN, GAP_MAX)
