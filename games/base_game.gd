@@ -1417,3 +1417,29 @@ class _SpeechArrow extends Control:
 		var border_color = Color.from_hsv(hue, 0.45, 0.85, 0.35)
 		draw_line(points[0], points[1], border_color, 1.0, true)
 		draw_line(points[1], points[2], border_color, 1.0, true)
+
+# ═══════════════════════════════════════════
+# 通用内嵌类: 网格渲染器
+# ═══════════════════════════════════════════
+
+## 自绘网格控件 — 贪吃蛇/俄罗斯方块等基于 Canvas 的游戏共用。
+## 子类需实现 _render(canvas)、_on_grid_input(event)、_grid_process(delta)。
+class GridRenderer extends Control:
+	var game
+
+	func _ready() -> void:
+		focus_mode = Control.FOCUS_ALL
+		grab_focus()
+
+	func _draw() -> void:
+		if game:
+			game._render(self)
+
+	func _gui_input(event: InputEvent) -> void:
+		if game:
+			game._on_grid_input(event)
+
+	func _process(delta: float) -> void:
+		if game:
+			game._grid_process(delta)
+

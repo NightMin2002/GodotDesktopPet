@@ -94,25 +94,6 @@ var _q_lose: Array = []
 # 内嵌渲染器 (Control 节点)
 # ══════════════════════════════════════════════
 
-class _GridRenderer extends Control:
-	var game
-
-	func _ready() -> void:
-		focus_mode = Control.FOCUS_ALL
-		grab_focus()
-
-	func _draw() -> void:
-		if game:
-			game._render(self)
-
-	func _gui_input(event: InputEvent) -> void:
-		if game:
-			game._on_grid_input(event)
-
-	func _process(delta: float) -> void:
-		if game:
-			game._grid_process(delta)
-
 # ══════════════════════════════════════════════
 # BaseGame 接口
 # ══════════════════════════════════════════════
@@ -192,7 +173,7 @@ func _build_ui() -> void:
 	var grid_wrapper = CenterContainer.new()
 	vbox.add_child(grid_wrapper)
 
-	_grid_renderer = _GridRenderer.new()
+	_grid_renderer = GridRenderer.new()
 	_grid_renderer.game = self
 	_grid_renderer.custom_minimum_size = Vector2(GRID_PX, GRID_PX)
 	grid_wrapper.add_child(_grid_renderer)
