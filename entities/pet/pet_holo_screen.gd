@@ -3,7 +3,7 @@
 # Phase 2: 支持多显示模式 (游戏 / 待机屏保)
 class_name PetHoloScreen extends RefCounted
 
-enum Mode { OFF, GAME, IDLE, LOADING, BATTERY, DONE, MAIL, ERROR }
+enum Mode { OFF, GAME, IDLE, LOADING, BATTERY, DONE, MAIL, ERROR, WARNING }
 
 var pet: RigidBody2D  # 由 pet.gd 注入
 
@@ -44,6 +44,7 @@ const _MODE_REGISTRY := {
 	Mode.DONE:    {"class": "HoloModeDone",    "label": "完成"},
 	Mode.MAIL:    {"class": "HoloModeMail",    "label": "新消息"},
 	Mode.ERROR:   {"class": "HoloModeError",   "label": "警告确认"},
+	Mode.WARNING: {"class": "HoloModeWarning", "label": "系统警告"},
 }
 var _renderers: Dictionary = {}  # Mode -> RefCounted 实例缓存
 
@@ -169,6 +170,10 @@ func show_mail(screen_side: float, duration: float = 0.0) -> void:
 ## 显示报错警示
 func show_error(screen_side: float, duration: float = 0.0) -> void:
 	_show_terminal(Mode.ERROR, screen_side, duration)
+
+## 显示系统轻度警告
+func show_warning(screen_side: float, duration: float = 0.0) -> void:
+	_show_terminal(Mode.WARNING, screen_side, duration)
 
 ## 通用终端模式启动 (注册表驱动)
 func _show_terminal(m: Mode, screen_side: float, duration: float = 0.0) -> void:
@@ -580,6 +585,7 @@ func _resolve_mode_class(cls: String) -> GDScript:
 		"HoloModeDone": HoloModeDone,
 		"HoloModeMail": HoloModeMail,
 		"HoloModeError": HoloModeError,
+		"HoloModeWarning": HoloModeWarning,
 	}
 	return map.get(cls, null)
 # ══════════════════════════════════════
