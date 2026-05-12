@@ -3,7 +3,7 @@
 # Phase 2: 支持多显示模式 (游戏 / 待机屏保)
 class_name PetHoloScreen extends RefCounted
 
-enum Mode { OFF, GAME, IDLE, LOADING, BATTERY, DONE, MAIL, ERROR, WARNING, QUERY, ALARM }
+enum Mode { OFF, GAME, IDLE, LOADING, BATTERY, DONE, MAIL, ERROR, WARNING, QUERY, ALARM, CLEANUP }
 
 var pet: RigidBody2D  # 由 pet.gd 注入
 
@@ -47,6 +47,7 @@ const _MODE_REGISTRY := {
 	Mode.WARNING: {"class": "HoloModeWarning", "label": "系统警告"},
 	Mode.QUERY:   {"class": "HoloModeQuery",   "label": "未知检索"},
 	Mode.ALARM:   {"class": "HoloModeAlarm",   "label": "日程触发"},
+	Mode.CLEANUP: {"class": "HoloModeCleanup", "label": "垃圾清理"},
 }
 var _renderers: Dictionary = {}  # Mode -> RefCounted 实例缓存
 
@@ -184,6 +185,10 @@ func show_query(screen_side: float, duration: float = 0.0) -> void:
 ## 显示日程闹钟提醒
 func show_alarm(screen_side: float, duration: float = 0.0) -> void:
 	_show_terminal(Mode.ALARM, screen_side, duration)
+
+## 显示垃圾清理与记忆回收
+func show_cleanup(screen_side: float, duration: float = 0.0) -> void:
+	_show_terminal(Mode.CLEANUP, screen_side, duration)
 
 ## 通用终端模式启动 (注册表驱动)
 func _show_terminal(m: Mode, screen_side: float, duration: float = 0.0) -> void:
@@ -598,6 +603,7 @@ func _resolve_mode_class(cls: String) -> GDScript:
 		"HoloModeWarning": HoloModeWarning,
 		"HoloModeQuery": HoloModeQuery,
 		"HoloModeAlarm": HoloModeAlarm,
+		"HoloModeCleanup": HoloModeCleanup,
 	}
 	return map.get(cls, null)
 # ══════════════════════════════════════
