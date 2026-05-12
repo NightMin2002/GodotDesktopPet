@@ -31,8 +31,8 @@ func exit() -> void:
 func process(delta: float) -> void:
 	idle_timer += delta
 	
-	# ── 游戏态 / 全息屏待机: 锁定 idle，不做任何转换/触发 ──
-	if pet.gaming.active or pet.holo_screen.mode == PetHoloScreen.Mode.IDLE:
+	# ── 游戏态 / 全息屏活跃: 锁定 idle，不做任何转换/触发 ──
+	if pet.gaming.active or pet.holo_screen.mode == PetHoloScreen.Mode.IDLE or pet.holo_screen.mode == PetHoloScreen.Mode.LOADING:
 		return
 	
 	# ── 空间跳跃活跃时锁定 idle 状态，不做任何转换 ──
@@ -140,8 +140,8 @@ func input(event: InputEvent) -> void:
 					]
 					pet.show_local_bubble(lines[randi() % lines.size()])
 					return
-				# 看终端中: 不进入拖拽，给个专属回应
-				if pet.holo_screen.mode == PetHoloScreen.Mode.IDLE:
+				# 看终端/加载中: 不进入拖拽，给个专属回应
+				if pet.holo_screen.mode == PetHoloScreen.Mode.IDLE or pet.holo_screen.mode == PetHoloScreen.Mode.LOADING:
 					var lines := [
 						"...正在读取数据流。",
 						"终端会话进行中。",

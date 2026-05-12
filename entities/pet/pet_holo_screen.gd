@@ -3,7 +3,7 @@
 # Phase 2: 支持多显示模式 (游戏 / 待机屏保)
 class_name PetHoloScreen extends RefCounted
 
-enum Mode { OFF, GAME, IDLE }
+enum Mode { OFF, GAME, IDLE, LOADING }
 
 var pet: RigidBody2D  # 由 pet.gd 注入
 
@@ -37,6 +37,10 @@ var _lift_target_y: float = 0.0
 # ── 待机模式: 关闭按钮 ──
 var _close_btn: Button = null
 
+# ── 加载模式 ──
+var _loading_time: float = 0.0
+var _loading_label_text: String = ""
+
 # ── 关闭互动话术 ──
 const CLOSE_LINES := [
 	"...连接中断。",
@@ -51,10 +55,9 @@ const CLOSE_LINES := [
 
 ## 显示全息屏 (游戏模式: 接收纹理回调)
 func show_game(texture_provider: Callable, screen_side: float) -> void:
-	# 如果当前在待机模式, 先清理干净 (踏板/按钮/解锁)
-	if mode == Mode.IDLE:
-		_unlock_pet()
-		_remove_close_btn()
+	# 如果当前在待机/加载模式, 先清理干净
+	if mode == Mode.IDLE or mode == Mode.LOADING:
+		_cleanup_active_mode()
 	side = screen_side
 	_texture_provider = texture_provider
 	mode = Mode.GAME
@@ -97,10 +100,28 @@ func hide() -> void:
 	_retracting = true
 	_deploying = false
 	_texture_provider = Callable()
-	# 解锁宠物 + 移除踏板
-	_unlock_pet()
-	# 移除关闭按钮
-	_remove_close_btn()
+	# 清理当前模式的资源
+	_cleanup_active_mode()
+
+## 显示全息屏 (加载模式: 旋转弧线 + 状态标签)
+## label_text: 状态文字 (如 "LOADING", "SYS.CHECK")
+func show_loading(label_text: String, screen_side: float, duration: float = 0.0) -> void:
+	# 如果当前在其他模式, 先清理
+	if mode == Mode.IDLE or mode == Mode.LOADING:
+		_cleanup_active_mode()
+	side = screen_side
+	mode = Mode.LOADING
+	_loading_time = 0.0
+	_loading_label_text = label_text
+	_idle_duration = duration
+	_idle_elapsed = 0.0
+	visible = true
+	_deploying = true
+	_retracting = false
+	# 锁定宠物 + 踏板
+	_lock_pet()
+	# 创建关闭按钮 (双态: 默认显示状态文字, 悬停变断开连接)
+	_create_close_btn(label_text)
 
 ## 每帧更新 (由 pet._process 调用, 驱动动画)
 func update(delta: float) -> void:
@@ -134,6 +155,21 @@ func update(delta: float) -> void:
 		elif _lift_phase == 0:
 			pet.linear_velocity = Vector2.ZERO
 		# 关闭按钮: 悬停检测 + 位置同步
+		_update_close_btn_hover()
+		_update_close_btn_position()
+		pet.queue_redraw()
+	# 加载模式动画
+	if mode == Mode.LOADING and visible:
+		_loading_time += delta
+		_idle_elapsed += delta
+		if _idle_duration > 0.0 and _idle_elapsed >= _idle_duration and not _retracting:
+			hide()
+		_update_platform(delta)
+		if _lift_phase == 2 and is_instance_valid(_platform):
+			pet.linear_velocity = Vector2.ZERO
+			pet.global_position.y = _platform.position.y - pet.PET_RADIUS * pet.gravity_sign
+		elif _lift_phase == 0:
+			pet.linear_velocity = Vector2.ZERO
 		_update_close_btn_hover()
 		_update_close_btn_position()
 		pet.queue_redraw()
@@ -205,6 +241,8 @@ func render() -> void:
 			_render_game_content(pts, hue)
 		Mode.IDLE:
 			_render_idle_content(pts, hue, anim_w, anim_h)
+		Mode.LOADING:
+			_render_loading_content(pts, hue, anim_w, anim_h)
 
 	# 恢复变换
 	pet.draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
@@ -304,15 +342,18 @@ func _update_platform(delta: float) -> void:
 # ══════════════════════════════════════
 
 var _close_btn_visible: bool = false  # 关闭按钮当前是否可见
+var _close_btn_default_text: String = ""  # 默认显示文字 (空=始终显示断开连接)
 
-func _create_close_btn() -> void:
+func _create_close_btn(default_text: String = "") -> void:
 	_remove_close_btn()
 	var parent = pet.get_parent()
 	if not parent:
 		return
+	_close_btn_default_text = default_text
 	var hue = EventBus.ui_hue
 	_close_btn = Button.new()
-	_close_btn.text = "断开连接"
+	# 有默认文字时初始显示状态文字, 否则显示"断开连接"
+	_close_btn.text = default_text if default_text != "" else "断开连接"
 	_close_btn.custom_minimum_size = Vector2(80, 28)
 	_close_btn.add_theme_font_size_override("font_size", 14)
 	_close_btn.add_theme_color_override("font_color", Color.from_hsv(hue, 0.25, 0.7, 0.7))
@@ -344,30 +385,48 @@ func _create_close_btn() -> void:
 	_close_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_close_btn.pressed.connect(_on_close_pressed)
 	parent.add_child(_close_btn)
-	# 初始隐藏 (鼠标悬停宠物时才显示)
-	_close_btn.modulate.a = 0.0
-	_close_btn_visible = false
+	# 有默认文字时始终显示, 否则仅悬停显示
+	if default_text != "":
+		_close_btn.modulate.a = 0.0
+		_close_btn_visible = false
+		# 延迟淡入显示状态文字
+		var tween = _close_btn.create_tween()
+		tween.tween_property(_close_btn, "modulate:a", 1.0, 0.4).set_delay(0.3)
+		_close_btn_visible = true
+	else:
+		_close_btn.modulate.a = 0.0
+		_close_btn_visible = false
 	_update_close_btn_position()
 
 func _update_close_btn_hover() -> void:
 	if not is_instance_valid(_close_btn):
 		return
-	# 检测鼠标是否在宠物附近 (扩大范围, 包含全息屏区域)
 	var mouse_pos = pet.get_global_mouse_position()
 	var dist = pet.global_position.distance_to(mouse_pos)
-	var hover_range = pet.PET_RADIUS * 3.5  # 宽松范围, 覆盖宠物+全息屏
-	var should_show = dist <= hover_range
-	# 也检测鼠标是否在按钮上 (防止移到按钮时消失)
+	var hover_range = pet.PET_RADIUS * 3.5
+	var is_near = dist <= hover_range
+	# 也检测鼠标是否在按钮上
 	if is_instance_valid(_close_btn) and _close_btn.get_global_rect().has_point(Vector2(mouse_pos.x, mouse_pos.y)):
-		should_show = true
-	if should_show and not _close_btn_visible:
-		_close_btn_visible = true
-		var tween = _close_btn.create_tween()
-		tween.tween_property(_close_btn, "modulate:a", 1.0, 0.2)
-	elif not should_show and _close_btn_visible:
-		_close_btn_visible = false
-		var tween = _close_btn.create_tween()
-		tween.tween_property(_close_btn, "modulate:a", 0.0, 0.15)
+		is_near = true
+	# 双态逻辑
+	if _close_btn_default_text != "":
+		# 有默认文字: 始终显示, 悬停时切换文字
+		if is_near:
+			if _close_btn.text != "断开连接":
+				_close_btn.text = "断开连接"
+		else:
+			if _close_btn.text != _close_btn_default_text:
+				_close_btn.text = _close_btn_default_text
+	else:
+		# 无默认文字: 悬停才显示
+		if is_near and not _close_btn_visible:
+			_close_btn_visible = true
+			var tween = _close_btn.create_tween()
+			tween.tween_property(_close_btn, "modulate:a", 1.0, 0.2)
+		elif not is_near and _close_btn_visible:
+			_close_btn_visible = false
+			var tween = _close_btn.create_tween()
+			tween.tween_property(_close_btn, "modulate:a", 0.0, 0.15)
 
 func _update_close_btn_position() -> void:
 	if not is_instance_valid(_close_btn):
@@ -491,3 +550,84 @@ func _init_idle_data() -> void:
 	_idle_data_lines.clear()
 	for i in range(8):
 		_idle_data_lines.append(randf())
+
+## 加载模式: 旋转弧线 + 脉冲环 (透视映射)
+func _render_loading_content(pts: PackedVector2Array, hue: float, _w: float, _h: float) -> void:
+	var alpha = _deploy_progress * 0.6
+	# 底色
+	pet.draw_polygon(pts, [Color(0.02, 0.04, 0.08, alpha)])
+
+	var content_alpha = alpha * _deploy_progress
+
+	# ── 主旋转弧线 (透视映射) ──
+	var spin_angle = _loading_time * TAU * 0.4  # ~2.5 秒一圈
+	var arc_len = PI * 0.8  # 144° 弧段
+	var arc_color = Color.from_hsv(hue, 0.5, 0.9, content_alpha * 0.85)
+	var arc_r = 0.25  # UV 空间半径
+	var arc_line = PackedVector2Array()
+	for i in range(24):
+		var t = float(i) / 23.0
+		var a = spin_angle + t * arc_len
+		var u = 0.5 + cos(a) * arc_r
+		var v = 0.5 + sin(a) * arc_r
+		arc_line.append(_map_uv(pts, u, v))
+	pet.draw_polyline(arc_line, arc_color, 1.5, true)
+
+	# 弧头光点
+	var head_a = spin_angle + arc_len
+	var dot_uv = _map_uv(pts, 0.5 + cos(head_a) * arc_r, 0.5 + sin(head_a) * arc_r)
+	pet.draw_circle(dot_uv, 2.0, Color(arc_color.r, arc_color.g, arc_color.b, content_alpha), true, -1.0, true)
+
+	# 弧尾渐隐尾迹
+	var trail_line = PackedVector2Array()
+	for i in range(12):
+		var t = float(i) / 11.0
+		var a = spin_angle - PI * 0.3 + t * PI * 0.3
+		trail_line.append(_map_uv(pts, 0.5 + cos(a) * arc_r, 0.5 + sin(a) * arc_r))
+	pet.draw_polyline(trail_line, Color(arc_color.r, arc_color.g, arc_color.b, content_alpha * 0.25), 0.8, true)
+
+	# ── 外环脉冲 (透视映射) ──
+	var pulse = 0.6 + sin(_loading_time * 3.0) * 0.4
+	var ring_r = arc_r * 1.4
+	var ring_color = Color.from_hsv(hue, 0.3, 0.7, content_alpha * 0.15 * pulse)
+	var ring_line = PackedVector2Array()
+	for i in range(33):
+		var a = float(i) / 32.0 * TAU
+		ring_line.append(_map_uv(pts, 0.5 + cos(a) * ring_r, 0.5 + sin(a) * ring_r))
+	pet.draw_polyline(ring_line, ring_color, 0.6, true)
+
+	# ── 角落装饰线 + 边框 ──
+	var corner_len_f = 0.12
+	var corner_color = Color.from_hsv(hue, 0.3, 0.7, content_alpha * 0.3)
+	for ci in range(4):
+		var cp = pts[ci]
+		var next_i = (ci + 1) % 4
+		var prev_i = (ci + 3) % 4
+		var to_next = (pts[next_i] - cp).normalized() * (pts[next_i] - cp).length() * corner_len_f
+		var to_prev = (pts[prev_i] - cp).normalized() * (pts[prev_i] - cp).length() * corner_len_f
+		pet.draw_line(cp, cp + to_next, corner_color, 0.5, true)
+		pet.draw_line(cp, cp + to_prev, corner_color, 0.5, true)
+	var border_color = Color.from_hsv(hue, 0.35, 0.75, content_alpha * 0.2)
+	for ei in range(4):
+		pet.draw_line(pts[ei], pts[(ei + 1) % 4], border_color, 0.5, true)
+
+# ══════════════════════════════════════
+# 透视映射工具
+# ══════════════════════════════════════
+
+## 将 UV 坐标 (0~1, 0~1) 映射到梯形 pts 的屏幕坐标
+## pts 顺序: [左上, 右上, 右下, 左下]
+func _map_uv(pts: PackedVector2Array, u: float, v: float) -> Vector2:
+	var top = pts[0].lerp(pts[1], u)
+	var bot = pts[3].lerp(pts[2], u)
+	return top.lerp(bot, v)
+
+# ══════════════════════════════════════
+# 统一清理
+# ══════════════════════════════════════
+
+## 清理当前活跃模式的所有资源 (踏板/按钮/解锁)
+func _cleanup_active_mode() -> void:
+	_unlock_pet()
+	_remove_close_btn()
+

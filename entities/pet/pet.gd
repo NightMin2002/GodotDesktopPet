@@ -419,8 +419,8 @@ func _process(delta: float) -> void:
 	gaming.update(delta)
 	# 全息屏: 展开/收起动画 + 屏保动画 (委托给 PetHoloScreen)
 	holo_screen.update(delta)
-	# 全息屏待机模式: 瞳孔注视屏幕 (非游戏模式, 游戏模式由 PetGaming 管理)
-	if holo_screen.visible and holo_screen.mode == PetHoloScreen.Mode.IDLE and not gaming.active:
+	# 全息屏活跃模式: 瞳孔注视屏幕 (非游戏模式, 游戏模式由 PetGaming 管理)
+	if holo_screen.visible and (holo_screen.mode == PetHoloScreen.Mode.IDLE or holo_screen.mode == PetHoloScreen.Mode.LOADING) and not gaming.active:
 		eye_behavior.forced_look_dir = Vector2(holo_screen.side, 0.15)
 	elif not gaming.active and eye_behavior.forced_look_dir != Vector2.ZERO and not idle_behaviors.is_active():
 		eye_behavior.forced_look_dir = Vector2.ZERO
