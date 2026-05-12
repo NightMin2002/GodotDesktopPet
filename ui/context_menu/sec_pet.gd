@@ -393,6 +393,7 @@ func _build_terminal_l3_panel() -> void:
 		{"label": "状态确认", "behavior": "_holo_done", "desc": "系统信息检索完成核准画面"},
 		{"label": "终端报错", "behavior": "_holo_error", "desc": "模拟系统致命错误故障画面"},
 		{"label": "系统警告", "behavior": "_holo_warning", "desc": "全息屏显示系统轻度警告与提示"},
+		{"label": "未知检索", "behavior": "_holo_query", "desc": "全息屏显示查无此项或异常检索状态"},
 		{"label": "新消息", "behavior": "_holo_mail", "desc": "全息屏显示系统级通知与新邮件待办"},
 		{"label": "终端引导", "behavior": "_holo_loading", "desc": "全息屏显示系统初始化引导序列"},
 		{"label": "待机屏保", "behavior": "_holo_browse", "desc": "弹出全息屏待机屏保 (25秒)"}
@@ -447,6 +448,7 @@ const _TERMINAL_ACTIONS := {
 	"_holo_done":    {"method": "show_done",    "duration": 4.0},
 	"_holo_error":   {"method": "show_error",   "duration": 5.0},
 	"_holo_warning": {"method": "show_warning", "duration": 5.0},
+	"_holo_query":   {"method": "show_query",   "duration": 5.0},
 	"_holo_mail":    {"method": "show_mail",    "duration": 6.0},
 }
 
