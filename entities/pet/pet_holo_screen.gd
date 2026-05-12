@@ -95,7 +95,7 @@ func show_idle(screen_side: float, duration: float = 0.0) -> void:
 	mode = Mode.IDLE
 	_idle_duration = duration
 	_idle_elapsed = 0.0
-	_get_mode_idle().init()
+	_get_renderer(Mode.IDLE).init()
 	# 展开动画
 	visible = true
 	_deploying = true
@@ -131,7 +131,7 @@ func show_loading(label_text: String, screen_side: float, duration: float = 0.0)
 		_cleanup_active_mode()
 	side = screen_side
 	mode = Mode.LOADING
-	_get_mode_loading().init()
+	_get_renderer(Mode.LOADING).init()
 	_loading_label_text = label_text
 	_idle_duration = duration
 	_idle_elapsed = 0.0
@@ -149,7 +149,7 @@ func show_battery(screen_side: float, duration: float = 0.0) -> void:
 		_cleanup_active_mode()
 	side = screen_side
 	mode = Mode.BATTERY
-	_get_mode_battery().init()
+	_get_renderer(Mode.BATTERY).init()
 	_idle_duration = duration
 	_idle_elapsed = 0.0
 	visible = true
@@ -206,7 +206,7 @@ func update(delta: float) -> void:
 	_update_dynamic_gap(delta)
 	# 屏保动画 + 自动隐藏计时
 	if mode == Mode.IDLE and visible:
-		_get_mode_idle().time += delta
+		_get_renderer(Mode.IDLE).time += delta
 		_idle_elapsed += delta
 		# 到时自动收起
 		if _idle_duration > 0.0 and _idle_elapsed >= _idle_duration and not _retracting:
