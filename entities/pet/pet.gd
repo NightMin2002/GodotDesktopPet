@@ -420,7 +420,8 @@ func _process(delta: float) -> void:
 	# 全息屏: 展开/收起动画 + 屏保动画 (委托给 PetHoloScreen)
 	holo_screen.update(delta)
 	# 全息屏活跃模式: 瞳孔注视屏幕 (非游戏模式, 游戏模式由 PetGaming 管理)
-	if holo_screen.visible and (holo_screen.mode == PetHoloScreen.Mode.IDLE or holo_screen.mode == PetHoloScreen.Mode.LOADING) and not gaming.active:
+	var is_holo_look_mode = holo_screen.visible and (holo_screen.mode in [PetHoloScreen.Mode.IDLE, PetHoloScreen.Mode.LOADING, PetHoloScreen.Mode.BATTERY])
+	if is_holo_look_mode and not gaming.active:
 		eye_behavior.forced_look_dir = Vector2(holo_screen.side, 0.15)
 	elif not gaming.active and eye_behavior.forced_look_dir != Vector2.ZERO and not idle_behaviors.is_active():
 		eye_behavior.forced_look_dir = Vector2.ZERO
@@ -551,7 +552,6 @@ func _draw_body(world_offset: Vector2) -> void:
 		draw_circle(Vector2.ZERO, screen_r, Color(0.03, 0.05, 0.12, h_blend * 0.95), true, -1.0, true)
 		match idle_behaviors.hibernate_style:
 			1: _draw_loading_spinner(screen_r, h_blend, idle_behaviors._hibernate_anim_time)
-			2: _draw_battery_icon(screen_r, h_blend, idle_behaviors._hibernate_anim_time)
 	var scan_blend = eye_behavior.scanning_blend
 	var done_blend = eye_behavior.scanning_done_blend
 	if scan_blend > 0.01 or done_blend > 0.01:
@@ -657,29 +657,6 @@ func _draw_loading_spinner(radius: float, alpha: float, time: float) -> void:
 	# 弧尾渐隐尾迹 (更细、更透明)
 	var trail_color = Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.3)
 	draw_arc(Vector2.ZERO, spin_r, spin_angle - PI * 0.3, spin_angle, 12, trail_color, 1.0, true)
-
-## 绘制电池图标 (休眠风格2: 电池轮廓 + 脉冲充电条)
-func _draw_battery_icon(radius: float, alpha: float, time: float) -> void:
-	var bw = radius * 0.75  # 电池主体宽度
-	var bh = radius * 0.45  # 电池主体高度
-	var nub_w = radius * 0.08  # 正极凸起宽
-	var nub_h = bh * 0.35  # 正极凸起高
-	var outline_color = palette.shift_color(Color(0.35, 0.6, 1.0, alpha * 0.75))
-	# 电池主体轮廓
-	var x0 = -bw / 2.0
-	var y0 = -bh / 2.0
-	draw_rect(Rect2(x0, y0, bw, bh), outline_color, false, 1.5, true)
-	# 正极凸起
-	var nub_x = bw / 2.0
-	var nub_y0 = -nub_h / 2.0
-	draw_rect(Rect2(nub_x, nub_y0, nub_w, nub_h), outline_color, true, -1.0, true)
-	# 充电条 (脉冲呼吸)
-	var fill_pct = 0.25 + sin(time * TAU / 4.0) * 0.25  # 0% ~ 50%
-	var pad = 2.5
-	var fill_w = (bw - pad * 2) * fill_pct
-	var fill_color = palette.shift_color(Color(0.25, 0.55, 1.0, alpha * 0.65))
-	if fill_w > 1.0:
-		draw_rect(Rect2(x0 + pad, y0 + pad, fill_w, bh - pad * 2), fill_color, true, -1.0, true)
 
 
 ## 绘制完成对勾图标 (检索完成: 机械风格SVG对勾)

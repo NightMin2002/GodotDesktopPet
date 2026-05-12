@@ -3,7 +3,7 @@
 # Phase 2: 支持多显示模式 (游戏 / 待机屏保)
 class_name PetHoloScreen extends RefCounted
 
-enum Mode { OFF, GAME, IDLE, LOADING }
+enum Mode { OFF, GAME, IDLE, LOADING, BATTERY }
 
 var pet: RigidBody2D  # 由 pet.gd 注入
 
@@ -63,8 +63,8 @@ const CLOSE_LINES := [
 
 ## 显示全息屏 (游戏模式: 接收纹理回调)
 func show_game(texture_provider: Callable, screen_side: float) -> void:
-	# 如果当前在待机/加载模式, 先清理干净
-	if mode == Mode.IDLE or mode == Mode.LOADING:
+	# 如果当前在待机/加载/电池模式, 先清理干净
+	if mode in [Mode.IDLE, Mode.LOADING, Mode.BATTERY]:
 		_cleanup_active_mode()
 	side = screen_side
 	_texture_provider = texture_provider
@@ -115,7 +115,7 @@ func hide() -> void:
 ## label_text: 状态文字 (如 "LOADING", "SYS.CHECK")
 func show_loading(label_text: String, screen_side: float, duration: float = 0.0) -> void:
 	# 如果当前在其他模式, 先清理
-	if mode == Mode.IDLE or mode == Mode.LOADING:
+	if mode in [Mode.IDLE, Mode.LOADING, Mode.BATTERY]:
 		_cleanup_active_mode()
 	side = screen_side
 	mode = Mode.LOADING
@@ -130,6 +130,21 @@ func show_loading(label_text: String, screen_side: float, duration: float = 0.0)
 	_lock_pet()
 	# 创建关闭按钮 (双态: 默认显示状态文字, 悬停变断开连接)
 	_create_close_btn(label_text)
+
+## 显示全息屏 (电池状态模式)
+func show_battery(screen_side: float, duration: float = 0.0) -> void:
+	if mode in [Mode.IDLE, Mode.LOADING, Mode.BATTERY]:
+		_cleanup_active_mode()
+	side = screen_side
+	mode = Mode.BATTERY
+	_loading_time = 0.0
+	_idle_duration = duration
+	_idle_elapsed = 0.0
+	visible = true
+	_deploying = true
+	_retracting = false
+	_lock_pet()
+	_create_close_btn("电源监测")
 
 ## 每帧更新 (由 pet._process 调用, 驱动动画)
 func update(delta: float) -> void:
@@ -168,8 +183,8 @@ func update(delta: float) -> void:
 		_update_close_btn_hover()
 		_update_close_btn_position()
 		pet.queue_redraw()
-	# 加载模式动画
-	if mode == Mode.LOADING and visible:
+	# 动画通用逻辑 (加载/电池模式共享)
+	if (mode == Mode.LOADING or mode == Mode.BATTERY) and visible:
 		_loading_time += delta
 		_idle_elapsed += delta
 		if _idle_duration > 0.0 and _idle_elapsed >= _idle_duration and not _retracting:
@@ -252,6 +267,9 @@ func render() -> void:
 			_render_idle_content(pts, hue, anim_w, anim_h)
 		Mode.LOADING:
 			_render_loading_content(pts, hue, anim_w, anim_h)
+
+		Mode.BATTERY:
+			_render_battery_content(pts, hue, anim_w, anim_h)
 
 	# 恢复变换
 	pet.draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
@@ -352,7 +370,7 @@ func _update_dynamic_gap(delta: float) -> void:
 	match mode:
 		Mode.GAME:
 			target_ratio = GAP_GAME
-		Mode.IDLE, Mode.LOADING:
+		Mode.IDLE, Mode.LOADING, Mode.BATTERY:
 			target_ratio = GAP_TERMINAL
 		_:
 			target_ratio = GAP_TERMINAL
@@ -740,6 +758,89 @@ func _render_loading_content(pts: PackedVector2Array, hue: float, _w: float, _h:
 	for ei in range(4):
 		pet.draw_line(pts[ei], pts[(ei + 1) % 4], border_color, 0.5, true)
 
+## 电池状态模式: 全息动态电源监控 (透视映射)
+func _render_battery_content(pts: PackedVector2Array, hue: float, _w: float, _h: float) -> void:
+	var alpha = _deploy_progress * 0.6
+	pet.draw_polygon(pts, [Color(0.02, 0.04, 0.08, alpha)])
+	var content_alpha = alpha * _deploy_progress
+	var base_color = Color.from_hsv(hue, 0.5, 0.9, content_alpha)
+
+	var center_u = 0.5
+	var center_v = 0.42
+
+	# ── 电池外框 (横向) ──
+	var bw = 0.22
+	var bh = 0.12
+	var rect_pts = PackedVector2Array([
+		_map_uv(pts, center_u - bw, center_v - bh),
+		_map_uv(pts, center_u + bw, center_v - bh),
+		_map_uv(pts, center_u + bw, center_v + bh),
+		_map_uv(pts, center_u - bw, center_v + bh),
+		_map_uv(pts, center_u - bw, center_v - bh)
+	])
+	pet.draw_polyline(rect_pts, base_color, 2.0, true)
+
+	# ── 正极凸起 ──
+	var nub_w = 0.03
+	var nub_h = 0.05
+	var nub_pts = PackedVector2Array([
+		_map_uv(pts, center_u + bw, center_v - nub_h),
+		_map_uv(pts, center_u + bw + nub_w, center_v - nub_h),
+		_map_uv(pts, center_u + bw + nub_w, center_v + nub_h),
+		_map_uv(pts, center_u + bw, center_v + nub_h)
+	])
+	pet.draw_polygon(nub_pts, [base_color])
+
+	# ── 充电进度条 (脉冲分块) ──
+	var blocks = 5
+	var fill_pct = 0.25 + sin(_loading_time * TAU / 4.0) * 0.25  # 模拟充能 0% ~ 50%
+	var active_blocks = int(fill_pct * blocks) + 1  # 至少闪1格
+	var pad_u = 0.03
+	var pad_v = 0.04
+	var block_w = ((bw - pad_u) * 2.0) / blocks
+	
+	for i in range(blocks):
+		var alpha_mult = 1.0 if i < active_blocks else 0.15
+		if i == active_blocks - 1:
+			alpha_mult = 0.4 + 0.6 * abs(sin(_loading_time * 8.0))
+			
+		var b_start_u = center_u - bw + pad_u + i * block_w + 0.01
+		var b_end_u = b_start_u + block_w - 0.02
+		
+		var b_pts = PackedVector2Array([
+			_map_uv(pts, b_start_u, center_v - bh + pad_v),
+			_map_uv(pts, b_end_u, center_v - bh + pad_v),
+			_map_uv(pts, b_end_u, center_v + bh - pad_v),
+			_map_uv(pts, b_start_u, center_v + bh - pad_v)
+		])
+		pet.draw_polygon(b_pts, [Color.from_hsv(hue, 0.4, 0.9, content_alpha * alpha_mult)])
+
+	# ── 底部大电流波形 ──
+	var wave_v = 0.78
+	var wave_pts = PackedVector2Array()
+	var samples = 40
+	for i in range(samples + 1):
+		var u = 0.1 + (float(i) / samples) * 0.8
+		var amp = 0.08 * sin(_loading_time * 12.0 + u * 25.0) * (1.0 - abs(u - 0.5)*2.0)
+		wave_pts.append(_map_uv(pts, u, wave_v + amp))
+	pet.draw_polyline(wave_pts, Color.from_hsv(hue, 0.4, 0.9, content_alpha * 0.6), 1.5, true)
+	pet.draw_line(_map_uv(pts, 0.1, wave_v), _map_uv(pts, 0.9, wave_v), Color.from_hsv(hue, 0.3, 0.7, content_alpha * 0.2), 1.0, true)
+
+	# ── 外围机能角标 ──
+	var corner_len_f = 0.12
+	var corner_color = Color.from_hsv(hue, 0.3, 0.7, content_alpha * 0.4)
+	for ci in range(4):
+		var cp = pts[ci]
+		var next_i = (ci + 1) % 4
+		var prev_i = (ci + 3) % 4
+		var to_next = (pts[next_i] - cp).normalized() * (pts[next_i] - cp).length() * corner_len_f
+		var to_prev = (pts[prev_i] - cp).normalized() * (pts[prev_i] - cp).length() * corner_len_f
+		pet.draw_line(cp, cp + to_next, corner_color, 1.0, true)
+		pet.draw_line(cp, cp + to_prev, corner_color, 1.0, true)
+	var border_color = Color.from_hsv(hue, 0.35, 0.75, content_alpha * 0.2)
+	for ei in range(4):
+		pet.draw_line(pts[ei], pts[(ei + 1) % 4], border_color, 0.8, true)
+
 # ══════════════════════════════════════
 # 透视映射工具
 # ══════════════════════════════════════
@@ -759,4 +860,3 @@ func _map_uv(pts: PackedVector2Array, u: float, v: float) -> Vector2:
 func _cleanup_active_mode() -> void:
 	_unlock_pet()
 	_remove_close_btn()
-

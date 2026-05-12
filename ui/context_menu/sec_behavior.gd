@@ -151,7 +151,7 @@ func _build_debug_behavior_submenu() -> void:
 
 	var debug_items := [
 		{"label": "眼睑下垂", "behavior": "drowsy", "desc": "模拟困倦半闭眼效果"},
-		{"label": "能源监测", "behavior": "battery", "desc": "显示电池充电图标"},
+
 		{"label": "诊断扫描", "behavior": "scanning", "desc": "触发检索扫描动画"},
 		{"label": "状态确认", "behavior": "scan_done", "desc": "触发扫描完成打勾动画"},
 		{"label": "邮件标识", "behavior": "_icon:mail", "desc": "显示未读邮件图标"},
