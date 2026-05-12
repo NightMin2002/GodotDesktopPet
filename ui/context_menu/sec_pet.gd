@@ -390,6 +390,7 @@ func _build_terminal_l3_panel() -> void:
 
 	var items := [
 		{"label": "电源状态", "behavior": "_holo_battery", "desc": "全息屏显示系统电源状态与监控"},
+		{"label": "状态确认", "behavior": "_holo_done", "desc": "系统信息检索完成核准画面"},
 		{"label": "终端引导", "behavior": "_holo_loading", "desc": "全息屏显示系统初始化引导序列"},
 		{"label": "待机屏保", "behavior": "_holo_browse", "desc": "弹出全息屏待机屏保 (25秒)"}
 	]
@@ -439,3 +440,5 @@ func _on_terminal_action(behavior: String) -> void:
 			pet.holo_screen.show_loading("初始化", s, 10.0)
 		elif behavior == "_holo_battery":
 			pet.holo_screen.show_battery(s, 10.0)
+		elif behavior == "_holo_done":
+			pet.holo_screen.show_done(s, 4.0)

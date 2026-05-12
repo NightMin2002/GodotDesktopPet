@@ -107,6 +107,11 @@ func process_tick() -> void:
 	if _has_pending:
 		_has_pending = false
 		_show(_pending, true)
+		# 通知宠物弹出核准状态个人终端
+		var pet = _find_pet()
+		if is_instance_valid(pet) and "holo_screen" in pet and is_instance_valid(pet.holo_screen):
+			var s: float = -1.0 if pet.global_position.x > pet.boundary_size.x * 0.5 else 1.0
+			pet.holo_screen.show_done(s, 4.0)
 	# 气泡跟随宠物
 	if _bubble != null and _bubble.visible:
 		var pet = _find_pet()

@@ -3,7 +3,7 @@
 # Phase 2: 支持多显示模式 (游戏 / 待机屏保)
 class_name PetHoloScreen extends RefCounted
 
-enum Mode { OFF, GAME, IDLE, LOADING, BATTERY }
+enum Mode { OFF, GAME, IDLE, LOADING, BATTERY, DONE }
 
 var pet: RigidBody2D  # 由 pet.gd 注入
 
@@ -34,6 +34,7 @@ var _texture_provider: Callable = Callable()  # 返回 Texture2D 的回调
 var _mode_idle: HoloModeIdle
 var _mode_loading: HoloModeLoading
 var _mode_battery: HoloModeBattery
+var _mode_done: HoloModeDone
 
 # ── 待机/加载共享状态 ──
 var _idle_duration: float = 0.0  # 屏保总时长 (0=不自动隐藏)
@@ -65,7 +66,7 @@ const CLOSE_LINES := [
 ## 显示全息屏 (游戏模式: 接收纹理回调)
 func show_game(texture_provider: Callable, screen_side: float) -> void:
 	# 如果当前在待机/加载/电池模式, 先清理干净
-	if mode in [Mode.IDLE, Mode.LOADING, Mode.BATTERY]:
+	if mode in [Mode.IDLE, Mode.LOADING, Mode.BATTERY, Mode.DONE]:
 		_cleanup_active_mode()
 	side = screen_side
 	_texture_provider = texture_provider
@@ -115,7 +116,7 @@ func hide() -> void:
 ## label_text: 状态文字 (如 "LOADING", "SYS.CHECK")
 func show_loading(label_text: String, screen_side: float, duration: float = 0.0) -> void:
 	# 如果当前在其他模式, 先清理
-	if mode in [Mode.IDLE, Mode.LOADING, Mode.BATTERY]:
+	if mode in [Mode.IDLE, Mode.LOADING, Mode.BATTERY, Mode.DONE]:
 		_cleanup_active_mode()
 	side = screen_side
 	mode = Mode.LOADING
@@ -133,7 +134,7 @@ func show_loading(label_text: String, screen_side: float, duration: float = 0.0)
 
 ## 显示全息屏 (电池状态模式)
 func show_battery(screen_side: float, duration: float = 0.0) -> void:
-	if mode in [Mode.IDLE, Mode.LOADING, Mode.BATTERY]:
+	if mode in [Mode.IDLE, Mode.LOADING, Mode.BATTERY, Mode.DONE]:
 		_cleanup_active_mode()
 	side = screen_side
 	mode = Mode.BATTERY
@@ -145,6 +146,21 @@ func show_battery(screen_side: float, duration: float = 0.0) -> void:
 	_retracting = false
 	_lock_pet()
 	_create_close_btn("电源监测")
+
+## 显示终端操作完成 (打勾动画)
+func show_done(screen_side: float, duration: float = 3.0) -> void:
+	if mode in [Mode.IDLE, Mode.LOADING, Mode.BATTERY, Mode.DONE]:
+		_cleanup_active_mode()
+	side = screen_side
+	mode = Mode.DONE
+	_get_mode_done().init()
+	_idle_duration = duration
+	_idle_elapsed = 0.0
+	visible = true
+	_deploying = true
+	_retracting = false
+	_lock_pet()
+	_create_close_btn("完成")
 
 ## 每帧更新 (由 pet._process 调用, 驱动动画)
 func update(delta: float) -> void:
@@ -183,9 +199,13 @@ func update(delta: float) -> void:
 		_update_close_btn_hover()
 		_update_close_btn_position()
 		pet.queue_redraw()
-	# 动画通用逻辑 (加载/电池模式共享)
-	if (mode == Mode.LOADING or mode == Mode.BATTERY) and visible:
-		var active_mode = _get_mode_loading() if mode == Mode.LOADING else _get_mode_battery()
+	# 动画通用逻辑 (加载/电池/完成模式共享)
+	if (mode == Mode.LOADING or mode == Mode.BATTERY or mode == Mode.DONE) and visible:
+		var active_mode
+		if mode == Mode.LOADING: active_mode = _get_mode_loading()
+		elif mode == Mode.BATTERY: active_mode = _get_mode_battery()
+		else: active_mode = _get_mode_done()
+		
 		active_mode.time += delta
 		_idle_elapsed += delta
 		if _idle_duration > 0.0 and _idle_elapsed >= _idle_duration and not _retracting:
@@ -270,6 +290,8 @@ func render() -> void:
 			_get_mode_loading().render(pts, hue, _deploy_progress)
 		Mode.BATTERY:
 			_get_mode_battery().render(pts, hue, _deploy_progress)
+		Mode.DONE:
+			_get_mode_done().render(pts, hue, _deploy_progress)
 
 	# 恢复变换
 	pet.draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
@@ -370,7 +392,7 @@ func _update_dynamic_gap(delta: float) -> void:
 	match mode:
 		Mode.GAME:
 			target_ratio = GAP_GAME
-		Mode.IDLE, Mode.LOADING, Mode.BATTERY:
+		Mode.IDLE, Mode.LOADING, Mode.BATTERY, Mode.DONE:
 			target_ratio = GAP_TERMINAL
 		_:
 			target_ratio = GAP_TERMINAL
@@ -534,6 +556,12 @@ func _get_mode_battery() -> HoloModeBattery:
 		_mode_battery = HoloModeBattery.new()
 		_mode_battery.screen = self
 	return _mode_battery
+
+func _get_mode_done() -> HoloModeDone:
+	if not _mode_done:
+		_mode_done = HoloModeDone.new()
+		_mode_done.screen = self
+	return _mode_done
 # ══════════════════════════════════════
 
 ## 将 UV 坐标 (0~1, 0~1) 映射到梯形 pts 的屏幕坐标
