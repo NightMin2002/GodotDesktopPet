@@ -7,7 +7,7 @@ extends RefCounted
 var pet: RigidBody2D  # 宿主宠物引用
 
 # ── 状态 ──
-var active_behavior: String = ""   # 当前活跃行为: "", "hibernate", "scan"
+var active_behavior: String = ""   # 当前活跃行为: "", "hibernate"
 var _behavior_timer := 0.0         # 行为内部计时器
 
 # ── 休眠参数 ──
@@ -26,12 +26,7 @@ const NIGHTTIME_START_HOUR := 23    # 深夜模式开始 (23:00)
 const NIGHTTIME_END_HOUR :=6       # 深夜模式结束 (6:00)
 const NIGHTTIME_CHECK_INTERVAL := 30.0  # 时间检查间隔 (秒)
 
-# ── 自检调度 (真实时钟驱动) ──
-var _scan_clock := 0.0             # 距上次自检的累计秒数
-var _next_scan_interval := 0.0     # 下次自检的间隔 (秒)
-var _scan_count_3h := 0            # 3小时窗口内已执行自检次数
-var _window_clock := 0.0           # 3小时窗口计时器
-const SCAN_MAX_PER_3H := 3         # 3小时内最多自检次数
+
 
 # ── 白天待机分级条件 ──
 const MOUSE_IDLE_FOR_NOTICE := 300.0     # 鼠标静止 5 分钟 → 说一句话
@@ -59,16 +54,7 @@ const HIBERNATE_WAKE_LINES := [
 	"待机结束。一切正常。",
 ]
 
-const SCAN_DONE_LINES := [
-	"自检完毕。",
-	"诊断完毕。一切正常。",
-	"自检通过。",
-	"组件状态：良好。",
-]
-
 func _init() -> void:
-	# 首次自检间隔: 启动后 40~80 分钟
-	_next_scan_interval = randf_range(2400.0, 4800.0)
 	# 启动时立即触发首次深夜时段检测 (不等 30 秒)
 	_nighttime_check_timer = NIGHTTIME_CHECK_INTERVAL
 
@@ -101,20 +87,12 @@ func update(delta: float) -> void:
 	if pet.is_clone:
 		return
 	
-	# 自检时钟始终运转 (无论是否在 idle)
-	_scan_clock += delta
-	_window_clock += delta
 	# 鼠标活动后重置标志 (用户回来了)
 	if pet.eye_behavior._mouse_idle_time < 5.0:
 		if _hibernate_done:
 			_hibernate_done = false
 		if _idle_notice_shown:
 			_idle_notice_shown = false
-	# 3小时窗口重置
-	if _window_clock >= 10800.0:  # 3 * 60 * 60
-		_window_clock = 0.0
-		_scan_count_3h = 0
-	
 	# ── 深夜时段检测 (每 30 秒检查一次系统时间, 仅原体负责发信号) ──
 	_nighttime_check_timer += delta
 	if _nighttime_check_timer >= NIGHTTIME_CHECK_INTERVAL:
@@ -144,10 +122,8 @@ func update(delta: float) -> void:
 	_behavior_timer += delta
 	if active_behavior == "hibernate":
 		_hibernate_anim_time += delta
-	match active_behavior:
-		"hibernate": _update_hibernate(delta)
-		"scan": _update_scan(delta)
-
+	if active_behavior == "hibernate":
+		_update_hibernate(delta)
 ## 当前是否有活跃的微行为
 func is_active() -> bool:
 	return active_behavior != ""
@@ -169,11 +145,7 @@ func try_random(_idle_elapsed: float) -> bool:
 	if active_behavior != "":
 		return true  # 已有活跃行为
 	
-	# ── 自检: 真实时钟到达间隔 + 3小时窗口未满 ──
-	if _scan_clock >= _next_scan_interval and _scan_count_3h < SCAN_MAX_PER_3H:
-		trigger("scan")
-		return true
-	
+
 	# 自主活动已迁移到 IdleActivities (定时器驱动, 不在此轮询)
 	# 休眠触发已迁移至 update() 的白天分级逻辑 / 深夜模式自动触发
 	
@@ -186,8 +158,6 @@ func trigger(behavior: String) -> void:
 	_behavior_timer = 0.0
 	match behavior:
 		"hibernate": _enter_hibernate()
-		"scan": _enter_scan()
-
 ## 取消当前微行为 (被交互打断)
 func cancel() -> void:
 	_cancel_current()
@@ -293,24 +263,6 @@ func _update_hibernate(_delta: float) -> void:
 			if _behavior_timer > 0.8:  # 等恢复动画完成
 				_finish("hibernate")
 
-# ── 系统自检 ──
-# 触发条件: 每 60~90 分钟一次，3小时内最多 3 次
-
-func _enter_scan() -> void:
-	pet.show_local_bubble("自检中...")
-	pet.eye_behavior.start_scan(func(): _on_scan_complete())
-
-func _update_scan(_delta: float) -> void:
-	# 扫描由 eye_behavior 内部驱动，这里只做超时保护
-	if _behavior_timer > 4.0:
-		pet.eye_behavior.stop_scan()
-		_finish("scan")
-
-func _on_scan_complete() -> void:
-	# 50% 概率冒出诊断结果
-	if randf() < 0.50:
-		pet.show_local_bubble(_pick(SCAN_DONE_LINES))
-	_finish("scan")
 
 # ── 内部工具 ──
 
@@ -325,8 +277,7 @@ func _cancel_current() -> void:
 			pet.linear_damp = 0.8
 			pet.angular_damp = 1.0
 			pet.lock_rotation = false  # 解锁旋转
-		"scan":
-			pet.eye_behavior.stop_scan()
+
 	active_behavior = ""
 	_behavior_timer = 0.0
 
@@ -335,11 +286,6 @@ func _finish(behavior: String) -> void:
 		active_behavior = ""
 		_behavior_timer = 0.0
 		match behavior:
-			"scan":
-				_scan_clock = 0.0
-				_scan_count_3h += 1
-				# 下次自检间隔: 60~90 分钟
-				_next_scan_interval = randf_range(3600.0, 5400.0)
 			"hibernate":
 				# 标记本轮离席已休眠，等用户回来(鼠标活动)后才重置
 				_hibernate_done = true

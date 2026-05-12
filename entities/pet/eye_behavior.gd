@@ -42,19 +42,6 @@ var _hibernate_dim_target := 0.0
 var hibernate_iris_shrink := 0.0 # 光圈收缩: 0.0=正常, 1.0=缩到最小
 var _hibernate_iris_shrink_target := 0.0
 
-# ── 系统自检扫描 ──
-var _scan_active := false
-var _scan_progress := 0.0      # 0→1 完整扫描周期
-var _scan_callback: Callable   # 扫描结束回调
-const SCAN_DURATION := 1.2     # 扫描总时长 (2次快速来回)
-
-# ── 检索动画 (系统信息查询时瞳孔变加载指示器) ──
-var scanning_blend := 0.0        # 加载动画混合度 (0=正常, 1=完全显示加载)
-var _scanning_blend_target := 0.0
-var scanning_done_blend := 0.0   # 完成图标混合度 (0=不显示, 1=完全显示对勾)
-var _scanning_done_target := 0.0
-var scanning_time := 0.0         # 加载动画累计时间
-var _scanning_state := "idle"    # "idle" / "scanning" / "done"
 
 # ── 瞳孔图标覆盖 (通用图标显示系统) ──
 var eye_icon_blend := 0.0        # 图标混合度 (0=不显示, 1=完全显示)
@@ -95,16 +82,7 @@ func is_animating() -> bool:
 		return true
 	if absf(hibernate_iris_shrink - _hibernate_iris_shrink_target) > 0.01:
 		return true
-	if _scan_active:
-		return true
 	if drowsy_amount > 0.01 or hibernate_dim > 0.01 or hibernate_iris_shrink > 0.01:
-		return true
-	# 检索动画状态变化时需要重绘
-	if scanning_blend > 0.01 or scanning_done_blend > 0.01:
-		return true
-	if absf(scanning_blend - _scanning_blend_target) > 0.01:
-		return true
-	if absf(scanning_done_blend - _scanning_done_target) > 0.01:
 		return true
 	# 图标覆盖状态变化时需要重绘
 	if eye_icon_blend > 0.01 or absf(eye_icon_blend - _eye_icon_target) > 0.01:
@@ -126,11 +104,7 @@ func _update_pupil(delta: float) -> void:
 	drowsy_amount = lerpf(drowsy_amount, _drowsy_target, delta * 3.0)
 	hibernate_dim = lerpf(hibernate_dim, _hibernate_dim_target, delta * 3.0)
 	hibernate_iris_shrink = lerpf(hibernate_iris_shrink, _hibernate_iris_shrink_target, delta * 3.0)
-	# 检索动画平滑过渡
-	scanning_blend = lerpf(scanning_blend, _scanning_blend_target, delta * 5.0)
-	scanning_done_blend = lerpf(scanning_done_blend, _scanning_done_target, delta * 4.0)
-	if _scanning_state != "idle":
-		scanning_time += delta
+
 	# 图标覆盖平滑过渡
 	eye_icon_blend = lerpf(eye_icon_blend, _eye_icon_target, delta * 5.0)
 	if eye_icon_type != "":
@@ -138,28 +112,7 @@ func _update_pupil(delta: float) -> void:
 	
 	var max_offset = pet.PET_RADIUS * 0.12
 	
-	# 扫描模式: 覆盖正常瞳孔控制
-	if _scan_active:
-		_scan_progress += delta / SCAN_DURATION
-		if _scan_progress >= 1.0:
-			_scan_active = false
-			_scan_progress = 0.0
-			if _scan_callback.is_valid():
-				_scan_callback.call()
-			_pupil_pos = _pupil_pos.lerp(Vector2.ZERO, delta * 6.0)
-			return
-		# 扫描轨迹: 2次快速来回 (smoothstep 急停转向，机械感)
-		var p = _scan_progress
-		var cycle = fmod(p * 2.0, 1.0)  # 2个周期
-		var scan_x: float
-		if cycle < 0.5:
-			var t = smoothstep(0.0, 1.0, cycle / 0.5)
-			scan_x = lerpf(-1.0, 1.0, t)   # 左→右
-		else:
-			var t = smoothstep(0.0, 1.0, (cycle - 0.5) / 0.5)
-			scan_x = lerpf(1.0, -1.0, t)   # 右→左
-		_pupil_pos = Vector2(scan_x * max_offset, 0)
-		return
+
 	var target: Vector2
 	var lerp_speed: float
 	
@@ -291,11 +244,7 @@ func _update_blink(delta: float) -> void:
 		_is_blinking = false
 		_blink_progress = 0.0
 		return
-	# 检索动画态抑制眨眼 (瞳孔已被覆盖，眨眼无意义且会穿帮)
-	if _scanning_state != "idle":
-		_is_blinking = false
-		_blink_progress = 0.0
-		return
+
 	# 图标覆盖态抑制眨眼
 	if eye_icon_blend > 0.3:
 		_is_blinking = false
@@ -326,37 +275,6 @@ func start_drowsy(amount := 0.6) -> void:
 func stop_drowsy() -> void:
 	_drowsy_target = 0.0
 
-## 启动系统自检扫描 (完成后调用 callback)
-func start_scan(callback: Callable = Callable()) -> void:
-	_scan_active = true
-	_scan_progress = 0.0
-	_scan_callback = callback
-
-## 强制中断扫描
-func stop_scan() -> void:
-	_scan_active = false
-	_scan_progress = 0.0
-
-## 进入检索动画 (瞳孔变为加载指示器)
-func start_scanning() -> void:
-	_scanning_state = "scanning"
-	_scanning_blend_target = 1.0
-	_scanning_done_target = 0.0
-	scanning_done_blend = 0.0
-	scanning_time = 0.0
-
-## 检索完成 (显示对勾图标, 保持直到手动调用 stop_scanning)
-## scanning_blend 保持 1.0 维持覆盖层不透，done_blend 淡入做内容交叉混合
-func finish_scanning() -> void:
-	_scanning_state = "done"
-	# 不淡出 scanning_blend — 覆盖层保持全不透明，避免过渡时闪出眼瞳
-	_scanning_done_target = 1.0
-
-## 强制停止检索动画
-func stop_scanning() -> void:
-	_scanning_state = "idle"
-	_scanning_blend_target = 0.0
-	_scanning_done_target = 0.0
 
 # ── 通用瞳孔图标覆盖 ──
 

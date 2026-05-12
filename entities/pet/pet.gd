@@ -184,7 +184,6 @@ func _ready() -> void:
 	EventBus.pet_color_changed.connect(_on_pet_color_changed)
 	EventBus.trigger_idle_behavior.connect(_on_trigger_idle_behavior)
 	EventBus.trigger_free_roam.connect(_on_trigger_free_roam)
-	EventBus.pet_scanning_changed.connect(_on_pet_scanning_changed)
 	EventBus.pet_show_eye_icon.connect(_on_pet_show_eye_icon)
 	EventBus.trigger_squash_test.connect(_on_trigger_squash_test)
 	EventBus.nighttime_mode_changed.connect(_on_nighttime_mode_changed)
@@ -256,17 +255,6 @@ func _on_trigger_idle_behavior(behavior: String) -> void:
 	if style >= 0 and base_behavior == "hibernate":
 		idle_behaviors.hibernate_style = style
 	idle_behaviors.trigger(base_behavior)
-
-func _on_pet_scanning_changed(state: String) -> void:
-	if is_clone:
-		return
-	match state:
-		"scanning":
-			eye_behavior.start_scanning()
-		"done":
-			eye_behavior.finish_scanning()
-		"idle":
-			eye_behavior.stop_scanning()
 
 func _on_pet_show_eye_icon(icon_type: String) -> void:
 	if is_clone:
@@ -552,19 +540,6 @@ func _draw_body(world_offset: Vector2) -> void:
 		draw_circle(Vector2.ZERO, screen_r, Color(0.03, 0.05, 0.12, h_blend * 0.95), true, -1.0, true)
 		match idle_behaviors.hibernate_style:
 			1: _draw_loading_spinner(screen_r, h_blend, idle_behaviors._hibernate_anim_time)
-	var scan_blend = eye_behavior.scanning_blend
-	var done_blend = eye_behavior.scanning_done_blend
-	if scan_blend > 0.01 or done_blend > 0.01:
-		var scan_r = PET_RADIUS * 0.83
-		var overlay_alpha = scan_blend * 0.95
-		if done_blend > scan_blend:
-			overlay_alpha = done_blend * 0.95
-		draw_circle(Vector2.ZERO, scan_r, Color(0.03, 0.05, 0.12, overlay_alpha), true, -1.0, true)
-		var spinner_alpha = scan_blend * (1.0 - done_blend)
-		if spinner_alpha > 0.01:
-			_draw_loading_spinner(scan_r, spinner_alpha, eye_behavior.scanning_time)
-		if done_blend > 0.01:
-			_draw_scanning_checkmark(scan_r, done_blend)
 	var icon_blend = eye_behavior.eye_icon_blend
 	if icon_blend > 0.01:
 		var icon_r = PET_RADIUS * 0.83
@@ -658,23 +633,6 @@ func _draw_loading_spinner(radius: float, alpha: float, time: float) -> void:
 	var trail_color = Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.3)
 	draw_arc(Vector2.ZERO, spin_r, spin_angle - PI * 0.3, spin_angle, 12, trail_color, 1.0, true)
 
-
-## 绘制完成对勾图标 (检索完成: 机械风格SVG对勾)
-func _draw_scanning_checkmark(radius: float, alpha: float) -> void:
-	var s = radius * 0.06  # 缩放因子 (与其他图标统一)
-	var glow_color = palette.shift_color(Color(0.2, 0.9, 0.5, alpha * 0.9))
-	var lw = 2.2 * (radius / 16.0)
-	# 对勾路径: 从左侧中部 → 底部中心 → 右上角
-	var check_pts = PackedVector2Array([
-		Vector2(-5.5, 0.0) * s,    # 起点: 左侧
-		Vector2(-1.5, 5.0) * s,    # 拐点: 底部
-		Vector2(6.0, -4.5) * s,    # 终点: 右上
-	])
-	draw_polyline(check_pts, glow_color, lw, true)
-	# 外圈环 (完成状态标识)
-	var ring_r = radius * 0.7
-	var ring_color = Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.5)
-	draw_arc(Vector2.ZERO, ring_r, 0, TAU, 32, ring_color, 1.2, true)
 
 ## 绘制邮件图标 (信封轮廓 + V 型翻盖 + 呼吸脉冲)
 func _draw_eye_icon_mail(radius: float, alpha: float, time: float) -> void:

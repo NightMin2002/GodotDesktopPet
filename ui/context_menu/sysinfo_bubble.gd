@@ -21,8 +21,6 @@ func trigger() -> void:
 	var screen = DisplayServer.screen_get_size()
 	_screen_res = "%d × %d" % [screen.x, screen.y]
 	_show("[center][color=#4dd9e6]SCANNING HOST...[/color][/center]", false)
-	# 通知宠物瞳孔进入检索动画
-	EventBus.pet_scanning_changed.emit("scanning")
 	WorkerThreadPool.add_task(_query_task)
 
 # ── 显示/关闭 ──
@@ -90,8 +88,6 @@ func _build() -> void:
 func _on_confirm() -> void:
 	if _bubble == null:
 		return
-	# 确认关闭时清理检索动画状态
-	EventBus.pet_scanning_changed.emit("idle")
 	_bubble.pivot_offset = _bubble.size * 0.5
 	var tween = _menu.create_tween().set_parallel(true)
 	tween.tween_property(_bubble, "modulate:a", 0.0, 0.3)
@@ -111,8 +107,6 @@ func process_tick() -> void:
 	if _has_pending:
 		_has_pending = false
 		_show(_pending, true)
-		# 通知宠物瞳孔检索完成 (显示对勾)
-		EventBus.pet_scanning_changed.emit("done")
 	# 气泡跟随宠物
 	if _bubble != null and _bubble.visible:
 		var pet = _find_pet()
