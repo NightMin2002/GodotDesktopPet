@@ -25,7 +25,7 @@ func render(pts: PackedVector2Array, _hue: float, deploy: float) -> void:
 	
 	var c_uv = Vector2(0.5, 0.42)
 	
-	# ── 1. 六边形雷达探测网 ──
+	# ── 1. 六边形拓扑检索网 ──
 	var bg_r = 0.28
 	var bg_pts = PackedVector2Array()
 	for i in range(7): # 闭合六边形
@@ -36,12 +36,38 @@ func render(pts: PackedVector2Array, _hue: float, deploy: float) -> void:
 	var pulse = (sin(step_time * 2.0) * 0.5 + 0.5)
 	pet.draw_polyline(bg_pts, Color(dim_color.r, dim_color.g, dim_color.b, dim_color.a * (0.5 + 0.5*pulse)), 1.0, true)
 	
-	# 网格扫描线 (从上到下一个来回)
-	var scan_y = c_uv.y - bg_r + (sin(time * 1.5) * 0.5 + 0.5) * bg_r * 2.0
-	var scan_w = bg_r * 1.2
-	var p_left = screen._map_uv(pts, c_uv.x - scan_w, scan_y)
-	var p_right = screen._map_uv(pts, c_uv.x + scan_w, scan_y)
-	pet.draw_line(p_left, p_right, Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.5), 1.5, true)
+	# 寻址探针 (取代老套的上下扫描线，改为数据在六边形拓扑边缘极速穿梭)
+	var edge_count = 6
+	for j in range(3):
+		var t_speed = 3.0 + j * 1.5
+		var t_offset = j * 2.5
+		var traverse_time = time * t_speed + t_offset
+		var dir = 1 if j % 2 == 0 else -1
+		
+		# 计算当前段和段内进度
+		var seg_idx = int(traverse_time) % edge_count
+		if dir == -1:
+			seg_idx = (edge_count - 1) - seg_idx
+			
+		var seg_prog = fmod(traverse_time, 1.0)
+		var p_start = bg_pts[seg_idx]
+		var p_end = bg_pts[(seg_idx + 1) % edge_count] if dir == 1 else bg_pts[seg_idx - 1] if seg_idx > 0 else bg_pts[5]
+		
+		# 为了让闭环正确连接处理逆向的坐标获取
+		if dir == -1:
+			var s_tmp = bg_pts[(seg_idx + 1) % edge_count]
+			var e_tmp = bg_pts[seg_idx]
+			p_start = s_tmp
+			p_end = e_tmp
+			
+		var probe_pos = p_start.lerp(p_end, seg_prog)
+		
+		# 绘制探针核心
+		pet.draw_circle(probe_pos, 1.5 + j * 0.5, glow_color, true, -1.0, true)
+		# 绘制探针拖尾闪电
+		var tail_len = clampf(seg_prog - 0.1, 0.0, 1.0)
+		var tail_pos = p_start.lerp(p_end, tail_len)
+		pet.draw_line(probe_pos, tail_pos, glow_color, 1.0, true)
 	
 	# ── 2. 方块像素风拼成的「？」 ──
 	# 带有闪烁重组感
@@ -97,26 +123,50 @@ func render(pts: PackedVector2Array, _hue: float, deploy: float) -> void:
 			if i % 2 == 0:
 				pet.draw_line(screen._map_uv(pts, frag_x, frag_y + 0.02), screen._map_uv(pts, frag_x + 0.02, frag_y + 0.02), dim_color, 1.0, true)
 
-	# ── 4. 底部检索文字遮罩条 ──
+	# ── 4. 底部检索状态条 (高速查阅中) ──
 	var bar_y = 0.82
-	var bar_w = 0.45
+	var bar_w = 0.5
 	var bar_pts = PackedVector2Array([
-		screen._map_uv(pts, 0.5 - bar_w*0.5, bar_y - 0.02),
-		screen._map_uv(pts, 0.5 + bar_w*0.5, bar_y - 0.02),
-		screen._map_uv(pts, 0.5 + bar_w*0.5 - 0.02, bar_y + 0.02),
-		screen._map_uv(pts, 0.5 - bar_w*0.5 - 0.02, bar_y + 0.02)
+		screen._map_uv(pts, 0.5 - bar_w*0.5, bar_y - 0.025),
+		screen._map_uv(pts, 0.5 + bar_w*0.5, bar_y - 0.025),
+		screen._map_uv(pts, 0.5 + bar_w*0.5 - 0.02, bar_y + 0.025),
+		screen._map_uv(pts, 0.5 - bar_w*0.5 - 0.02, bar_y + 0.025)
 	])
-	pet.draw_polygon(bar_pts, [Color(base_color.r, base_color.g, base_color.b, alpha * 0.2)])
+	# 绘制明显的底线框
+	pet.draw_polygon(bar_pts, [Color(base_color.r, base_color.g, base_color.b, alpha * 0.15)])
+	pet.draw_polyline(bar_pts, Color(dim_color.r, dim_color.g, dim_color.b, alpha * 0.6), 1.0, true)
 	
-	# 左侧类似 "查找" 的闪烁方块
-	if fmod(time * 2.0, 1.0) < 0.5:
+	# 左侧的 "指令符" 输入光标闪烁方块
+	var cursor_x = 0.5 - bar_w*0.5 + 0.03
+	if fmod(time * 2.0, 1.0) < 0.6:
 		var sq_pts = PackedVector2Array([
-			screen._map_uv(pts, 0.5 - bar_w*0.5 + 0.02, bar_y - 0.01),
-			screen._map_uv(pts, 0.5 - bar_w*0.5 + 0.04, bar_y - 0.01),
-			screen._map_uv(pts, 0.5 - bar_w*0.5 + 0.035, bar_y + 0.01),
-			screen._map_uv(pts, 0.5 - bar_w*0.5 + 0.015, bar_y + 0.01)
+			screen._map_uv(pts, cursor_x, bar_y - 0.012),
+			screen._map_uv(pts, cursor_x + 0.02, bar_y - 0.012),
+			screen._map_uv(pts, cursor_x + 0.015, bar_y + 0.012),
+			screen._map_uv(pts, cursor_x - 0.005, bar_y + 0.012)
 		])
 		pet.draw_polygon(sq_pts, [glow_color])
+
+	# 右侧高速跳动的数据乱码块 (模拟穷举搜索比对)
+	var data_start_x = cursor_x + 0.04
+	var data_w = bar_w - 0.09
+	var block_count = 14
+	var block_w = data_w / block_count
+	
+	# 每秒 20 次的高速离散刷新
+	var search_step = floor(time * 20.0)
+	for i in range(block_count):
+		# 让每个格子一半几率显示亮色，一半几率暗色，表现高速密集数据运算
+		var b_active = (hash(int(search_step) + i * 7) % 10) > 4
+		if b_active:
+			var bx = data_start_x + i * block_w
+			var b_color = glow_color if (hash(int(search_step) + i * 3) % 10) > 7 else base_color
+			b_color.a *= 0.8
+			
+			var pt_top = screen._map_uv(pts, bx, bar_y - 0.008)
+			var pt_bot = screen._map_uv(pts, bx - 0.005, bar_y + 0.008)
+			# 斜短线，构成类似条形码/加载段的感觉
+			pet.draw_line(pt_top, pt_bot, b_color, 2.0, true)
 
 	# ── 5. 边框护甲与锚点 (保持终端统一) ──
 	var borders = PackedVector2Array([pts[0], pts[1], pts[1], pts[2], pts[2], pts[3], pts[3], pts[0]])
