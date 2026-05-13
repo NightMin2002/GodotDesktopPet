@@ -48,6 +48,7 @@ class _CyberPanel extends PanelContainer:
 		add_theme_stylebox_override("panel", s)
 
 	func _process(delta: float) -> void:
+		if not visible: return
 		_time += delta
 		queue_redraw()
 

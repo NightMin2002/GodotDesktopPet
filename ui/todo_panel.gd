@@ -13,7 +13,6 @@ var theme: TodoThemeBase
 var _current_theme_idx: int = 0
 
 var panel: PanelContainer
-var list_box: VBoxContainer
 var scroll: ScrollContainer
 var note_edit: TextEdit
 var note_title: LineEdit
@@ -36,6 +35,13 @@ var _progress_indicator: Control
 var _new_btn: Button
 var _vsep_style: StyleBoxFlat
 var _note_title_sep: HSeparator
+
+# ── 虚拟滚动列表 ──
+const _POOL_BUFFER := 3
+var _spacer: Control
+var _pool: Array[Dictionary] = []
+var _row_h: float = 48.0
+var _empty_hint: CenterContainer
 
 # ── 拖拽 ──
 var _dragging: bool = false
@@ -198,14 +204,27 @@ func _build_ui() -> void:
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	left_col.add_child(scroll)
 
-	list_box = VBoxContainer.new()
-	list_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	list_box.add_theme_constant_override("separation", theme.list_spacing)
-	scroll.add_child(list_box)
+	_spacer = Control.new()
+	_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_spacer)
+	_row_h = _calc_row_h()
+	_pool.clear()
 
 	scroll_hint_top = _make_scroll_hint(true)
 	scroll_hint_btm = _make_scroll_hint(false)
-	scroll.get_v_scroll_bar().value_changed.connect(func(_v): _update_scroll_hints())
+	scroll.get_v_scroll_bar().value_changed.connect(func(_v): _refresh_list())
+
+	_empty_hint = CenterContainer.new()
+	_empty_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_empty_hint.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_empty_hint.custom_minimum_size.y = 100
+	var _eh_lbl = Label.new()
+	_eh_lbl.text = "\u8fd8\u6ca1\u6709\u5f85\u529e\u54e6\n\u70b9\u51fb\u4e0a\u65b9\u6309\u94ae\u521b\u5efa\u4e00\u4e2a\u5427"
+	_eh_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	theme.apply_empty_hint_style(_eh_lbl)
+	_empty_hint.add_child(_eh_lbl)
+	_empty_hint.visible = false
+	left_col.add_child(_empty_hint)
 
 	var bottom_spacer = Control.new()
 	bottom_spacer.custom_minimum_size.y = theme.bottom_pad
@@ -350,90 +369,149 @@ func _update_scroll_hints() -> void:
 	scroll_hint_btm.visible = can_scroll and vbar.value < vbar.max_value - vbar.page - 2
 
 # ═══════════════════════════════════════════════
-#  左栏列表
+#  虚拟滚动列表 — 节点池 + 视窗裁剪
 # ═══════════════════════════════════════════════
 
-func _refresh_list() -> void:
-	for child in list_box.get_children():
+func _calc_row_h() -> float:
+	return theme.checkbox_size_px.y + theme.card_padding[2] + theme.card_padding[3] + theme.list_spacing + 6
+
+func _ensure_pool(needed: int) -> void:
+	while _pool.size() < needed:
+		var card = PanelContainer.new()
+		card.clip_contents = false
+		var slot := {
+			"card": card,
+			"bound_idx": -1,
+			"bound_hash": -1,
+			"style_normal": null,
+		}
+		card.gui_input.connect(_on_pool_card_input.bind(slot))
+		card.mouse_entered.connect(_on_pool_hover.bind(slot, true))
+		card.mouse_exited.connect(_on_pool_hover.bind(slot, false))
+		_spacer.add_child(card)
+		_pool.append(slot)
+
+func _on_pool_card_input(ev: InputEvent, sl: Dictionary) -> void:
+	if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+		if sl.bound_idx >= 0:
+			_selected_idx = sl.bound_idx
+			_refresh_list()
+			_refresh_right_panel()
+
+func _on_pool_hover(sl: Dictionary, entering: bool) -> void:
+	if sl.bound_idx < 0 or sl.bound_idx == _selected_idx: return
+	if entering and sl.style_normal:
+		sl.card.add_theme_stylebox_override("panel", theme.make_card_hover_style(sl.style_normal))
+	elif sl.style_normal:
+		sl.card.add_theme_stylebox_override("panel", sl.style_normal)
+
+func _on_pool_check(sl: Dictionary) -> void:
+	if sl.bound_idx >= 0: _toggle_todo(sl.bound_idx)
+
+func _on_pool_del(sl: Dictionary) -> void:
+	if sl.bound_idx >= 0: _delete_todo(sl.bound_idx)
+
+func _bind_slot(slot_i: int, todo_idx: int, todos: Array, width: float) -> void:
+	var sl = _pool[slot_i]
+	var t = todos[todo_idx]
+	var is_done: bool = t.get("done", false)
+	var is_sel: bool = (todo_idx == _selected_idx)
+	var has_note: bool = not t.get("notes", "").is_empty()
+	var text: String = t.get("text", "(\u672a\u547d\u540d)")
+
+	# 快速状态指纹 — 任何视觉要素变了才重绘
+	var h := todo_idx
+	h = h * 31 + (1 if is_done else 0)
+	h = h * 31 + (1 if is_sel else 0)
+	h = h * 31 + (1 if has_note else 0)
+	h = h * 31 + text.hash()
+
+	var card_h = _row_h - theme.list_spacing
+	sl.card.position = Vector2(0, todo_idx * _row_h)
+	sl.card.size = Vector2(width, card_h)
+	sl.card.visible = true
+	sl.bound_idx = todo_idx
+
+	if sl.bound_hash == h:
+		return
+
+	# 清空旧内容
+	while sl.card.get_child_count() > 0:
+		var child = sl.card.get_child(0)
+		sl.card.remove_child(child)
 		child.queue_free()
 
+	var card_style = theme.make_card_style(is_done, is_sel)
+	sl.card.add_theme_stylebox_override("panel", card_style)
+	sl.style_normal = card_style
+
+	var row = HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	sl.card.add_child(row)
+
+	var check = theme.make_checkbox(is_done)
+	check.pressed.connect(_on_pool_check.bind(sl))
+	row.add_child(check)
+
+	var title_lbl = Label.new()
+	title_lbl.text = text
+	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	title_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	theme.apply_card_title_style(title_lbl, is_done, is_sel)
+	row.add_child(title_lbl)
+
+	if has_note:
+		var ni = Label.new()
+		ni.text = ":"
+		ni.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		theme.apply_note_indicator_style(ni)
+		row.add_child(ni)
+
+	var del_btn = theme.make_delete_button("\u5220\u9664")
+	del_btn.pressed.connect(_on_pool_del.bind(sl))
+	row.add_child(del_btn)
+
+	sl.bound_hash = h
+
+func _refresh_list() -> void:
 	var todos = SettingsManager.get_todos()
 
 	if todos.is_empty():
-		var empty_box = CenterContainer.new()
-		empty_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		empty_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		empty_box.custom_minimum_size.y = 100
-		var lbl = Label.new()
-		lbl.text = "\u8fd8\u6ca1\u6709\u5f85\u529e\u54e6\n\u70b9\u51fb\u4e0a\u65b9\u6309\u94ae\u521b\u5efa\u4e00\u4e2a\u5427"
-		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		theme.apply_empty_hint_style(lbl)
-		empty_box.add_child(lbl)
-		list_box.add_child(empty_box)
+		_spacer.custom_minimum_size = Vector2(0, 100)
+		for sl in _pool: sl.card.visible = false
+		scroll.visible = false
+		_empty_hint.visible = true
 		_update_progress(todos)
 		_update_scroll_hints_deferred()
 		return
 
-	for i in range(todos.size()):
-		var t = todos[i]
-		var is_done: bool = t.get("done", false)
-		var is_selected: bool = (i == _selected_idx)
-		var has_note: bool = not t.get("notes", "").is_empty()
+	scroll.visible = true
+	_empty_hint.visible = false
+	_spacer.custom_minimum_size.y = todos.size() * _row_h
 
-		var card = PanelContainer.new()
-		var card_style = theme.make_card_style(is_done, is_selected)
-		card.add_theme_stylebox_override("panel", card_style)
+	var spacer_w = _spacer.size.x
+	if spacer_w <= 0: spacer_w = scroll.size.x
+	if spacer_w <= 0: spacer_w = 400
 
-		var cs_ref = card_style
-		var sel_ref = is_selected
-		var idx_sel = i
-		card.mouse_entered.connect(func():
-			if not sel_ref:
-				card.add_theme_stylebox_override("panel", theme.make_card_hover_style(cs_ref))
-		)
-		card.mouse_exited.connect(func():
-			if not sel_ref:
-				card.add_theme_stylebox_override("panel", cs_ref)
-		)
-		card.gui_input.connect(func(ev):
-			if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
-				_selected_idx = idx_sel
-				_refresh_list()
-				_refresh_right_panel()
-		)
+	var scroll_y = scroll.get_v_scroll_bar().value
+	var vp_h = scroll.size.y
+	if vp_h <= 0: vp_h = 400
 
-		var row = HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
-		row.alignment = BoxContainer.ALIGNMENT_CENTER
-		card.add_child(row)
+	var first = maxi(0, int(scroll_y / _row_h) - _POOL_BUFFER)
+	var last = mini(todos.size() - 1, int((scroll_y + vp_h) / _row_h) + _POOL_BUFFER)
 
-		var check_btn = theme.make_checkbox(is_done)
-		var idx_c = i
-		check_btn.pressed.connect(func(): _toggle_todo(idx_c))
-		row.add_child(check_btn)
+	var needed = last - first + 1
+	_ensure_pool(needed)
 
-		var title_lbl = Label.new()
-		title_lbl.text = t.get("text", "(\u672a\u547d\u540d)")
-		title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		title_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		title_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		theme.apply_card_title_style(title_lbl, is_done, is_selected)
-		row.add_child(title_lbl)
+	var slot_i = 0
+	for idx in range(first, last + 1):
+		_bind_slot(slot_i, idx, todos, spacer_w)
+		slot_i += 1
 
-		if has_note:
-			var ni = Label.new()
-			ni.text = ":"
-			ni.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			theme.apply_note_indicator_style(ni)
-			row.add_child(ni)
-
-		var del_btn = theme.make_delete_button("\u5220\u9664")
-		var idx_d = i
-		var card_ref = card
-		del_btn.pressed.connect(func(): _delete_todo_animated(idx_d, card_ref))
-		row.add_child(del_btn)
-
-		list_box.add_child(card)
+	for i in range(slot_i, _pool.size()):
+		_pool[i].card.visible = false
 
 	_update_progress(todos)
 	_update_scroll_hints_deferred()
@@ -547,6 +625,8 @@ func _on_add_pressed() -> void:
 	_selected_idx = todos.size() - 1
 	_refresh_list()
 	_refresh_right_panel()
+	# 滚动到底部显示新项
+	(func(): scroll.get_v_scroll_bar().value = scroll.get_v_scroll_bar().max_value).call_deferred()
 	note_title.grab_focus()
 	note_title.select_all()
 
@@ -570,12 +650,8 @@ func _delete_todo(idx: int) -> void:
 		_refresh_list()
 		_refresh_right_panel()
 
-func _delete_todo_animated(idx: int, card: Control) -> void:
-	card.pivot_offset = card.size / 2.0
-	var tw = create_tween().set_parallel(true)
-	tw.tween_property(card, "modulate:a", 0.0, 0.12)
-	tw.tween_property(card, "scale", Vector2(0.9, 0.9), 0.12)
-	tw.finished.connect(func(): _delete_todo(idx))
+func _delete_todo_animated(idx: int, _card: Control) -> void:
+	_delete_todo(idx)
 
 func _gen_id() -> String:
 	return "%d_%d" % [Time.get_unix_time_from_system(), randi()]
