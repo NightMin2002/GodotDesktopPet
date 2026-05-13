@@ -15,6 +15,16 @@ var stroll_enabled: bool = true      # 自主巡航特殊事件开关 (独立于
 var free_roam_enabled: bool = false   # 空间跳跃开关 (透明踏板攀升)
 var anti_gravity: bool = false       # 反重力模式
 var gravity_sign: float = 1.0        # 重力方向符号 (1.0=正常, -1.0=反转)
+
+## 视觉旋转角度 (物理旋转 + 反重力翻转)
+## 渲染宠物/全息屏等需跟随翻转的内容时，用这个替代 rotation
+var visual_rotation: float:
+	get: return rotation + (PI if anti_gravity else 0.0)
+
+## 反重力方向转换因子 (正常=1.0, 反重力=-1.0)
+## 将世界空间方向转为视觉空间方向时，乘以此因子
+var ag_flip: float:
+	get: return -1.0 if anti_gravity else 1.0
 var screen_wrap: bool = false        # 屏幕穿越模式 (左右边界环绕)
 var _wrap_ghost_offset: Vector2 = Vector2.ZERO  # 穿越时幽灵副本的世界偏移
 
@@ -418,10 +428,12 @@ func _process(delta: float) -> void:
 	movement.update(delta)
 	
 	# ── 瞳孔方向优先级决议 (唯一写入 forced_look_dir 的地方) ──
+	# ag_flip 转换全息屏的逻辑位置为视觉位置
+	var visual_side = holo_screen.side * ag_flip
 	if gaming.active:
-		eye_behavior.forced_look_dir = Vector2(holo_screen.side, 0.15)
+		eye_behavior.forced_look_dir = Vector2(visual_side, 0.15)
 	elif holo_screen.visible and holo_screen.is_terminal_mode:
-		eye_behavior.forced_look_dir = Vector2(holo_screen.side, 0.15)
+		eye_behavior.forced_look_dir = Vector2(visual_side, 0.15)
 	elif movement.is_active:
 		eye_behavior.forced_look_dir = movement.direction
 	else:
@@ -505,8 +517,9 @@ func _draw_body(world_offset: Vector2) -> void:
 	var squash_xform = squash.get_deformation_matrix()
 	
 	# 构建逆向与正向旋转，确保形变在世界坐标系方向生效，却在节点局部绘制空间进行
-	var r_mat = Transform2D(rotation, Vector2.ZERO)
-	var r_inv = Transform2D(-rotation, Vector2.ZERO)
+	# visual_rotation 已包含反重力翻转，无需额外处理
+	var r_mat = Transform2D(visual_rotation, Vector2.ZERO)
+	var r_inv = Transform2D(-visual_rotation, Vector2.ZERO)
 	var base_xform = r_inv * squash_xform * r_mat
 	
 	base_xform.origin += local_off
@@ -538,12 +551,12 @@ func _draw_body(world_offset: Vector2) -> void:
 	var blink = eye_behavior.get_blink_amount()
 	var iris_scale = 1.0 - blink * 0.95
 	if iris_scale > 0.05:
-		var iris_offset = eye_behavior.get_pupil_offset() * iris_scale
+		var iris_offset = eye_behavior.get_pupil_offset() * iris_scale * ag_flip
 		draw_circle(Vector2.ZERO, PET_RADIUS * 0.54 * iris_scale, palette.shift_color(Color(0.85, 0.88, 0.92, 1.0)), true, -1.0, true)
 		draw_circle(iris_offset, PET_RADIUS * 0.42 * iris_scale, palette.shift_color(Color(0.55, 0.65, 0.80, 1.0)), true, -1.0, true)
 		draw_circle(iris_offset, PET_RADIUS * 0.28 * iris_scale, palette.shift_color(Color(0.15, 0.28, 0.68, 1.0)), true, -1.0, true)
 		draw_circle(iris_offset, PET_RADIUS * 0.16 * iris_scale, palette.shift_color(Color(0.05, 0.08, 0.20, 1.0)), true, -1.0, true)
-		var highlight_offset = iris_offset + Vector2(-PET_RADIUS * 0.08, -PET_RADIUS * 0.10) * iris_scale
+		var highlight_offset = iris_offset + Vector2(-PET_RADIUS * 0.08, -PET_RADIUS * 0.10) * iris_scale * ag_flip
 		var highlight_fade = 1.0 - eye_behavior.get_drowsy_amount()
 		draw_circle(highlight_offset, PET_RADIUS * 0.11 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale * 0.85 * highlight_fade), true, -1.0, true)
 		draw_circle(highlight_offset, PET_RADIUS * 0.06 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale * highlight_fade), true, -1.0, true)
@@ -567,9 +580,8 @@ func _draw_body(world_offset: Vector2) -> void:
 	if drowsy > 0.01 and iris_scale > 0.05 and is_shutter:
 		var sclera_r = PET_RADIUS * 0.54 * iris_scale
 		var plate_color = palette.shift_color(Color(0.10, 0.15, 0.38, 1.0))
-		# 正常: 挡板从屏幕顶部向下合拢 (自然闭眼)
-		# 反重力: 挡板从屏幕底部向上合拢 (宠物"站在天花板上"闭眼, 而非悬挂耷拉)
-		_draw_eye_shutter(sclera_r, sclera_r * drowsy * 1.5, not anti_gravity, plate_color)
+		# 挡板从眼球顶部向下合拢 (反重力时整个眼球已翻转 180°，自动变为从底部向上)
+		_draw_eye_shutter(sclera_r, sclera_r * drowsy * 1.5, true, plate_color)
 
 func _on_trigger_squash_test(squash_style: int) -> void:
 	if squash_style < 0:

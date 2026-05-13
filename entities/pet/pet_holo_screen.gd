@@ -285,8 +285,8 @@ func render() -> void:
 	if not visible or _deploy_progress <= 0.0:
 		return
 	var hue = EventBus.ui_hue
-	# 在世界坐标系中绘制 (反旋转刚体旋转)
-	pet.draw_set_transform(Vector2.ZERO, -pet.rotation, Vector2.ONE)
+	# 在世界坐标系中绘制 (visual_rotation 已包含反重力翻转)
+	pet.draw_set_transform(Vector2.ZERO, -pet.visual_rotation, Vector2.ONE)
 
 	# 动态间距: 根据当前模式自适应平滑调整
 	var gap = _current_gap if _current_gap > 0.01 else pet.PET_RADIUS * GAP_TERMINAL
