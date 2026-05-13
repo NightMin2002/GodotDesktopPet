@@ -309,5 +309,38 @@ func apply_card_title_style(label: Label, is_done: bool, is_selected: bool) -> v
 		label.add_theme_color_override("font_color", tx_primary)
 
 func apply_title_label_style(l: Label) -> void:
-	l.add_theme_color_override("font_color", tx_primary)
 	l.add_theme_font_size_override("font_size", title_font_size + 2) # 稍微放大
+
+# ==========================================
+# 自定义滚动条：水波浪笔迹与胶带贴纸
+# ==========================================
+class _NotebookScrollbar extends TodoScrollbar:
+	var _rng := RandomNumberGenerator.new()
+
+	func _draw_track(track: Rect2) -> void:
+		_rng.seed = 444
+		var c = Color(_t.tx_primary, 0.15)
+		var cx = track.position.x + track.size.x * 0.5
+		# 水笔手画波浪线作为轨道
+		var pts = PackedVector2Array()
+		var y = track.position.y
+		var s = 0.0
+		while y <= track.end.y:
+			pts.append(Vector2(cx + sin(s)*2.0, y))
+			s += 0.8
+			y += 6.0
+		draw_polyline(pts, c, 1.2)
+
+	func _draw_thumb(thumb: Rect2) -> void:
+		# 像是一块彩色半透明的索引贴/胶带
+		var tape_c = Color(_t.accent, 0.6 if not _dragging else 0.9)
+		draw_rect(thumb, tape_c)
+		# 撕胶带锯齿边
+		_rng.seed = int(thumb.position.y) * 13
+		for y_offset in [0, thumb.size.y]:
+			var py = thumb.position.y + y_offset
+			for x in range(int(thumb.position.x), int(thumb.end.x), 2):
+				draw_line(Vector2(x, py), Vector2(x, py + _rng.randf_range(-2.5, 2.5)), tape_c, 2.0)
+
+func make_scrollbar() -> Control:
+	return _NotebookScrollbar.new(self)

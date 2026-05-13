@@ -288,3 +288,34 @@ func apply_card_title_style(label: Label, is_done: bool, is_selected: bool) -> v
 func apply_title_label_style(l: Label) -> void:
 	l.add_theme_color_override("font_color", tx_primary)
 	l.add_theme_font_size_override("font_size", title_font_size + 2)
+
+# ==========================================
+# 自定义滚动条：装订红绳与挂签标记
+# ==========================================
+class _CalendarScrollbar extends TodoScrollbar:
+	func _draw_track(track: Rect2) -> void:
+		var c = Color(_t.accent, 0.3)
+		var cx = track.position.x + track.size.x * 0.5
+		# 细细的穿书线绳
+		draw_line(Vector2(cx, track.position.y), Vector2(cx, track.end.y), c, 1.5)
+
+	func _draw_thumb(thumb: Rect2) -> void:
+		var c = _t.danger if _dragging else _t.accent
+		# 作为挂签（长条矩形，下面剪个燕尾口）
+		var p_x = thumb.position.x + 2
+		var p_w = thumb.size.x - 4
+		var pts = PackedVector2Array([
+			Vector2(p_x, thumb.position.y),
+			Vector2(p_x + p_w, thumb.position.y),
+			Vector2(p_x + p_w, thumb.end.y),
+			Vector2(p_x + p_w * 0.5, thumb.end.y - 6),
+			Vector2(p_x, thumb.end.y)
+		])
+		draw_polygon(pts, PackedColorArray([Color(c, 0.85)]))
+		draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[4], pts[0]]), Color(c, 0.95), 1.0)
+		
+		# 穿过绳的孔
+		draw_circle(Vector2(p_x + p_w*0.5, thumb.position.y + 6), 2, _t.bg_main)
+
+func make_scrollbar() -> Control:
+	return _CalendarScrollbar.new(self)

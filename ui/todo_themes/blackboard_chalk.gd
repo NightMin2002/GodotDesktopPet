@@ -406,7 +406,39 @@ func apply_card_title_style(label: Label, is_done: bool, is_selected: bool) -> v
 	label.add_theme_font_size_override("font_size", item_font_size)
 	if is_done: 
 		label.add_theme_color_override("font_color", Color(tx_primary, 0.35))
-	elif is_selected: 
-		label.add_theme_color_override("font_color", accent)
 	else: 
 		label.add_theme_color_override("font_color", tx_primary)
+
+# ==========================================
+# 自定义滚动条：粉笔痕与粉笔灰
+# ==========================================
+class _ChalkScrollbar extends TodoScrollbar:
+	var _rng := RandomNumberGenerator.new()
+
+	func _draw_track(track: Rect2) -> void:
+		_rng.seed = 333
+		var c = Color(_t.tx_primary, 0.15)
+		var cx = track.position.x + track.size.x * 0.5
+		# 粗糙的粉笔痕迹垂直线
+		for i in range(2):
+			var pts = PackedVector2Array()
+			var y = track.position.y
+			while y <= track.end.y:
+				pts.append(Vector2(cx + _rng.randf_range(-1.5, 1.5), y))
+				y += 10.0
+			pts.append(Vector2(cx, track.end.y))
+			draw_polyline(pts, c, 1.5)
+
+	func _draw_thumb(thumb: Rect2) -> void:
+		_rng.seed = int(thumb.position.y) * 10
+		var chalk_c = Color(_t.tx_primary, 0.8)
+		if _dragging: chalk_c = _t.accent
+		# 画一堆密集的粉笔灰颗粒形成拇指块
+		for i in range(25):
+			var p = thumb.position + Vector2(_rng.randf_range(2, thumb.size.x-2), _rng.randf_range(2, thumb.size.y-2))
+			var r = _rng.randf_range(1.0, 3.0)
+			var a = _rng.randf_range(0.3, 0.9) if not _dragging else 1.0
+			draw_circle(p, r, Color(chalk_c, a))
+
+func make_scrollbar() -> Control:
+	return _ChalkScrollbar.new(self)

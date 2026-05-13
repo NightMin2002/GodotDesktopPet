@@ -362,3 +362,36 @@ func apply_card_title_style(label: Label, is_done: bool, is_selected: bool) -> v
 func apply_title_label_style(l: Label) -> void:
 	l.add_theme_color_override("font_color", accent)
 	l.add_theme_font_size_override("font_size", title_font_size)
+
+# ==========================================
+# 自定义滚动条：霓虹光导纤维与扫描块
+# ==========================================
+class _CyberScrollbar extends TodoScrollbar:
+	func _draw_track(track: Rect2) -> void:
+		var c = Color(_t.accent, 0.15)
+		var cx = track.position.x + track.size.x * 0.5
+		# 发光数据轨道
+		draw_line(Vector2(cx, track.position.y), Vector2(cx, track.end.y), c, 1.0)
+		for y in range(int(track.position.y), int(track.end.y), 30):
+			draw_line(Vector2(cx-2, y), Vector2(cx+2, y), c, 1.0)
+
+	func _draw_thumb(thumb: Rect2) -> void:
+		var c = _t.accent if _dragging else Color(_t.accent, 0.6)
+		# 扫描器主体
+		draw_rect(thumb, Color(c, 0.3))
+		draw_line(thumb.position, Vector2(thumb.end.x, thumb.position.y), c, 2.0)
+		draw_line(Vector2(thumb.position.x, thumb.end.y), thumb.end, c, 2.0)
+		# 侧边高亮三角箭头指示器
+		var m_y = thumb.position.y + thumb.size.y * 0.5
+		var pts = PackedVector2Array([
+			Vector2(thumb.end.x - 2, m_y - 4),
+			Vector2(thumb.end.x + 2, m_y),
+			Vector2(thumb.end.x - 2, m_y + 4)
+		])
+		draw_polygon(pts, PackedColorArray([c]))
+		
+		if _dragging:
+			draw_rect(thumb.grow(2), Color(c, 0.15), false, 1.0)
+
+func make_scrollbar() -> Control:
+	return _CyberScrollbar.new(self)

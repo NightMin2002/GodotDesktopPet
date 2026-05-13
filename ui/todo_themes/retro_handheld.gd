@@ -305,3 +305,28 @@ func apply_card_title_style(label: Label, is_done: bool, is_selected: bool) -> v
 func apply_title_label_style(l: Label) -> void:
 	l.add_theme_color_override("font_color", tx_primary)
 	l.add_theme_font_size_override("font_size", title_font_size) 
+
+# ==========================================
+# 自定义滚动条：LCD格栅轨道与塑料推框
+# ==========================================
+class _RetroScrollbar extends TodoScrollbar:
+	func _draw_track(track: Rect2) -> void:
+		var c = Color(_t.tx_primary, 0.15)
+		var cx = track.position.x + track.size.x * 0.5
+		# 像素空心圆点阵轨道
+		var y = track.position.y + 4
+		while y <= track.end.y - 4:
+			draw_rect(Rect2(cx - 1, y - 1, 2, 2), c)
+			y += 8
+
+	func _draw_thumb(thumb: Rect2) -> void:
+		var c = _t.tx_primary if _dragging else Color(_t.tx_primary, 0.6)
+		# 物理推拉滑块感：深色底，强调色边框和防滑槽
+		draw_rect(thumb, Color(_t.tx_primary, 0.1))
+		draw_rect(thumb, c, false, 2.0)
+		var my = thumb.position.y + thumb.size.y * 0.5
+		draw_line(Vector2(thumb.position.x + 2, my - 3), Vector2(thumb.end.x - 2, my - 3), c, 2.0)
+		draw_line(Vector2(thumb.position.x + 2, my + 3), Vector2(thumb.end.x - 2, my + 3), c, 2.0)
+
+func make_scrollbar() -> Control:
+	return _RetroScrollbar.new(self)

@@ -270,3 +270,31 @@ func apply_card_title_style(label: Label, is_done: bool, is_selected: bool) -> v
 func apply_title_label_style(l: Label) -> void:
 	l.add_theme_color_override("font_color", tx_primary)
 	l.add_theme_font_size_override("font_size", title_font_size)
+
+# ==========================================
+# 自定义滚动条：虚线打印切痕与条形码滑块
+# ==========================================
+class _ReceiptScrollbar extends TodoScrollbar:
+	func _draw_track(track: Rect2) -> void:
+		var c = Color(_t.tx_primary, 0.15)
+		var cx = track.position.x + track.size.x * 0.5
+		# 打印小票边缘的连续穿孔虚线
+		var y = track.position.y
+		while y <= track.end.y:
+			draw_line(Vector2(cx, y), Vector2(cx, y + 4), c, 2.0)
+			y += 8.0
+
+	func _draw_thumb(thumb: Rect2) -> void:
+		var c = _t.tx_primary if _dragging else Color(_t.tx_primary, 0.4)
+		# 条形码样式的滑块
+		var rng = RandomNumberGenerator.new()
+		rng.seed = 999
+		var py = thumb.position.y + 4
+		while py <= thumb.end.y - 4:
+			var h = rng.randf_range(1, 3.5)
+			if py + h > thumb.end.y - 4: break
+			draw_line(Vector2(thumb.position.x + 2, py), Vector2(thumb.end.x - 2, py), c, h)
+			py += h + rng.randf_range(1.5, 3.5)
+
+func make_scrollbar() -> Control:
+	return _ReceiptScrollbar.new(self)

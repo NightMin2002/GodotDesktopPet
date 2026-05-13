@@ -281,3 +281,37 @@ func apply_card_title_style(label: Label, is_done: bool, is_selected: bool) -> v
 		label.add_theme_color_override("font_color", accent)
 	else:
 		label.add_theme_color_override("font_color", tx_primary)
+
+# ==========================================
+# 自定义滚动条：游标卡尺/测绘标尺
+# ==========================================
+class _BlueprintScrollbar extends TodoScrollbar:
+	func _draw_track(track: Rect2) -> void:
+		var c = Color(_t.bd_light, 0.4)
+		var cx = track.end.x - 2
+		# 绘制靠右的测绘基线
+		draw_line(Vector2(cx, track.position.y), Vector2(cx, track.end.y), c, 1.0)
+		# 绘制刻度
+		var y = track.position.y
+		var i = 0
+		while y <= track.end.y:
+			var tw = 6.0 if i % 5 == 0 else 3.0
+			draw_line(Vector2(cx - tw, y), Vector2(cx, y), c, 1.0)
+			y += 5.0
+			i += 1
+
+	func _draw_thumb(thumb: Rect2) -> void:
+		var c = _t.accent
+		var fc = Color(c, 0.5) if not _dragging else Color(c, 0.8)
+		# 绘制建筑图纸上的指向性三角滑标
+		var m_y = thumb.position.y + thumb.size.y * 0.5
+		var pts = PackedVector2Array([
+			Vector2(thumb.position.x, m_y - 6),
+			Vector2(thumb.end.x - 2, m_y),
+			Vector2(thumb.position.x, m_y + 6)
+		])
+		draw_polygon(pts, PackedColorArray([fc]))
+		draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[0]]), c, 1.5)
+
+func make_scrollbar() -> Control:
+	return _BlueprintScrollbar.new(self)
