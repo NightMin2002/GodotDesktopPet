@@ -151,6 +151,10 @@ func create_panel() -> PanelContainer:
 	match border_style:
 		"bracket": return _BracketPanel.new(self)
 		"glass":   return _GlassPanel.new(self)
+		"blueprint": return _BlueprintPanel.new(self)
+		"cyber":   return _CyberPanel.new(self)
+		"paper":   return _PaperPanel.new(self)
+		"blackboard": return _BlackboardPanel.new(self)
 		_:         return _PixelPanel.new(self)
 
 func update_panel_hue(panel: PanelContainer, hue: float) -> void:
@@ -252,6 +256,228 @@ class _GlassPanel extends PanelContainer:
 		_title_sb.bg_color = _t.bg_title
 		draw_style_box(_title_sb, Rect2(2, 2, r.size.x - 4, th))
 		draw_line(Vector2(2, 2 + th), Vector2(r.size.x - 2, 2 + th), Color.from_hsv(hn, 0.3, 0.8, 0.12))
+
+# ── 蓝图线框 (Blueprint) ──
+class _BlueprintPanel extends PanelContainer:
+	var _t: TodoThemeBase
+	func _init(t: TodoThemeBase) -> void: _t = t
+	func _ready() -> void: TodoThemeBase._setup_panel(self)
+	func _draw() -> void:
+		var r = Rect2(Vector2.ZERO, size)
+		draw_rect(r, _t.bg_main)
+		
+		# 网格底纹
+		var grid_c = Color(_t.accent, 0.15)
+		var bs := 24.0
+		var x := 0.0
+		while x < r.size.x:
+			draw_line(Vector2(x, 0), Vector2(x, r.size.y), grid_c, 1.0)
+			x += bs
+		var y := 0.0
+		while y < r.size.y:
+			draw_line(Vector2(0, y), Vector2(r.size.x, y), grid_c, 1.0)
+			y += bs
+			
+		# 外围细边框与内导角
+		var bd = Color(_t.bd_light, 0.7)
+		draw_rect(r, bd, false, 1.0)
+		draw_rect(Rect2(r.position + Vector2(4, 4), r.size - Vector2(8, 8)), bd, false, 1.0)
+		
+		# 四角基准线 (十字穿透式)
+		var ch := 12.0
+		var corners = [
+			Vector2(4, 4), Vector2(r.size.x - 4, 4),
+			Vector2(4, r.size.y - 4), Vector2(r.size.x - 4, r.size.y - 4)
+		]
+		for c in corners:
+			draw_line(c - Vector2(ch, 0), c + Vector2(ch, 0), bd, 1.0)
+			draw_line(c - Vector2(0, ch), c + Vector2(0, ch), bd, 1.0)
+			
+		# 标题栏
+		var th := _t.title_bar_height
+		draw_rect(Rect2(5, 5, r.size.x - 10, th), _t.bg_title)
+		draw_line(Vector2(5, 5 + th), Vector2(r.size.x - 5, 5 + th), Color(_t.accent, 0.45))
+
+# ── 赛博荧光 (Cyber Neon) ──
+class _CyberPanel extends PanelContainer:
+	var _t: TodoThemeBase
+	func _init(t: TodoThemeBase) -> void: _t = t
+	func _ready() -> void: TodoThemeBase._setup_panel(self)
+	func _draw() -> void:
+		var r = Rect2(Vector2.ZERO, size)
+		
+		# 构建带有双侧斜倒角的六边形几何体
+		var cl := 25.0 # Chamfer size
+		var pts = PackedVector2Array([
+			Vector2(cl, 0), Vector2(r.size.x, 0),
+			Vector2(r.size.x, r.size.y - cl), Vector2(r.size.x - cl, r.size.y),
+			Vector2(0, r.size.y), Vector2(0, cl)
+		])
+		
+		# 填充深色机能背景
+		draw_colored_polygon(pts, _t.bg_main)
+		
+		# 闭合线条环用于描边
+		var loop_pts = pts.duplicate()
+		loop_pts.append(pts[0])
+		
+		# 发光边框管线 (多次透明度叠连)
+		var passes = 3
+		var base_alpha = 0.45
+		for i in range(passes, 0, -1):
+			var w = float(i) * 3.0
+			var a = base_alpha / float(i * i)
+			draw_polyline(loop_pts, Color(_t.accent, a), w)
+			
+		# 中心实线
+		draw_polyline(loop_pts, Color(_t.accent, 0.85), 1.5)
+		
+		# 标题栏区域也用多边形避免斜角处溢出
+		var th := _t.title_bar_height
+		var title_pts = PackedVector2Array([
+			Vector2(cl, 0), Vector2(r.size.x, 0),
+			Vector2(r.size.x, th + 2), Vector2(0, th + 2), Vector2(0, cl)
+		])
+		draw_colored_polygon(title_pts, _t.bg_title)
+		
+		# 装饰性危险色斑块条
+		var dec_c = Color(_t.danger, 0.7)
+		draw_line(Vector2(0, th + 2), Vector2(r.size.x, th + 2), Color(_t.accent, 0.4), 2.0)
+		draw_line(Vector2(r.size.x - 45, r.size.y - 2), Vector2(r.size.x - cl - 10, r.size.y - 2), dec_c, 3.0)
+		draw_line(Vector2(2, cl + 15), Vector2(2, 60), dec_c, 3.0)
+
+# ── 便笺纸质 (Paper Note) ──
+class _PaperPanel extends PanelContainer:
+	var _t: TodoThemeBase
+	func _init(t: TodoThemeBase) -> void: _t = t
+	func _ready() -> void: TodoThemeBase._setup_panel(self)
+	func _draw() -> void:
+		var r = Rect2(Vector2.ZERO, size)
+		
+		# 底部粗糙阴影
+		var shadow_offset = Vector2(6, 8)
+		draw_rect(Rect2(r.position + shadow_offset, r.size), Color(0, 0, 0, 0.12))
+		
+		# 卡纸主体
+		draw_rect(r, _t.bg_main)
+		
+		# 左侧红色笔记警戒线 (双线)
+		var margin_x = 55.0
+		draw_line(Vector2(margin_x, 0), Vector2(margin_x, r.size.y), Color(_t.danger, 0.5), 2.0)
+		draw_line(Vector2(margin_x + 8, 0), Vector2(margin_x + 8, r.size.y), Color(_t.danger, 0.25), 1.0)
+		
+		# 横向蓝色划线
+		var lh := 34.0
+		var y := _t.title_bar_height + 25.0
+		var line_color = Color(_t.accent, 0.2)
+		while y < r.size.y:
+			draw_line(Vector2(0, y), Vector2(r.size.x, y), line_color, 1.0)
+			y += lh
+			
+		# 顶部打孔装订区域
+		var th := _t.title_bar_height
+		draw_rect(Rect2(0, 0, r.size.x, th), _t.bg_title)
+		
+		# 装订孔洞
+		var hole_y = th / 2.0
+		for i in range(20):
+			var hx = margin_x + 30 + i * 45
+			if hx < r.size.x - 20:
+				draw_circle(Vector2(hx, hole_y), 6.0, Color(0, 0, 0, 0.15))
+				draw_circle(Vector2(hx, hole_y - 1), 6.0, Color(0, 0, 0, 0.3))
+
+# ── 黑板和粉笔 (Blackboard) ──
+class _BlackboardPanel extends PanelContainer:
+	var _t: TodoThemeBase
+	func _init(t: TodoThemeBase) -> void: _t = t
+	func _ready() -> void: TodoThemeBase._setup_panel(self)
+	func _draw() -> void:
+		var r = Rect2(Vector2.ZERO, size)
+		
+		# 1. 绘制木制边框底色 (实心外框)
+		var wood_c = Color(0.35, 0.22, 0.14)
+		draw_rect(r, wood_c)
+		
+		# 2. 内切黑板底色 (深墨绿)
+		var bs := 10.0 # 边框厚度
+		var board_r = r.grow(-bs)
+		draw_rect(board_r, _t.bg_main)
+		
+		# 3. 木框立体感阴影
+		draw_line(Vector2(bs, bs), Vector2(r.size.x - bs, bs), Color(0,0,0, 0.6), 2.0)
+		draw_line(Vector2(bs, bs), Vector2(bs, r.size.y - bs), Color(0,0,0, 0.6), 2.0)
+		draw_line(Vector2(bs, r.size.y - bs), Vector2(r.size.x - bs, r.size.y - bs), Color(1,1,1, 0.15), 2.0)
+		draw_line(Vector2(r.size.x - bs, bs), Vector2(r.size.x - bs, r.size.y - bs), Color(1,1,1, 0.15), 2.0)
+		
+		# 4. 模拟粉笔黑板擦痕迹 (利用固定种子的随机大面积低透明度椭圆)
+		var rng = RandomNumberGenerator.new()
+		rng.seed = 8848 # 固定种子保持擦痕每次打开完全一致
+		var dust_c = Color(1.0, 1.0, 1.0, 0.012)
+		for i in range(25):
+			var cx = rng.randf_range(bs, r.size.x - bs)
+			var cy = rng.randf_range(bs, r.size.y - bs)
+			var rad = rng.randf_range(30, 90)
+			var pts = PackedVector2Array()
+			var a_c = rng.randf_range(0.6, 1.8) # 拉伸实现横向/纵向擦抹轨迹
+			for ang in range(0, 360, 30):
+				var rad_ang = deg_to_rad(ang)
+				pts.append(Vector2(cx + cos(rad_ang) * rad * a_c, cy + sin(rad_ang) * rad))
+			draw_polygon(pts, PackedColorArray([dust_c]))
+			
+		# 5. 零散手绘涂鸦底纹 (增添黑板写擦过后的真实生活感，放大尺寸)
+		var dc = Color(1.0, 1.0, 1.0, 0.09) # 稍微加厚不透明度，加大视觉冲击
+		
+		# 涂鸦 A：右上角的弹簧线圈物理练习图示（大幅拉伸）
+		var p1 = PackedVector2Array()
+		var cx1 = r.size.x * 0.70
+		var cy1 = r.size.y * 0.22
+		for a in range(0, 1200, 15):
+			var rr = deg_to_rad(a)
+			p1.append(Vector2(cx1 + a * 0.09 + cos(rr)*16, cy1 + sin(rr)*26))
+		if p1.size() >= 2: draw_polyline(p1, dc, 2.5)
+		
+		# 涂鸦 B：左下角微积分积分号与乱涂变量（狂放的尺度）
+		var p2 = PackedVector2Array()
+		var cx2 = r.size.x * 0.14
+		var cy2 = r.size.y * 0.78
+		p2.append(Vector2(cx2+5, cy2-35))
+		p2.append(Vector2(cx2-12, cy2+20))
+		p2.append(Vector2(cx2-5, cy2+28))
+		p2.append(Vector2(cx2+45, cy2-25)) # 夸张提笔飞线
+		p2.append(Vector2(cx2+40, cy2-30))
+		p2.append(Vector2(cx2+25, cy2+8))
+		draw_polyline(p2, dc, 3.0)
+		draw_line(Vector2(cx2+60, cy2-8), Vector2(cx2+80, cy2-8), dc, 2.5) # 大一号的等号 =
+		draw_line(Vector2(cx2+60, cy2+2), Vector2(cx2+80, cy2+2), dc, 2.5)
+		draw_line(Vector2(cx2+100, cy2-15), Vector2(cx2+120, cy2+5), dc, 2.5) # 大一号的 X 变量
+		draw_line(Vector2(cx2+120, cy2-15), Vector2(cx2+100, cy2+5), dc, 2.5)
+
+		# 涂鸦 C：右下方的井字棋残局 (呼应并且画得十分豪放)
+		var tl = Vector2(r.size.x * 0.65, r.size.y * 0.78)
+		var l3 = 35.0
+		var p3_lines = [
+			[Vector2(-l3, -12), Vector2(l3, -8)], [Vector2(-l3, 16), Vector2(l3, 18)],
+			[Vector2(-15, -l3), Vector2(-12, l3)], [Vector2(16, -l3), Vector2(18, l3)]
+		]
+		for L in p3_lines: draw_line(tl + L[0], tl + L[1], dc, 3.0)
+		var p3c = PackedVector2Array() # 画个大 O
+		for a in range(0, 380, 20): p3c.append(tl + Vector2(25, -22) + Vector2(cos(deg_to_rad(a))*12, sin(deg_to_rad(a))*14))
+		draw_polyline(p3c, dc, 2.5)
+		# 画个大 X 飞出框
+		draw_line(tl + Vector2(-35, -35), tl + Vector2(-5, -5), dc, 2.5)
+		draw_line(tl + Vector2(-10, -35), tl + Vector2(-40, -5), dc, 2.5)
+			
+		# 6. 手绘感标题栏粉笔横线
+		var th = _t.title_bar_height
+		var ty = bs + th
+		# 画三根稍微交错相叠和起伏的线，模拟手工用粉笔画出的非完美粗线
+		var chalk_c = Color(_t.tx_primary, 0.5)
+		draw_line(Vector2(bs + 10, ty - 1.5), Vector2(r.size.x - bs - 10, ty + 1.5), chalk_c, 2.0)
+		draw_line(Vector2(bs + 8, ty + 1.0), Vector2(r.size.x - bs - 12, ty - 1.0), chalk_c, 1.5)
+		draw_line(Vector2(bs + 12, ty), Vector2(r.size.x - bs - 8, ty + 0.5), chalk_c, 1.0)
+
+
+
 
 # ═══════════════════════════════════════════════
 #  组件工厂

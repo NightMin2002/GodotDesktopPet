@@ -7,8 +7,8 @@ extends CanvasLayer
 #  主题注册表
 # ═══════════════════════════════════════════════
 
-const _THEME_IDS   := ["retro_gray", "dark_terminal", "holo_glass"]
-const _THEME_NAMES := ["\u7070\u767d", "\u7ec8\u7aef", "\u5168\u606f"]
+const _THEME_IDS   := ["retro_gray", "dark_terminal", "holo_glass", "blueprint_draft", "neon_cyber", "paper_note", "blackboard_chalk"]
+const _THEME_NAMES := ["\u7070\u767d", "\u7ec8\u7aef", "\u5168\u606f", "\u84dd\u56fe", "\u8367\u5149", "\u4fbf\u7b3a", "\u9ed1\u677f"]
 
 var theme: TodoThemeBase
 var _current_theme_idx: int = 0
@@ -67,6 +67,10 @@ func _create_theme(idx: int) -> TodoThemeBase:
 	match idx:
 		1: return TodoThemeDarkTerminal.new()
 		2: return TodoThemeHoloGlass.new()
+		3: return TodoThemeBlueprintDraft.new()
+		4: return TodoThemeNeonCyber.new()
+		5: return TodoThemePaperNote.new()
+		6: return TodoThemeBlackboardChalk.new()
 		_: return TodoThemeRetroGray.new()
 
 func _calc_panel_size() -> void:
