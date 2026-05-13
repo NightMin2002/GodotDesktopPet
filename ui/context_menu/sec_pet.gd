@@ -1,4 +1,4 @@
-# sec_pet.gd — 宠物分区 (构建 + 回调 + 分身 + profile + records)
+# sec_pet.gd — 宠物分区 (构建 + 回调 + 分身 + profile + terminal)
 extends RefCounted
 
 var ctx  # ContextMenu 引用
@@ -12,7 +12,6 @@ var _profile_btn: Button
 var _deploy_clone_btn: Button
 var _dismiss_btn: Button
 var _profile_labels: Dictionary = {}
-var _records_container: VBoxContainer = null
 
 # ── 碎碎念 ──
 const CHATTER_MODE_LABELS := ["碎碎念 · 已关闭 [+]", "碎碎念 · 每30分钟 [+]", "碎碎念 · 每60分钟 [+]"]
@@ -52,9 +51,7 @@ func build() -> void:
 	vbox.add_child(_profile_btn)
 	ctx._bind_l3_trigger(_profile_btn, "pet_profile", "sec_pet")
 
-	var records_btn = ctx._make_menu_btn("对局记录 [+]", Color(0.2, 0.85, 1.0, 1))
-	vbox.add_child(records_btn)
-	ctx._bind_l3_trigger(records_btn, "game_records", "sec_pet")
+
 
 	var terminal_btn = ctx._make_menu_btn("个人终端 [+]", Color(0.2, 0.85, 1.0, 1))
 	vbox.add_child(terminal_btn)
@@ -77,8 +74,6 @@ func build() -> void:
 	_build_clone_l3_panel()
 	# L3: 经验等级
 	_build_profile_panel()
-	# L3: 游戏战绩
-	_build_records_l3_panel()
 	# L3: 个人终端
 	_build_terminal_l3_panel()
 
@@ -282,111 +277,6 @@ func _get_pet() -> Node:
 		return main_n.pet_instances[0]
 	return null
 
-# ── 游戏战绩 (Records) ──
-
-func _build_records_l3_panel() -> void:
-	var panel = ctx._submenu._make_panel()
-	panel.custom_minimum_size = Vector2(200, 0)
-
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 4)
-	panel.add_child(vbox)
-	_records_container = vbox
-
-	# 初始化按钮
-	var reset_btn = Button.new()
-	reset_btn.text = "初始化对局数据"
-	reset_btn.add_theme_font_size_override("font_size", 11)
-	var btn_style = StyleBoxFlat.new()
-	btn_style.bg_color = Color(0.2, 0.12, 0.12, 0.6)
-	btn_style.set_corner_radius_all(4)
-	btn_style.content_margin_left = 6
-	btn_style.content_margin_right = 6
-	btn_style.content_margin_top = 2
-	btn_style.content_margin_bottom = 2
-	reset_btn.add_theme_stylebox_override("normal", btn_style)
-	var btn_hover = btn_style.duplicate()
-	btn_hover.bg_color = Color(0.35, 0.15, 0.15, 0.8)
-	reset_btn.add_theme_stylebox_override("hover", btn_hover)
-	reset_btn.add_theme_color_override("font_color", Color(0.8, 0.4, 0.4, 0.8))
-	reset_btn.pressed.connect(_on_reset_records)
-	vbox.add_child(reset_btn)
-
-	panel.mouse_entered.connect(func(): ctx._submenu.on_l3_panel_enter())
-	panel.mouse_exited.connect(func(): ctx._submenu.on_l3_panel_exit())
-	ctx.add_child(panel)
-	ctx._submenu.l3_panels["game_records"] = panel
-	ctx._submenu._l3_parent_map["game_records"] = "sec_pet"
-
-func refresh_records() -> void:
-	if not _records_container:
-		return
-	var children = _records_container.get_children()
-	for i in range(children.size() - 1):
-		children[i].queue_free()
-
-	var dim_color = Color(0.4, 0.5, 0.6, 0.6)
-	var val_color = Color(0.6, 0.75, 0.9, 0.85)
-	var insert_idx = 0
-
-	for g_id in ["2048", "snake", "minesweeper", "tic_tac_toe"]:
-		var g_name = {"2048": "2048", "snake": "贪吃蛇", "minesweeper": "扫雷", "tic_tac_toe": "井字棋"}[g_id]
-		var title = Label.new()
-		title.text = g_name
-		title.add_theme_font_size_override("font_size", 12)
-		title.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.4, 0.9, 0.9))
-		title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_records_container.add_child(title)
-		_records_container.move_child(title, insert_idx)
-		insert_idx += 1
-
-		if g_id == "tic_tac_toe":
-			var w = SettingsManager.get_int("game_tic_tac_toe_wins", 0)
-			var l = SettingsManager.get_int("game_tic_tac_toe_losses", 0)
-			var d = SettingsManager.get_int("game_tic_tac_toe_draws", 0)
-			insert_idx = _add_record_row("  胜 %d  负 %d  平 %d" % [w, l, d], dim_color, insert_idx)
-		else:
-			for side in ["我", "宠"]:
-				var prefix = "game_%s_" % g_id if side == "我" else "game_%s_auto_" % g_id
-				var txt = "  %s: " % side
-				match g_id:
-					"2048":
-						var best = SettingsManager.get_int(prefix + "best", 0)
-						var tile = SettingsManager.get_int(prefix + "best_tile", 0)
-						txt += "最高 %d" % best
-						if tile > 0:
-							txt += "  最大块 %d" % tile
-					"snake":
-						var bl = SettingsManager.get_int(prefix + "best_len", 3)
-						var gm = SettingsManager.get_int(prefix + "games", 0)
-						txt += "最长 %d  局数 %d" % [bl, gm]
-					"minesweeper":
-						var w = SettingsManager.get_int(prefix + "wins", 0)
-						var l = SettingsManager.get_int(prefix + "losses", 0)
-						txt += "通关 %d  触雷 %d" % [w, l]
-				insert_idx = _add_record_row(txt, val_color if side == "我" else dim_color, insert_idx)
-
-func _add_record_row(text: String, color: Color, idx: int) -> int:
-	var row = Label.new()
-	row.text = text
-	row.add_theme_font_size_override("font_size", 11)
-	row.add_theme_color_override("font_color", color)
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_records_container.add_child(row)
-	_records_container.move_child(row, idx)
-	return idx + 1
-
-func _on_reset_records() -> void:
-	var keys_to_clear = []
-	for gid in ["2048", "minesweeper", "snake", "tic_tac_toe"]:
-		for suffix in ["wins", "losses", "best", "best_len", "best_tile", "games", "draws"]:
-			keys_to_clear.append("game_%s_%s" % [gid, suffix])
-			keys_to_clear.append("game_%s_auto_%s" % [gid, suffix])
-	for key in keys_to_clear:
-		SettingsManager.set_int(key, 0)
-	refresh_records()
-	var pet_node = _get_pet()
-	if pet_node: pet_node.show_local_bubble("对局数据已清除。...确认归零。")
 
 # ── 个人终端 ──
 

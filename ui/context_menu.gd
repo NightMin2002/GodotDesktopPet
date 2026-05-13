@@ -23,6 +23,7 @@ const SecSystem = preload("res://ui/context_menu/sec_system.gd")
 @onready var sec_visual_btn: Button = $HUDPanel/Margin/VBox/SecVisualBtn
 @onready var sec_play_btn: Button = $HUDPanel/Margin/VBox/SecPlayBtn
 @onready var sec_system_btn: Button = $HUDPanel/Margin/VBox/SecSystemBtn
+@onready var profile_btn: Button = $HUDPanel/Margin/VBox/ProfileBtn
 @onready var quit_btn: Button = $HUDPanel/Margin/VBox/QuitBtn
 
 # ── 子系统 ──
@@ -65,6 +66,8 @@ func _ready() -> void:
 	_build_all_sections()
 
 	# 胶囊按钮样式
+	_apply_capsule_style(profile_btn, Color(0.08, 0.15, 0.28, 0.65), Color(0.2, 0.6, 0.85, 0.5))
+	profile_btn.pressed.connect(func(): _close_and_emit(EventBus.show_pet_profile))
 	_apply_capsule_style(quit_btn, Color(0.35, 0.1, 0.1, 0.65), Color(0.8, 0.3, 0.3, 0.5))
 
 	# 分区色 — 给每个主菜单按钮左侧加彩色条纹
@@ -329,7 +332,6 @@ func _on_show_context_menu(target_node: Node2D) -> void:
 	hud.position = panel_pos
 	hud.modulate.a = 0.0
 	_sec_pet.refresh_profile()
-	_sec_pet.refresh_records()
 	hud.show()
 
 	_sidebar.refresh()

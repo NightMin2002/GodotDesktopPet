@@ -95,6 +95,16 @@ func save_reminders(list: Array) -> void:
 	_config.set_value("reminders", "list", list)
 	_config.save(SETTINGS_PATH)
 
+## ── 首次启用日期 ──
+
+func get_first_launch_date() -> String:
+	var saved = _config.get_value("profile", "first_launch", "")
+	if saved == "":
+		saved = Time.get_datetime_string_from_system(false, true)  # 本地时间, 含时分秒
+		_config.set_value("profile", "first_launch", saved)
+		_config.save(SETTINGS_PATH)
+	return saved
+
 ## 待办事项数据存取
 ## 格式: [{"id": "uuid", "text": "任务内容", "done": false, "created": "2025-05-12"}, ...]
 

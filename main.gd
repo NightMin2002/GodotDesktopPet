@@ -85,6 +85,10 @@ func _ready() -> void:
 	_setup_theme_panel()
 	_setup_platform_style_panel()
 	_setup_game_system()
+	_setup_pet_profile_panel()
+	
+	# 触发首次启用日期记录 (首次运行时自动写入)
+	SettingsManager.get_first_launch_date()
 	
 	# 监听屏幕穿越开关
 	EventBus.setting_toggled.connect(_on_main_setting_toggled)
@@ -415,6 +419,15 @@ func _setup_game_system() -> void:
 				game_mgr.launch_game_auto(game_id, pet_instance)
 		)
 		print("[DesktopPet] 游戏系统已就绪 (", game_mgr.get_installed_games().size(), " 个游戏)")
+
+# ── 宠物档案面板 ──
+
+func _setup_pet_profile_panel() -> void:
+	var script = load("res://ui/pet_profile_panel.gd")
+	if script:
+		var node = CanvasLayer.new()
+		node.set_script(script)
+		add_child(node)
 
 # ── 任务栏样式守护 ──
 
