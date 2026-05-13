@@ -1,14 +1,13 @@
 # todo_panel.gd — 待办清单面板 (主从双栏)
 # 左栏: 待办列表 | 右栏: 选中项目的备注
-# 视觉样式由 todo_themes/ 下的主题模块提供
+# 视觉样式由 TodoThemeBase 及其子类提供
 extends CanvasLayer
 
 # ═══════════════════════════════════════════════
-#  主题注册表
+#  主题注册表 — 新增主题只需往这两个数组加一条
 # ═══════════════════════════════════════════════
 
-const _THEME_IDS   := ["retro_gray", "dark_terminal", "holo_glass", "blueprint_draft", "neon_cyber", "paper_note", "blackboard_chalk"]
-const _THEME_NAMES := ["\u7070\u767d", "\u7ec8\u7aef", "\u5168\u606f", "\u84dd\u56fe", "\u8367\u5149", "\u4fbf\u7b3a", "\u9ed1\u677f"]
+const _THEME_NAMES := ["默认", "黑板"]
 
 var theme: TodoThemeBase
 var _current_theme_idx: int = 0
@@ -50,7 +49,7 @@ var _panel_h: float = 600
 
 func _ready() -> void:
 	_current_theme_idx = SettingsManager.get_int("todo_theme", 0)
-	if _current_theme_idx < 0 or _current_theme_idx >= _THEME_IDS.size():
+	if _current_theme_idx < 0 or _current_theme_idx >= _THEME_NAMES.size():
 		_current_theme_idx = 0
 	theme = _create_theme(_current_theme_idx)
 	_calc_panel_size()
@@ -65,13 +64,17 @@ func _ready() -> void:
 
 func _create_theme(idx: int) -> TodoThemeBase:
 	match idx:
-		1: return TodoThemeDarkTerminal.new()
-		2: return TodoThemeHoloGlass.new()
-		3: return TodoThemeBlueprintDraft.new()
-		4: return TodoThemeNeonCyber.new()
-		5: return TodoThemePaperNote.new()
-		6: return TodoThemeBlackboardChalk.new()
-		_: return TodoThemeRetroGray.new()
+		1: return TodoThemeBlackboardChalk.new()
+		_:
+			var t = TodoThemeBase.new()
+			t._from_seeds(
+				Color(0.12, 0.14, 0.20),
+				Color(0.88, 0.90, 0.96),
+				Color(0.35, 0.70, 0.90),
+				Color(0.90, 0.30, 0.25),
+				0.95
+			)
+			return t
 
 func _calc_panel_size() -> void:
 	var vp = get_viewport().get_visible_rect().size
@@ -89,7 +92,7 @@ func _clamp_pos(pos: Vector2) -> Vector2:
 # ═══════════════════════════════════════════════
 
 func _cycle_theme() -> void:
-	var next_idx = (_current_theme_idx + 1) % _THEME_IDS.size()
+	var next_idx = (_current_theme_idx + 1) % _THEME_NAMES.size()
 	_switch_theme_to(next_idx)
 
 func _switch_theme_to(idx: int) -> void:
@@ -97,22 +100,16 @@ func _switch_theme_to(idx: int) -> void:
 	var old_pos = panel.position if was_visible else Vector2.ZERO
 	var old_selected = _selected_idx
 
-	# 保存选择
 	_current_theme_idx = idx
 	SettingsManager.set_int("todo_theme", idx)
-
-	# 创建新主题
 	theme = _create_theme(idx)
 
-	# 移除旧面板
 	if panel and is_instance_valid(panel):
 		panel.queue_free()
 	_progress_blocks.clear()
 
-	# 等旧面板释放
 	await get_tree().process_frame
 
-	# 重建 UI
 	_build_ui()
 	_selected_idx = old_selected
 	_refresh_list()
@@ -319,7 +316,7 @@ func _build_title_bar() -> Control:
 	_theme_btn.pressed.connect(_cycle_theme)
 	bar.add_child(_theme_btn)
 
-	var close_btn = theme.make_close_button("\u5173\u95ed")
+	var close_btn = theme.make_close_button("关闭")
 	close_btn.pressed.connect(_close_panel)
 	bar.add_child(close_btn)
 

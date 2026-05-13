@@ -1,5 +1,6 @@
 # blackboard_chalk.gd — 黑板与粉笔
 # 怀旧木边框 + 残留擦痕 + 粉笔涂鸦体
+# 自包含: 边框面板类 + 全部组件覆写
 class_name TodoThemeBlackboardChalk extends TodoThemeBase
 
 func _init() -> void:
@@ -8,8 +9,7 @@ func _init() -> void:
 		Color(0.96, 0.96, 0.92),   # text: 白粉笔
 		Color(0.95, 0.90, 0.45),   # accent: 黄粉笔
 		Color(0.90, 0.48, 0.45),   # danger: 红粉笔
-		1.0,
-		"blackboard"
+		1.0                        # alpha: 实体黑板不透明
 	)
 	
 	card_corner = 2
@@ -23,6 +23,108 @@ func _init() -> void:
 	
 	bg_card_sel = Color.TRANSPARENT
 	bd_select = accent
+
+# ═══════════════════════════════════════════════
+#  自定义边框面板: 木制边框 + 墨绿黑板 + 粉笔擦痕涂鸦
+# ═══════════════════════════════════════════════
+
+class _BlackboardPanel extends PanelContainer:
+	var _t: TodoThemeBase
+	func _init(t: TodoThemeBase) -> void: _t = t
+	func _ready() -> void:
+		var s = StyleBoxFlat.new()
+		s.bg_color = Color.TRANSPARENT
+		add_theme_stylebox_override("panel", s)
+	func _draw() -> void:
+		var r = Rect2(Vector2.ZERO, size)
+		
+		# 1. 绘制木制边框底色 (实心外框)
+		var wood_c = Color(0.35, 0.22, 0.14)
+		draw_rect(r, wood_c)
+		
+		# 2. 内切黑板底色 (深墨绿)
+		var bs := 10.0 # 边框厚度
+		var board_r = r.grow(-bs)
+		draw_rect(board_r, _t.bg_main)
+		
+		# 3. 木框立体感阴影
+		draw_line(Vector2(bs, bs), Vector2(r.size.x - bs, bs), Color(0,0,0, 0.6), 2.0)
+		draw_line(Vector2(bs, bs), Vector2(bs, r.size.y - bs), Color(0,0,0, 0.6), 2.0)
+		draw_line(Vector2(bs, r.size.y - bs), Vector2(r.size.x - bs, r.size.y - bs), Color(1,1,1, 0.15), 2.0)
+		draw_line(Vector2(r.size.x - bs, bs), Vector2(r.size.x - bs, r.size.y - bs), Color(1,1,1, 0.15), 2.0)
+		
+		# 4. 模拟粉笔黑板擦痕迹 (利用固定种子的随机大面积低透明度椭圆)
+		var rng = RandomNumberGenerator.new()
+		rng.seed = 8848 # 固定种子保持擦痕每次打开完全一致
+		var dust_c = Color(1.0, 1.0, 1.0, 0.012)
+		for i in range(25):
+			var cx = rng.randf_range(bs, r.size.x - bs)
+			var cy = rng.randf_range(bs, r.size.y - bs)
+			var rad = rng.randf_range(30, 90)
+			var pts = PackedVector2Array()
+			var a_c = rng.randf_range(0.6, 1.8) # 拉伸实现横向/纵向擦抹轨迹
+			for ang in range(0, 360, 30):
+				var rad_ang = deg_to_rad(ang)
+				pts.append(Vector2(cx + cos(rad_ang) * rad * a_c, cy + sin(rad_ang) * rad))
+			draw_polygon(pts, PackedColorArray([dust_c]))
+			
+		# 5. 零散手绘涂鸦底纹 (增添黑板写擦过后的真实生活感)
+		var dc = Color(1.0, 1.0, 1.0, 0.09)
+		
+		# 涂鸦 A：右上角的弹簧线圈物理练习图示
+		var p1 = PackedVector2Array()
+		var cx1 = r.size.x * 0.70
+		var cy1 = r.size.y * 0.22
+		for a in range(0, 1200, 15):
+			var rr = deg_to_rad(a)
+			p1.append(Vector2(cx1 + a * 0.09 + cos(rr)*16, cy1 + sin(rr)*26))
+		if p1.size() >= 2: draw_polyline(p1, dc, 2.5)
+		
+		# 涂鸦 B：左下角微积分积分号与乱涂变量
+		var p2 = PackedVector2Array()
+		var cx2 = r.size.x * 0.14
+		var cy2 = r.size.y * 0.78
+		p2.append(Vector2(cx2+5, cy2-35))
+		p2.append(Vector2(cx2-12, cy2+20))
+		p2.append(Vector2(cx2-5, cy2+28))
+		p2.append(Vector2(cx2+45, cy2-25)) # 夸张提笔飞线
+		p2.append(Vector2(cx2+40, cy2-30))
+		p2.append(Vector2(cx2+25, cy2+8))
+		draw_polyline(p2, dc, 3.0)
+		draw_line(Vector2(cx2+60, cy2-8), Vector2(cx2+80, cy2-8), dc, 2.5)
+		draw_line(Vector2(cx2+60, cy2+2), Vector2(cx2+80, cy2+2), dc, 2.5)
+		draw_line(Vector2(cx2+100, cy2-15), Vector2(cx2+120, cy2+5), dc, 2.5)
+		draw_line(Vector2(cx2+120, cy2-15), Vector2(cx2+100, cy2+5), dc, 2.5)
+
+		# 涂鸦 C：右下方的井字棋残局
+		var tl = Vector2(r.size.x * 0.65, r.size.y * 0.78)
+		var l3 = 35.0
+		var p3_lines = [
+			[Vector2(-l3, -12), Vector2(l3, -8)], [Vector2(-l3, 16), Vector2(l3, 18)],
+			[Vector2(-15, -l3), Vector2(-12, l3)], [Vector2(16, -l3), Vector2(18, l3)]
+		]
+		for L in p3_lines: draw_line(tl + L[0], tl + L[1], dc, 3.0)
+		var p3c = PackedVector2Array() # 画个大 O
+		for a in range(0, 380, 20): p3c.append(tl + Vector2(25, -22) + Vector2(cos(deg_to_rad(a))*12, sin(deg_to_rad(a))*14))
+		draw_polyline(p3c, dc, 2.5)
+		# 画个大 X 飞出框
+		draw_line(tl + Vector2(-35, -35), tl + Vector2(-5, -5), dc, 2.5)
+		draw_line(tl + Vector2(-10, -35), tl + Vector2(-40, -5), dc, 2.5)
+			
+		# 6. 手绘感标题栏粉笔横线
+		var th = _t.title_bar_height
+		var ty = bs + th
+		var chalk_c = Color(_t.tx_primary, 0.5)
+		draw_line(Vector2(bs + 10, ty - 1.5), Vector2(r.size.x - bs - 10, ty + 1.5), chalk_c, 2.0)
+		draw_line(Vector2(bs + 8, ty + 1.0), Vector2(r.size.x - bs - 12, ty - 1.0), chalk_c, 1.5)
+		draw_line(Vector2(bs + 12, ty), Vector2(r.size.x - bs - 8, ty + 0.5), chalk_c, 1.0)
+
+func create_panel() -> PanelContainer:
+	return _BlackboardPanel.new(self)
+
+# ═══════════════════════════════════════════════
+#  组件覆写
+# ═══════════════════════════════════════════════
 
 # 复选框：模拟手绘的方块，打勾通过_draw回调绘制突破边界的粗糙粉笔线
 func make_checkbox(is_done: bool) -> Button:
@@ -38,7 +140,7 @@ func make_checkbox(is_done: bool) -> Button:
 		s.set_border_width_all(1)
 		s.border_color = Color(tx_primary, 0.3)
 		
-		# 使用 signal 回调在按钮节点上“手绘”突破方框的对勾
+		# 使用 signal 回调在按钮节点上"手绘"突破方框的对勾
 		var chalk_c = accent
 		btn.draw.connect(func():
 			# 突破底线起笔，往右上角疯狂飞出
