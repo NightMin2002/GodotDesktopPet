@@ -54,6 +54,7 @@ var _was_dragged_in_quiet: bool = false  # 安静模式下被拖拽的标记 (dr
 var _quiet_drag_count: int = 0           # 安静模式下被拖拽的累计次数
 var _last_quiet_drag_line: String = ""   # 上次显示的话术 (防连续重复)
 var is_strolling: bool = false  # 是否正在滚动漫步 (供其他宠物检测让路)
+var _holo_forced_look: bool = false  # 全息屏是否正在控制 forced_look_dir (区分状态机来源)
 
 ## 统一判断: 宠物是否应处于安静排队行为 (手动安静待命 OR 深夜模式)
 func is_quiet_behavior() -> bool:
@@ -411,8 +412,11 @@ func _process(delta: float) -> void:
 	var is_holo_look_mode = holo_screen.visible and holo_screen.is_terminal_mode
 	if is_holo_look_mode and not gaming.active:
 		eye_behavior.forced_look_dir = Vector2(holo_screen.side, 0.15)
-	elif not gaming.active and eye_behavior.forced_look_dir != Vector2.ZERO and not idle_behaviors.is_active():
+		_holo_forced_look = true
+	elif _holo_forced_look and not gaming.active:
+		# 仅清理由全息屏设置的注视方向，不影响状态机 (walk/jump/retreat) 的方向
 		eye_behavior.forced_look_dir = Vector2.ZERO
+		_holo_forced_look = false
 
 	var has_visual_change = pet_effects.update(delta)
 	idle_behaviors.update(delta)

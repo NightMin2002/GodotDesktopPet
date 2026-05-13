@@ -261,6 +261,7 @@ func _update_positions() -> void:
 	var pet_pos = _pet.global_position
 	var vp = get_viewport().get_visible_rect().size
 	var pet_r: float = _pet.PET_RADIUS
+	const MARGIN := 4.0  # 屏幕边距
 	
 	# ── 气泡: 宠物正上方居中 ──
 	if is_instance_valid(_bubble):
@@ -270,9 +271,11 @@ func _update_positions() -> void:
 			pet_pos.x - bw * 0.5,
 			pet_pos.y - pet_r - bh - 16.0
 		)
-		# 上边界守卫
-		if _bubble.position.y < 4.0:
+		# 上边界守卫: 上方放不下就翻到下方
+		if _bubble.position.y < MARGIN:
 			_bubble.position.y = pet_pos.y + pet_r + 16.0
+		# 左右边界守卫: clamp 到屏幕内
+		_bubble.position.x = clampf(_bubble.position.x, MARGIN, maxf(MARGIN, vp.x - bw - MARGIN))
 	
 	# ── 按钮垂直居中与宠物 ──
 	var btn_y = pet_pos.y - 14.0  # 按钮中心对齐宠物中心
@@ -284,7 +287,9 @@ func _update_positions() -> void:
 	
 	if is_instance_valid(_btn_dismiss) and is_instance_valid(_btn_accept):
 		var dw = _btn_dismiss.size.x
+		var dh = _btn_dismiss.size.y
 		var aw = _btn_accept.size.x
+		var ah = _btn_accept.size.y
 		
 		if left_space >= dw + 10 and right_space >= aw + 10:
 			# ── 标准布局: 左知道了 / 右查看待办 ──
@@ -316,6 +321,12 @@ func _update_positions() -> void:
 				pet_pos.x - pet_r - btn_gap - aw - dw - 8.0,
 				btn_y
 			)
+		
+		# ── 最终边界 clamp: 确保按钮不超出屏幕 ──
+		_btn_dismiss.position.x = clampf(_btn_dismiss.position.x, MARGIN, maxf(MARGIN, vp.x - dw - MARGIN))
+		_btn_dismiss.position.y = clampf(_btn_dismiss.position.y, MARGIN, maxf(MARGIN, vp.y - dh - MARGIN))
+		_btn_accept.position.x = clampf(_btn_accept.position.x, MARGIN, maxf(MARGIN, vp.x - aw - MARGIN))
+		_btn_accept.position.y = clampf(_btn_accept.position.y, MARGIN, maxf(MARGIN, vp.y - ah - MARGIN))
 	
 	# 更新 hit_region
 	_update_hit_rects()

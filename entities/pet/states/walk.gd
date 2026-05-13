@@ -13,12 +13,19 @@ var _roll_last_x: float = 0.0      # 卡死检测：上次位置
 var _roll_stuck_timer: float = 0.0  # 卡死计时
 var _roll_target_x: float = 0.0    # 短距滚动目标 X
 
+# ── 先看方向再行动 ──
+var _look_delay: float = 0.0        # 缓冲倒计时
+var _pending_hop_dir: float = 0.0   # 蹦跳暂存方向 (非零表示有待执行的蹦跳)
+const LOOK_AHEAD_TIME := 0.3       # 先看方向再行动的缓冲时长
+
 func enter() -> void:
 	if not pet: return
 	_has_landed = false
 	_land_pause = 0.0
 	_is_rolling = false
 	_is_cruise = false
+	_look_delay = LOOK_AHEAD_TIME
+	_pending_hop_dir = 0.0
 	
 	# 1) 优先检查自主巡航事件 (独立于步态，8% 概率长距滚到对面)
 	var do_roll := false
@@ -49,7 +56,7 @@ func enter() -> void:
 		var w = pet.boundary_size.x
 		if x < 120.0: _roll_direction = 1.0
 		elif x > w - 120.0: _roll_direction = -1.0
-		# 瞭向滚动方向
+		# 先看滚动方向 (实际滚动等缓冲结束后由 physics_process 驱动)
 		pet.eye_behavior.forced_look_dir = Vector2(_roll_direction, 0)
 		# 短距滚动: 设定随机目标距离
 		if not cruise:
@@ -59,21 +66,22 @@ func enter() -> void:
 		pet.linear_damp = 2.0 if not cruise else 1.5
 		pet.angular_damp = 0.8 if not cruise else 0.5
 	else:
-		# 普通蹦跳
+		# 普通蹦跳: 先确定方向并看向，冲量等缓冲结束后施加
 		pet.is_strolling = false
 		pet.linear_damp = 0.3
 		pet.angular_damp = 0.5
-		_do_hop()
+		_prepare_hop()
 
 func exit() -> void:
 	_is_rolling = false
 	_is_cruise = false
+	_pending_hop_dir = 0.0
 	if pet:
 		pet.is_strolling = false
-		pet.eye_behavior.forced_look_dir = Vector2.ZERO
+		# forced_look_dir 不在此处清零，交由 idle.enter() 的延迟机制自然过渡
 
-## 执行一次蹦跳
-func _do_hop() -> void:
+## 确定蹦跳方向并看向 (不施加冲量)
+func _prepare_hop() -> void:
 	_has_landed = false
 	_land_pause = 0.0
 	
@@ -83,12 +91,24 @@ func _do_hop() -> void:
 	if x < 100.0: hop_dir = 1.0
 	elif x > w - 100.0: hop_dir = -1.0
 	
+	pet.eye_behavior.forced_look_dir = Vector2(hop_dir, 0)
+	_pending_hop_dir = hop_dir
+
+## 缓冲结束后执行蹦跳冲量
+func _execute_hop() -> void:
 	var height = randf_range(300.0, 500.0)
-	var horizontal = randf_range(130.0, 260.0) * hop_dir
+	var horizontal = randf_range(130.0, 260.0) * _pending_hop_dir
 	pet.apply_central_impulse(Vector2(horizontal, -height * pet.gravity_sign))
-	pet.apply_torque_impulse(hop_dir * randf_range(1000.0, 3000.0))
+	pet.apply_torque_impulse(_pending_hop_dir * randf_range(1000.0, 3000.0))
+	_pending_hop_dir = 0.0
 
 func process(delta: float) -> void:
+	# 先看方向的缓冲期
+	if _look_delay > 0.0:
+		_look_delay -= delta
+		if _look_delay <= 0.0 and _pending_hop_dir != 0.0:
+			_execute_hop()
+		return
 	if _is_rolling: return
 	if not _has_landed: return
 	_land_pause += delta
@@ -97,6 +117,8 @@ func process(delta: float) -> void:
 
 func physics_process(delta: float) -> void:
 	if not pet: return
+	# 缓冲期不施力
+	if _look_delay > 0.0: return
 	
 	if _is_rolling:
 		# 卡死检测：0.8 秒内没移动超过 5px → 放弃

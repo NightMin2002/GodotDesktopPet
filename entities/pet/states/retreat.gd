@@ -10,6 +10,8 @@ const ARRIVE_THRESHOLD := 12.0  # 到达边缘的判定距离 (精准停靠)
 const SLOWDOWN_DIST := 200.0    # 开始减速的距离
 var _stuck_time: float = 0.0    # 防撞墙卡死计时器
 var _last_stuck_x: float = 0.0  # 防撞墙位移参考点
+var _look_delay: float = 0.0    # 先看方向的缓冲计时
+const LOOK_AHEAD_TIME := 0.3
 
 func enter() -> void:
 	if not pet:
@@ -38,13 +40,14 @@ func enter() -> void:
 	# (到达 idle 后 idle_behaviors.update() 会重新触发 hibernate 并锁定)
 	if pet.lock_rotation:
 		pet.lock_rotation = false
-	# 看向撤退方向
+	# 先看向撤退方向 (实际滚动等缓冲结束后开始)
 	pet.eye_behavior.forced_look_dir = Vector2(direction, 0)
+	_look_delay = LOOK_AHEAD_TIME
 
 func exit() -> void:
 	if pet:
 		pet.linear_damp = 0.5
-		pet.eye_behavior.forced_look_dir = Vector2.ZERO
+		# forced_look_dir 不在此处清零，交由 idle.enter() 的延迟机制自然过渡
 		# 深夜模式归位完成: 恢复高阻尼，等 hibernate 重新锁定旋转
 		if pet.nighttime_mode:
 			pet.linear_damp = 3.0
@@ -52,6 +55,10 @@ func exit() -> void:
 
 func process(delta: float) -> void:
 	if not pet:
+		return
+	# 先看方向的缓冲期
+	if _look_delay > 0.0:
+		_look_delay -= delta
 		return
 	# 到达目标位置 → 刹车 + 锁定 + 切换到 Idle
 	var dist = absf(pet.global_position.x - target_x)
@@ -85,6 +92,7 @@ func process(delta: float) -> void:
 func physics_process(_delta: float) -> void:
 	if not pet:
 		return
+	if _look_delay > 0.0: return
 	# 短暂腾空时不转 fall，继续施力 (避免 retreat→fall→retreat 死循环)
 	# 反重力时“坠落”方向反转: gravity_sign=1 时 vy<-200 (向上飞), gravity_sign=-1 时 vy>200 (向下掉)
 	if not pet.is_settled() and pet.linear_velocity.y * pet.gravity_sign < -200:
