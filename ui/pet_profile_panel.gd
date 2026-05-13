@@ -53,8 +53,8 @@ func _ready() -> void:
 
 func _calc_panel_size() -> void:
 	var vp = get_viewport().get_visible_rect().size
-	_panel_w = clampf(vp.x * 0.55, 650, 1100)
-	_panel_h = clampf(vp.y * 0.55, 420, 700)
+	_panel_w = clampf(vp.x * 0.70, 700, 1400)
+	_panel_h = clampf(vp.y * 0.70, 500, 900)
 
 func _clamp_pos(pos: Vector2) -> Vector2:
 	var vp = get_viewport().get_visible_rect().size
@@ -67,8 +67,14 @@ func _clamp_pos(pos: Vector2) -> Vector2:
 # ═══════════════════════════════════════════════
 
 func _process(_delta: float) -> void:
-	if panel and panel.visible and _confine_walls.size() > 0:
-		_sync_confine_walls()
+	if panel and panel.visible:
+		# 围栏跟随
+		if _confine_walls.size() > 0:
+			_sync_confine_walls()
+		# 注册面板区域为可点击 hit region (穿透模式下保持面板可交互)
+		var pet = _get_pet()
+		if pet:
+			pet.overlay_rect = Rect2(panel.position, Vector2(_panel_w, _panel_h))
 
 func _build_ui() -> void:
 	layer = -1
@@ -130,18 +136,88 @@ func _build_ui() -> void:
 	var left_col = VBoxContainer.new()
 	left_col.add_theme_constant_override("separation", 8)
 	left_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	left_col.custom_minimum_size.x = 210
+	left_col.custom_minimum_size.x = 220
 	left_col.mouse_filter = Control.MOUSE_FILTER_PASS
 	split.add_child(left_col)
 
-	# 头像区域
-	_avatar_ctrl = _PetAvatar.new()
-	_avatar_ctrl.custom_minimum_size = Vector2(180, 180)
-	_avatar_ctrl.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_avatar_ctrl.mouse_filter = Control.MOUSE_FILTER_PASS
-	left_col.add_child(_avatar_ctrl)
+	# 头像边框 (正方形框)
+	var avatar_frame = PanelContainer.new()
+	var af_s = StyleBoxFlat.new()
+	af_s.bg_color = Color(0.03, 0.05, 0.10, 0.6)
+	af_s.set_border_width_all(2)
+	af_s.border_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.7, 0.5)
+	af_s.set_corner_radius_all(4)
+	af_s.set_content_margin_all(6)
+	avatar_frame.add_theme_stylebox_override("panel", af_s)
+	avatar_frame.custom_minimum_size = Vector2(200, 200)
+	avatar_frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	avatar_frame.mouse_filter = Control.MOUSE_FILTER_PASS
 
-	# 身份信息
+	_avatar_ctrl = _PetAvatar.new()
+	_avatar_ctrl.custom_minimum_size = Vector2(186, 186)
+	_avatar_ctrl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_avatar_ctrl.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_avatar_ctrl.mouse_filter = Control.MOUSE_FILTER_PASS
+	avatar_frame.add_child(_avatar_ctrl)
+
+	# 状态气泡徽章
+	var status_badge = PanelContainer.new()
+	var sb_s = StyleBoxFlat.new()
+	sb_s.bg_color = Color(0.05, 0.18, 0.08, 0.7)
+	sb_s.set_border_width_all(1)
+	sb_s.border_color = Color(0.2, 0.8, 0.4, 0.4)
+	sb_s.set_corner_radius_all(10)
+	sb_s.content_margin_left = 12; sb_s.content_margin_right = 12
+	sb_s.content_margin_top = 3; sb_s.content_margin_bottom = 3
+	status_badge.add_theme_stylebox_override("panel", sb_s)
+	status_badge.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	status_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var status_row = HBoxContainer.new()
+	status_row.add_theme_constant_override("separation", 5)
+	status_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	status_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	status_badge.add_child(status_row)
+
+	var dot_label = Label.new()
+	dot_label.text = "●"
+	dot_label.add_theme_font_size_override("font_size", 9)
+	dot_label.add_theme_color_override("font_color", Color(0.3, 1.0, 0.5, 0.95))
+	dot_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	status_row.add_child(dot_label)
+
+	var status_label = Label.new()
+	status_label.text = "运行中"
+	status_label.add_theme_font_size_override("font_size", 13)
+	status_label.add_theme_color_override("font_color", Color(0.3, 1.0, 0.5, 0.8))
+	status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	status_row.add_child(status_label)
+
+	# 性格描述
+	var persona_label = Label.new()
+	persona_label.text = "「不要擅自解读本机的行为模式。」"
+	persona_label.add_theme_font_size_override("font_size", 13)
+	persona_label.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7, 0.35))
+	persona_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	persona_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	persona_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# 将头像组垂直居中: 上 spacer + 内容 + 下 spacer
+	var avatar_top = Control.new()
+	avatar_top.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	avatar_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	left_col.add_child(avatar_top)
+
+	left_col.add_child(avatar_frame)
+	left_col.add_child(status_badge)
+	left_col.add_child(persona_label)
+
+	var avatar_bot = Control.new()
+	avatar_bot.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	avatar_bot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	left_col.add_child(avatar_bot)
+
+	# 身份信息 (底部)
 	_build_identity_section(left_col)
 
 	# ── 竖分隔线 ──
@@ -208,7 +284,7 @@ func _build_title_bar() -> Control:
 
 	var title = Label.new()
 	title.text = "装置档案"
-	title.add_theme_font_size_override("font_size", 18)
+	title.add_theme_font_size_override("font_size", 22)
 	title.add_theme_color_override("font_color", Color(0.70, 0.80, 0.92, 0.9))
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(title)
@@ -220,7 +296,7 @@ func _build_title_bar() -> Control:
 
 	var close_btn = Button.new()
 	close_btn.text = "关闭"
-	close_btn.add_theme_font_size_override("font_size", 13)
+	close_btn.add_theme_font_size_override("font_size", 15)
 	close_btn.add_theme_color_override("font_color", Color(0.7, 0.4, 0.4, 0.7))
 	close_btn.add_theme_color_override("font_hover_color", Color(0.95, 0.4, 0.35, 1.0))
 	var cs = StyleBoxFlat.new()
@@ -291,7 +367,7 @@ func _add_info_row(parent: VBoxContainer, label_text: String, value_text: String
 
 	var lbl = Label.new()
 	lbl.text = label_text
-	lbl.add_theme_font_size_override("font_size", 15)
+	lbl.add_theme_font_size_override("font_size", 17)
 	lbl.add_theme_color_override("font_color", dim)
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	lbl.custom_minimum_size.x = 38
@@ -299,7 +375,7 @@ func _add_info_row(parent: VBoxContainer, label_text: String, value_text: String
 
 	var val = Label.new()
 	val.text = value_text
-	val.add_theme_font_size_override("font_size", 15)
+	val.add_theme_font_size_override("font_size", 17)
 	val.add_theme_color_override("font_color", bright)
 	val.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(val)
@@ -342,7 +418,7 @@ func _build_tab_bar() -> HBoxContainer:
 	for i in range(tabs.size()):
 		var btn = Button.new()
 		btn.text = tabs[i]
-		btn.add_theme_font_size_override("font_size", 14)
+		btn.add_theme_font_size_override("font_size", 18)
 		btn.flat = false
 		var idx = i
 		btn.pressed.connect(func(): _switch_tab(idx))
@@ -438,7 +514,7 @@ func _add_game_card(parent: GridContainer, display_name: String, game_id: String
 	# 游戏名
 	var title = Label.new()
 	title.text = display_name
-	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_font_size_override("font_size", 16)
 	title.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.4, 0.9, 0.9))
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(title)
@@ -479,7 +555,7 @@ func _add_game_card(parent: GridContainer, display_name: String, game_id: String
 func _add_stat_row(parent: VBoxContainer, text: String, color: Color) -> void:
 	var lbl = Label.new()
 	lbl.text = text
-	lbl.add_theme_font_size_override("font_size", 12)
+	lbl.add_theme_font_size_override("font_size", 14)
 	lbl.add_theme_color_override("font_color", color)
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(lbl)
@@ -507,7 +583,7 @@ func _build_tab_ability_data() -> ScrollContainer:
 	# 等级标题
 	_level_label = Label.new()
 	_level_label.text = "游戏熟练度  Lv.%d" % lv_info.level
-	_level_label.add_theme_font_size_override("font_size", 18)
+	_level_label.add_theme_font_size_override("font_size", 22)
 	_level_label.add_theme_color_override("font_color", accent)
 	_level_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(_level_label)
@@ -539,7 +615,7 @@ func _build_tab_ability_data() -> ScrollContainer:
 		_xp_label.text = "经验值: %d (MAX)" % lv_info.xp
 	else:
 		_xp_label.text = "经验值: %d / %d" % [lv_info.xp, lv_info.xp_next]
-	_xp_label.add_theme_font_size_override("font_size", 14)
+	_xp_label.add_theme_font_size_override("font_size", 16)
 	_xp_label.add_theme_color_override("font_color", bright)
 	_xp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(_xp_label)
@@ -547,7 +623,7 @@ func _build_tab_ability_data() -> ScrollContainer:
 	# 失误率
 	_rate_label = Label.new()
 	_rate_label.text = "操作失误率: %.1f%%" % (lv_info.rate * 100.0)
-	_rate_label.add_theme_font_size_override("font_size", 14)
+	_rate_label.add_theme_font_size_override("font_size", 16)
 	_rate_label.add_theme_color_override("font_color", dim)
 	_rate_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(_rate_label)
@@ -555,7 +631,7 @@ func _build_tab_ability_data() -> ScrollContainer:
 	# 等级说明
 	var note = Label.new()
 	note.text = "熟练度随对局自动积累。等级越高，自主操作失误率越低。"
-	note.add_theme_font_size_override("font_size", 12)
+	note.add_theme_font_size_override("font_size", 14)
 	note.add_theme_color_override("font_color", Color(0.4, 0.5, 0.6, 0.4))
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -579,7 +655,7 @@ func _build_tab_ability_data() -> ScrollContainer:
 
 	var ctrl_label = Label.new()
 	ctrl_label.text = "等级调整"
-	ctrl_label.add_theme_font_size_override("font_size", 13)
+	ctrl_label.add_theme_font_size_override("font_size", 15)
 	ctrl_label.add_theme_color_override("font_color", dim)
 	ctrl_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ctrl_row.add_child(ctrl_label)
@@ -595,7 +671,7 @@ func _build_tab_ability_data() -> ScrollContainer:
 	for item in [{"label": "-", "action": "down"}, {"label": "∝", "action": "reset"}, {"label": "+", "action": "up"}]:
 		var btn = Button.new()
 		btn.text = item.label
-		btn.add_theme_font_size_override("font_size", 14)
+		btn.add_theme_font_size_override("font_size", 16)
 		btn.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9, 0.8))
 		btn.add_theme_stylebox_override("normal", btn_s_n)
 		btn.add_theme_stylebox_override("hover", btn_s_h)
@@ -607,7 +683,7 @@ func _build_tab_ability_data() -> ScrollContainer:
 	# ── 互动按钮 ──
 	var interact_btn = Button.new()
 	interact_btn.text = "互动"
-	interact_btn.add_theme_font_size_override("font_size", 14)
+	interact_btn.add_theme_font_size_override("font_size", 16)
 	interact_btn.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.4, 0.95, 0.9))
 	var ib_n = StyleBoxFlat.new()
 	ib_n.bg_color = Color.from_hsv(EventBus.ui_hue, 0.3, 0.15, 0.6)
@@ -694,7 +770,6 @@ func _on_toggle() -> void:
 		_open_panel()
 
 func _open_panel() -> void:
-	EventBus.context_menu_toggled.emit(true)
 	_refresh_data()
 	var vp = get_viewport().get_visible_rect().size
 	panel.position = _clamp_pos(Vector2(
@@ -714,13 +789,16 @@ func _open_panel() -> void:
 func _close_panel() -> void:
 	_dragging = false
 	_destroy_confine_walls()
+	# 释放 hit region
+	var pet = _get_pet()
+	if pet:
+		pet.overlay_rect = Rect2()
 	panel.pivot_offset = panel.size / 2.0
 	var tween = create_tween().set_parallel(true)
 	tween.tween_property(panel, "modulate:a", 0.0, 0.1)
 	tween.tween_property(panel, "scale", Vector2(0.85, 0.85), 0.1)
 	tween.finished.connect(func():
 		panel.hide()
-		EventBus.context_menu_toggled.emit(false)
 	)
 
 func _refresh_data() -> void:
