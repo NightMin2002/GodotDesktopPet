@@ -30,9 +30,8 @@ var _save_fade_tween: Tween
 
 # ── 引用 ──
 var _title_label: Label
-var _progress_label: Label
-var _progress_blocks: Array[Panel] = []
 var _theme_btn: Button
+var _progress_indicator: Control
 
 var _new_btn: Button
 var _vsep_style: StyleBoxFlat
@@ -106,7 +105,7 @@ func _switch_theme_to(idx: int) -> void:
 
 	if panel and is_instance_valid(panel):
 		panel.queue_free()
-	_progress_blocks.clear()
+
 
 	await get_tree().process_frame
 
@@ -160,6 +159,12 @@ func _build_ui() -> void:
 	_title_bar = _build_title_bar()
 	outer.add_child(_title_bar)
 	outer.add_child(theme.make_separator())
+
+	# ── 进度指示器 (独占一行) ──
+	_progress_indicator = theme.make_progress_indicator()
+	if _progress_indicator:
+		_progress_indicator.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		outer.add_child(_progress_indicator)
 
 	# ═══ 双栏 ═══
 	var split = HBoxContainer.new()
@@ -283,7 +288,7 @@ func _build_title_bar() -> Control:
 	bar.mouse_default_cursor_shape = Control.CURSOR_MOVE
 
 	_title_label = Label.new()
-	_title_label.text = "\u5f85\u529e\u6e05\u5355"
+	_title_label.text = "待办清单"
 	_title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	theme.apply_title_label_style(_title_label)
 	bar.add_child(_title_label)
@@ -292,23 +297,6 @@ func _build_title_bar() -> Control:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(spacer)
-
-	_progress_label = Label.new()
-	_progress_label.text = "0/0"
-	_progress_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	theme.apply_progress_label_style(_progress_label)
-	bar.add_child(_progress_label)
-
-	var blocks_box = HBoxContainer.new()
-	blocks_box.add_theme_constant_override("separation", theme.progress_block_sp)
-	blocks_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bar.add_child(blocks_box)
-	for i in range(10):
-		var block = Panel.new()
-		theme.apply_progress_block_style(block)
-		block.visible = false
-		blocks_box.add_child(block)
-		_progress_blocks.append(block)
 
 	# 主题切换按钮
 	_theme_btn = theme.make_theme_button(_THEME_NAMES[_current_theme_idx])
@@ -527,21 +515,12 @@ func _update_progress(todos: Array) -> void:
 		if t.get("done", false):
 			done += 1
 
-	_progress_label.text = "%d/%d" % [done, total]
-
-	for i in range(_progress_blocks.size()):
-		if i < total:
-			_progress_blocks[i].visible = true
-			theme.update_progress_block(_progress_blocks[i], i < done)
-		else:
-			_progress_blocks[i].visible = false
-
 	if total > 0 and done >= total:
-		theme.apply_progress_complete(_progress_label, true)
-		_title_label.text = "\u5168\u90e8\u5b8c\u6210\u4e86"
+		_title_label.text = "全部完成了"
 	else:
-		theme.apply_progress_complete(_progress_label, false)
-		_title_label.text = "\u5f85\u529e\u6e05\u5355"
+		_title_label.text = "待办清单"
+
+	theme.update_progress_indicator(_progress_indicator, done, total)
 
 	EventBus.todo_count_changed.emit(total - done, total)
 

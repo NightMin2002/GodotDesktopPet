@@ -46,8 +46,6 @@ var bd_btn_text      := Color.DIM_GRAY
 var sep_color        := Color.DIM_GRAY
 var vsep_color       := Color.DIM_GRAY
 var scroll_hint_color:= Color.DIM_GRAY
-var progress_unfilled:= Color.DIM_GRAY
-var progress_bd      := Color.DIM_GRAY
 
 # ═══════════════════════════════════════════════
 #  布局参数
@@ -65,12 +63,10 @@ var bottom_pad        := 6
 var title_font_size   := 20
 var item_font_size    := 17
 var note_font_size    := 16
-var progress_font_size := 14
+
 var badge_font_size   := 11
 
 var checkbox_size_px  := Vector2(26, 26)
-var progress_block_px := Vector2(8, 8)
-var progress_block_sp := 3
 var card_corner       := 4
 var card_padding      := [12, 10, 10, 10]
 var input_padding     := [14, 14, 12, 12]
@@ -130,8 +126,6 @@ func _from_seeds(p_base: Color, p_text: Color, p_accent: Color, p_danger: Color,
 	sep_color        = Color(p_text, 0.15)
 	vsep_color       = Color(p_text, 0.18)
 	scroll_hint_color= Color(p_text, 0.25)
-	progress_unfilled= _vshift(p_base, 0.08, 0.35)
-	progress_bd      = Color(p_text, 0.5)
 
 func _vshift(c: Color, dv: float, a: float) -> Color:
 	return Color.from_hsv(c.h, c.s, clampf(c.v + dv, 0.0, 1.0), a)
@@ -166,6 +160,101 @@ func update_panel_hue(p: PanelContainer, hue: float) -> void:
 #  组件工厂 — 中性默认实现
 #  子类可覆写任意方法实现独立风格
 # ═══════════════════════════════════════════════
+
+## 像素风进度条内嵌类
+class _PixelProgressBar extends Control:
+	var _t: TodoThemeBase
+	var _done: int = 0
+	var _total: int = 0
+	var _display_ratio: float = 0.0
+	var _target_ratio: float = 0.0
+
+	func _init(t: TodoThemeBase) -> void:
+		_t = t
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		custom_minimum_size = Vector2(0, 18)
+
+	func _process(delta: float) -> void:
+		if absf(_display_ratio - _target_ratio) > 0.001:
+			_display_ratio = lerpf(_display_ratio, _target_ratio, delta * 8.0)
+			queue_redraw()
+		elif _display_ratio != _target_ratio:
+			_display_ratio = _target_ratio
+			queue_redraw()
+
+	func update(done: int, total: int) -> void:
+		_done = done; _total = total
+		_target_ratio = float(done) / float(total) if total > 0 else 0.0
+		queue_redraw()
+
+	func _draw() -> void:
+		var r = Rect2(Vector2.ZERO, size)
+		var bw := 2.0 # 像素边框宽度
+
+		# 外框 (像素风双色边框)
+		draw_rect(r, Color(_t.bd_light, 0.6), false, 1.0)
+		draw_rect(r.grow(-1), Color(_t.bg_card, 0.3), false, 1.0)
+
+		# 内部背景
+		var inner = Rect2(r.position + Vector2(bw, bw), r.size - Vector2(bw * 2, bw * 2))
+		draw_rect(inner, Color(_t.bg_main, 0.6))
+
+		# 分段填充
+		var seg_w := 6.0
+		var gap := 2.0
+		var fill_w = inner.size.x * _display_ratio
+		var x = inner.position.x + 1
+		var y = inner.position.y + 1
+		var seg_h = inner.size.y - 2
+		var all_done = _total > 0 and _done >= _total
+		var fill_c = _t.accent if not all_done else _t.accent.lightened(0.15)
+
+		while x + seg_w <= inner.position.x + 1 + fill_w:
+			# 主体色块
+			draw_rect(Rect2(x, y, seg_w, seg_h), fill_c)
+			# 顶部高光线 (像素风立体感)
+			draw_line(Vector2(x, y), Vector2(x + seg_w, y), Color(1, 1, 1, 0.25), 1.0)
+			# 底部暗线
+			draw_line(Vector2(x, y + seg_h - 1), Vector2(x + seg_w, y + seg_h - 1), Color(0, 0, 0, 0.2), 1.0)
+			x += seg_w + gap
+
+		# 尾部余量
+		var remaining = fill_w - (x - inner.position.x - 1)
+		if remaining > 1:
+			draw_rect(Rect2(x, y, remaining, seg_h), fill_c)
+			draw_line(Vector2(x, y), Vector2(x + remaining, y), Color(1, 1, 1, 0.25), 1.0)
+
+		# 文字 (居中，带暗底色带)
+		if _total > 0:
+			var text = "%d / %d" % [_done, _total]
+			var font = ThemeDB.fallback_font
+			var fs := 12
+			var text_size = font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, fs)
+			var tx = r.position.x + (r.size.x - text_size.x) * 0.5
+			var ty = r.position.y + (r.size.y + text_size.y * 0.6) * 0.5
+			# 暗底色带
+			var bd_rect = Rect2(tx - 4, inner.position.y, text_size.x + 8, inner.size.y)
+			draw_rect(bd_rect, Color(0, 0, 0, 0.55))
+			# 文字描边 (8方向1px像素描边)
+			var outline_c = Color(0, 0, 0, 0.9)
+			for ox in [-1, 0, 1]:
+				for oy in [-1, 0, 1]:
+					if ox == 0 and oy == 0: continue
+					draw_string(font, Vector2(tx + ox, ty + oy), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, outline_c)
+			# 文字本体
+			var text_c = Color.WHITE if not all_done else _t.accent.lightened(0.4)
+			draw_string(font, Vector2(tx, ty), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, text_c)
+
+## 创建进度指示器。子类覆写可完全自定义形态，返回 null 则不显示。
+func make_progress_indicator() -> Control:
+	return _PixelProgressBar.new(self)
+
+## 更新进度指示器。子类如果覆写了 make，也需要覆写此方法。
+func update_progress_indicator(ctrl: Control, done: int, total: int) -> void:
+	if not ctrl: return
+	if ctrl.has_method("update"):
+		ctrl.update(done, total)
+
 
 func make_card_style(is_done: bool, is_selected: bool) -> StyleBoxFlat:
 	var s = StyleBoxFlat.new()
@@ -309,17 +398,6 @@ func apply_vsep_style(vsep: VSeparator) -> StyleBoxFlat:
 	vsep.add_theme_stylebox_override("separator", s)
 	return s
 
-func apply_progress_block_style(block: Panel) -> void:
-	block.custom_minimum_size = progress_block_px
-	var s = StyleBoxFlat.new()
-	s.bg_color = progress_unfilled; s.border_color = progress_bd
-	s.set_border_width_all(1); s.set_corner_radius_all(0)
-	block.add_theme_stylebox_override("panel", s)
-	block.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-func update_progress_block(block: Panel, is_filled: bool) -> void:
-	var bs = block.get_theme_stylebox("panel") as StyleBoxFlat
-	if bs: bs.bg_color = accent if is_filled else progress_unfilled
 
 func apply_card_title_style(label: Label, is_done: bool, is_selected: bool) -> void:
 	label.add_theme_font_size_override("font_size", item_font_size)
@@ -343,12 +421,7 @@ func apply_title_label_style(l: Label) -> void:
 	l.add_theme_color_override("font_color", tx_primary)
 	l.add_theme_font_size_override("font_size", title_font_size)
 
-func apply_progress_label_style(l: Label) -> void:
-	l.add_theme_font_size_override("font_size", progress_font_size)
-	l.add_theme_color_override("font_color", tx_secondary)
 
-func apply_progress_complete(l: Label, is_complete: bool) -> void:
-	l.add_theme_color_override("font_color", accent if is_complete else tx_secondary)
 
 # ═══════════════════════════════════════════════
 #  辅助构建器 (子类可选调用，默认工厂不使用)

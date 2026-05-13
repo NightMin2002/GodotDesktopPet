@@ -16,7 +16,6 @@ func _init() -> void:
 	input_corner = 2
 	list_spacing = 10
 	checkbox_size_px = Vector2(24, 24)
-	progress_block_px = Vector2(8, 8)
 	
 	# 修改面板边距为适应木边框厚度 (比常规主题增加 10px 的内边距)
 	panel_margins = [30, 28, 30, 36]
@@ -125,6 +124,132 @@ func create_panel() -> PanelContainer:
 # ═══════════════════════════════════════════════
 #  组件覆写
 # ═══════════════════════════════════════════════
+
+# 进度指示器：粉笔手绘进度条 (全 _draw 自绘)
+class _ChalkProgress extends Control:
+	var _t: TodoThemeBase
+	var _done: int = 0
+	var _total: int = 0
+	var _rng := RandomNumberGenerator.new()
+
+	func _init(t: TodoThemeBase) -> void:
+		_t = t
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		custom_minimum_size = Vector2(0, 26)
+
+	func update(done: int, total: int) -> void:
+		_done = done; _total = total
+		queue_redraw()
+
+	func _draw() -> void:
+		if _total <= 0: return
+		var all_done = _done >= _total
+		var chalk = _t.accent if all_done else Color(_t.tx_primary, 0.8)
+		var ratio = float(_done) / float(_total)
+
+		var pad_x := 20.0
+		var bar_h := 14.0
+		var bar_y := (size.y - bar_h) * 0.5
+		var bar_w := size.x - pad_x * 2
+		var bx := pad_x
+		var by := bar_y
+		_rng.seed = 99
+
+		# ── 手绘矩形边框 (多层歪斜线条模拟粗粉笔) ──
+		for layer in range(3):
+			var a = [0.2, 0.35, 0.55][layer]
+			var w = [2.5, 2.0, 1.5][layer]
+			var lc = Color(chalk, a)
+			# 上边
+			_chalk_line(Vector2(bx - 2, by), Vector2(bx + bar_w + 2, by), lc, w)
+			# 下边
+			_chalk_line(Vector2(bx - 1, by + bar_h), Vector2(bx + bar_w + 1, by + bar_h), lc, w)
+			# 左边
+			_chalk_line(Vector2(bx, by - 1), Vector2(bx, by + bar_h + 1), lc, w)
+			# 右边
+			_chalk_line(Vector2(bx + bar_w, by - 1), Vector2(bx + bar_w, by + bar_h + 1), lc, w)
+
+		# ── 填充区域：对角线粉笔笔触 ──
+		var fill_w = bar_w * ratio
+		if fill_w > 2:
+			var stripe_sp := 5.0
+			var x = bx + 2
+			while x < bx + fill_w - 1:
+				var jx = _rng.randf_range(-1.0, 1.0)
+				var jy = _rng.randf_range(-0.5, 0.5)
+				var sa = _rng.randf_range(0.25, 0.5)
+				draw_line(
+					Vector2(x + jx, by + 2 + jy),
+					Vector2(x + 3 + jx, by + bar_h - 2 + jy),
+					Color(chalk, sa), _rng.randf_range(1.5, 2.5)
+				)
+				x += stripe_sp
+
+			# 底色填充 (低透明度整体涂抹)
+			draw_rect(Rect2(bx + 1, by + 1, fill_w - 2, bar_h - 2), Color(chalk, 0.08))
+
+		# ── 粉笔粉末 (边框和填充边缘散落) ──
+		_rng.seed = 234
+		for i in range(20):
+			var px = _rng.randf_range(bx - 6, bx + bar_w + 6)
+			var py = _rng.randf_range(by - 5, by + bar_h + 5)
+			# 粉末集中在边框附近
+			if absf(py - by) < 4 or absf(py - by - bar_h) < 4 or absf(px - bx) < 4 or absf(px - bx - bar_w) < 4:
+				var pr = _rng.randf_range(0.5, 1.8)
+				draw_circle(Vector2(px, py), pr, Color(chalk, _rng.randf_range(0.15, 0.4)))
+
+		# ── 文字 ──
+		var font = ThemeDB.fallback_font
+		var fs := 12
+		var text = "%d / %d" % [_done, _total]
+		var text_size = font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, fs)
+		var tx = (size.x - text_size.x) * 0.5
+		var ty = (size.y + text_size.y * 0.55) * 0.5
+
+		# 板擦清理区：用多个椭圆叠加模拟擦拭痕迹，边缘自然模糊
+		var cx = size.x * 0.5
+		var cy = ty - text_size.y * 0.3
+		var board_c = Color(_t.bg_main, 0.7)
+		_rng.seed = 333
+		for i in range(5):
+			var ex = cx + _rng.randf_range(-8, 8)
+			var ey = cy + _rng.randf_range(-2, 2)
+			var rx = text_size.x * 0.5 + _rng.randf_range(4, 14)
+			var ry = _rng.randf_range(6, 10)
+			var pts = PackedVector2Array()
+			for ang in range(0, 360, 15):
+				var rad = deg_to_rad(ang)
+				pts.append(Vector2(ex + cos(rad) * rx, ey + sin(rad) * ry))
+			draw_polygon(pts, PackedColorArray([board_c]))
+
+		# 粉笔多层叠绘
+		_rng.seed = 55
+		for i in range(3):
+			var ox = _rng.randf_range(-1.2, 1.2)
+			var oy = _rng.randf_range(-1.0, 1.0)
+			draw_string(font, Vector2(tx + ox, ty + oy), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(chalk, 0.25))
+		draw_string(font, Vector2(tx, ty), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, chalk)
+
+		# 文字周围粉末
+		_rng.seed = 88
+		for i in range(6):
+			var px = tx + _rng.randf_range(-4, text_size.x + 4)
+			var py = ty + _rng.randf_range(-text_size.y, 4)
+			draw_circle(Vector2(px, py), _rng.randf_range(0.4, 1.0), Color(chalk, _rng.randf_range(0.15, 0.35)))
+
+	## 手抖粉笔线：起终点加随机偏移，模拟手画
+	func _chalk_line(from: Vector2, to: Vector2, c: Color, w: float) -> void:
+		var jf = Vector2(_rng.randf_range(-1.5, 1.5), _rng.randf_range(-1.0, 1.0))
+		var jt = Vector2(_rng.randf_range(-1.5, 1.5), _rng.randf_range(-1.0, 1.0))
+		draw_line(from + jf, to + jt, c, w)
+
+func make_progress_indicator() -> Control:
+	return _ChalkProgress.new(self)
+
+func update_progress_indicator(ctrl: Control, done: int, total: int) -> void:
+	if not ctrl: return
+	if ctrl.has_method("update"):
+		ctrl.update(done, total)
 
 # 复选框：模拟手绘的方块，打勾通过_draw回调绘制突破边界的粗糙粉笔线
 func make_checkbox(is_done: bool) -> Button:
