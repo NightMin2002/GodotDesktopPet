@@ -13,19 +13,12 @@ var _roll_last_x: float = 0.0      # 卡死检测：上次位置
 var _roll_stuck_timer: float = 0.0  # 卡死计时
 var _roll_target_x: float = 0.0    # 短距滚动目标 X
 
-# ── 先看方向再行动 ──
-var _look_delay: float = 0.0        # 缓冲倒计时
-var _pending_hop_dir: float = 0.0   # 蹦跳暂存方向 (非零表示有待执行的蹦跳)
-const LOOK_AHEAD_TIME := 0.3       # 先看方向再行动的缓冲时长
-
 func enter() -> void:
 	if not pet: return
 	_has_landed = false
 	_land_pause = 0.0
 	_is_rolling = false
 	_is_cruise = false
-	_look_delay = LOOK_AHEAD_TIME
-	_pending_hop_dir = 0.0
 	
 	# 1) 优先检查自主巡航事件 (独立于步态，8% 概率长距滚到对面)
 	var do_roll := false
@@ -56,8 +49,6 @@ func enter() -> void:
 		var w = pet.boundary_size.x
 		if x < 120.0: _roll_direction = 1.0
 		elif x > w - 120.0: _roll_direction = -1.0
-		# 先看滚动方向 (实际滚动等缓冲结束后由 physics_process 驱动)
-		pet.eye_behavior.forced_look_dir = Vector2(_roll_direction, 0)
 		# 短距滚动: 设定随机目标距离
 		if not cruise:
 			var roll_dist = randf_range(120.0, 300.0)
@@ -65,8 +56,10 @@ func enter() -> void:
 			_roll_target_x = clampf(_roll_target_x, 80.0, w - 80.0)
 		pet.linear_damp = 2.0 if not cruise else 1.5
 		pet.angular_damp = 0.8 if not cruise else 0.5
+		# 先看滚动方向 (实际滚动等缓冲结束后由 physics_process 驱动)
+		pet.movement.start(Vector2(_roll_direction, 0))
 	else:
-		# 普通蹦跳: 先确定方向并看向，冲量等缓冲结束后施加
+		# 普通蹦跳: 确定方向 → 缓冲看向 → 施加冲量
 		pet.is_strolling = false
 		pet.linear_damp = 0.3
 		pet.angular_damp = 0.5
@@ -75,12 +68,11 @@ func enter() -> void:
 func exit() -> void:
 	_is_rolling = false
 	_is_cruise = false
-	_pending_hop_dir = 0.0
 	if pet:
 		pet.is_strolling = false
-		# forced_look_dir 不在此处清零，交由 idle.enter() 的延迟机制自然过渡
+		pet.movement.finish()
 
-## 确定蹦跳方向并看向 (不施加冲量)
+## 确定蹦跳方向, 通过 movement.start 进入缓冲
 func _prepare_hop() -> void:
 	_has_landed = false
 	_land_pause = 0.0
@@ -91,24 +83,18 @@ func _prepare_hop() -> void:
 	if x < 100.0: hop_dir = 1.0
 	elif x > w - 100.0: hop_dir = -1.0
 	
-	pet.eye_behavior.forced_look_dir = Vector2(hop_dir, 0)
-	_pending_hop_dir = hop_dir
+	pet.movement.start(Vector2(hop_dir, 0), _execute_hop.bind(hop_dir))
 
-## 缓冲结束后执行蹦跳冲量
-func _execute_hop() -> void:
+## 缓冲到期后执行蹦跳冲量 (由 PetMovement 回调)
+func _execute_hop(hop_dir: float) -> void:
 	var height = randf_range(300.0, 500.0)
-	var horizontal = randf_range(130.0, 260.0) * _pending_hop_dir
+	var horizontal = randf_range(130.0, 260.0) * hop_dir
 	pet.apply_central_impulse(Vector2(horizontal, -height * pet.gravity_sign))
-	pet.apply_torque_impulse(_pending_hop_dir * randf_range(1000.0, 3000.0))
-	_pending_hop_dir = 0.0
+	pet.apply_torque_impulse(hop_dir * randf_range(1000.0, 3000.0))
 
 func process(delta: float) -> void:
-	# 先看方向的缓冲期
-	if _look_delay > 0.0:
-		_look_delay -= delta
-		if _look_delay <= 0.0 and _pending_hop_dir != 0.0:
-			_execute_hop()
-		return
+	# 缓冲期: movement 控制器管理计时, 这里跳过逻辑
+	if pet.movement.in_look_ahead: return
 	if _is_rolling: return
 	if not _has_landed: return
 	_land_pause += delta
@@ -118,7 +104,7 @@ func process(delta: float) -> void:
 func physics_process(delta: float) -> void:
 	if not pet: return
 	# 缓冲期不施力
-	if _look_delay > 0.0: return
+	if pet.movement.in_look_ahead: return
 	
 	if _is_rolling:
 		# 卡死检测：0.8 秒内没移动超过 5px → 放弃

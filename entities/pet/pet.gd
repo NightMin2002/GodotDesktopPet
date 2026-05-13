@@ -54,7 +54,9 @@ var _was_dragged_in_quiet: bool = false  # 安静模式下被拖拽的标记 (dr
 var _quiet_drag_count: int = 0           # 安静模式下被拖拽的累计次数
 var _last_quiet_drag_line: String = ""   # 上次显示的话术 (防连续重复)
 var is_strolling: bool = false  # 是否正在滚动漫步 (供其他宠物检测让路)
-var _holo_forced_look: bool = false  # 全息屏是否正在控制 forced_look_dir (区分状态机来源)
+
+# ── 移动方向控制器 (委托给 PetMovement) ──
+var movement: PetMovement
 
 ## 统一判断: 宠物是否应处于安静排队行为 (手动安静待命 OR 深夜模式)
 func is_quiet_behavior() -> bool:
@@ -113,6 +115,10 @@ func _ready() -> void:
 	# 初始化游戏态管理器 (必须在状态机之前，transition_to() 会访问 gaming.active)
 	gaming = PetGaming.new()
 	gaming.pet = self
+	
+	# 初始化移动方向控制器 (必须在状态机之前，enter() 会访问 movement)
+	movement = PetMovement.new()
+	movement.pet = self
 	
 	# 初始化状态机
 	_init_states()
@@ -408,16 +414,19 @@ func _process(delta: float) -> void:
 	gaming.update(delta)
 	# 全息屏: 展开/收起动画 + 屏保动画 (委托给 PetHoloScreen)
 	holo_screen.update(delta)
-	# 全息屏活跃模式: 瞳孔注视屏幕 (非游戏模式, 游戏模式由 PetGaming 管理)
-	var is_holo_look_mode = holo_screen.visible and holo_screen.is_terminal_mode
-	if is_holo_look_mode and not gaming.active:
+	# 移动方向控制器: 缓冲/保持计时 (在方向决议之前)
+	movement.update(delta)
+	
+	# ── 瞳孔方向优先级决议 (唯一写入 forced_look_dir 的地方) ──
+	if gaming.active:
 		eye_behavior.forced_look_dir = Vector2(holo_screen.side, 0.15)
-		_holo_forced_look = true
-	elif _holo_forced_look and not gaming.active:
-		# 仅清理由全息屏设置的注视方向，不影响状态机 (walk/jump/retreat) 的方向
+	elif holo_screen.visible and holo_screen.is_terminal_mode:
+		eye_behavior.forced_look_dir = Vector2(holo_screen.side, 0.15)
+	elif movement.is_active:
+		eye_behavior.forced_look_dir = movement.direction
+	else:
 		eye_behavior.forced_look_dir = Vector2.ZERO
-		_holo_forced_look = false
-
+	
 	var has_visual_change = pet_effects.update(delta)
 	idle_behaviors.update(delta)
 	idle_activities.update(delta)

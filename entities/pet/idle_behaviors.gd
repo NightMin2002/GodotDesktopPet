@@ -258,7 +258,7 @@ func _update_hibernate(_delta: float) -> void:
 			if not _hibernate_bubble_shown:
 				_hibernate_bubble_shown = true
 				pet.eye_behavior.stop_drowsy()
-				pet.eye_behavior.forced_look_dir = Vector2.ZERO
+				pet.movement.cancel()  # 休眠唤醒: 清除方向锁定
 				pet.show_local_bubble(_pick(HIBERNATE_WAKE_LINES))
 			if _behavior_timer > 0.8:  # 等恢复动画完成
 				_finish("hibernate")
@@ -273,7 +273,7 @@ func _cancel_current() -> void:
 		"hibernate":
 			pet.eye_behavior.stop_drowsy()
 			pet.eye_behavior.drowsy_amount = 0.0
-			pet.eye_behavior.forced_look_dir = Vector2.ZERO
+			pet.movement.cancel()  # 休眠取消: 清除方向锁定
 			pet.linear_damp = 0.8
 			pet.angular_damp = 1.0
 			pet.lock_rotation = false  # 解锁旋转

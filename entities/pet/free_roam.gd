@@ -201,13 +201,13 @@ func do_jump() -> void:
 	pet.apply_central_impulse(Vector2(vx, vy))
 	pet.apply_torque_impulse(hop_dir * randf_range(2000.0, 5000.0) * ss)
 	
-	pet.eye_behavior.forced_look_dir = Vector2(hop_dir, -pet.gravity_sign).normalized()
+	pet.movement.activate(Vector2(hop_dir, -pet.gravity_sign))
 
 # ── 决策 ──
 
 ## 落稳后的决策: 继续跳 / 横移 / 跳下 / 电梯
 func _decide_next() -> void:
-	pet.eye_behavior.forced_look_dir = Vector2.ZERO  # 落稳后恢复自然追踪
+	pet.movement.finish()  # 落稳后进入 HOLD → 自然过渡
 	var pause = randf_range(0.6, 1.5)
 	await pet.get_tree().create_timer(pause).timeout
 	if not active:
@@ -247,7 +247,7 @@ func _walk_sideways() -> void:
 	# 直接设定水平速度，确保宠物真正滚动位移
 	pet.linear_velocity = Vector2(hop_dir * randf_range(150.0, 300.0) * ss, pet.linear_velocity.y)
 	pet.apply_torque_impulse(hop_dir * randf_range(3000.0, 6000.0) * ss)
-	pet.eye_behavior.forced_look_dir = Vector2(hop_dir, 0).normalized()
+	pet.movement.activate(Vector2(hop_dir, 0))
 
 # ── 跳下 (踏板破碎) ──
 
@@ -262,7 +262,7 @@ func _jump_down() -> void:
 	
 	# 蓄力: 瞳孔看向跳跃方向
 	_full_stop()
-	pet.eye_behavior.forced_look_dir = Vector2(hop_dir, 0).normalized()
+	pet.movement.activate(Vector2(hop_dir, 0))
 	await pet.get_tree().create_timer(0.3).timeout
 	if not active:
 		return
@@ -275,7 +275,7 @@ func _jump_down() -> void:
 	pet.angular_damp = 0.4
 	pet.apply_central_impulse(Vector2(hop_dir * randf_range(200.0, 350.0) * ss, randf_range(50.0, 120.0) * -pet.gravity_sign * ss))
 	pet.apply_torque_impulse(hop_dir * randf_range(3000.0, 7000.0) * ss)
-	pet.eye_behavior.forced_look_dir = Vector2(hop_dir, pet.gravity_sign).normalized()
+	pet.movement.activate(Vector2(hop_dir, pet.gravity_sign))
 	
 	# 踏板因起跳冲击力破碎
 	if is_instance_valid(_current_plat):
@@ -313,7 +313,7 @@ func _begin_descent() -> void:
 	_elevator = elevator
 	_elevator_vanish_dist = randf_range(10.0, 50.0) * screen_scale()  # 随机 + 屏幕自适应
 	
-	pet.eye_behavior.forced_look_dir = Vector2(0, pet.gravity_sign)
+	pet.movement.activate(Vector2(0, pet.gravity_sign))
 	
 	phase = 3
 

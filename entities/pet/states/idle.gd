@@ -7,8 +7,6 @@ extends PetState
 var idle_timer: float = 0.0
 var idle_duration: float = 0.0
 var _dodge_cooldown: float = 0.0  # 让路跳跃冷却
-var _look_hold: float = 0.0       # 落地后保持看方向的延迟 (弹跳/大跳自然过渡)
-const LOOK_HOLD_TIME := 0.3       # 落地后再看方向一小会儿才恢复自由追踪
 
 func enter() -> void:
 	idle_duration = randf_range(1.0, 4.0)
@@ -17,11 +15,7 @@ func enter() -> void:
 	if pet:
 		pet.linear_damp = 0.8
 		pet.angular_damp = 1.0
-		# 落地后保持看方向一小会儿 (蹦跳/大跳自然过渡)
-		if pet.eye_behavior.forced_look_dir != Vector2.ZERO:
-			_look_hold = LOOK_HOLD_TIME
-		else:
-			_look_hold = 0.0
+		# forced_look_dir 由 PetMovement HOLD 阶段管理，此处无需处理
 		if pet.is_quiet_behavior():
 			pet.linear_damp = 5.0
 			pet.angular_damp = 8.0
@@ -36,12 +30,6 @@ func exit() -> void:
 
 func process(delta: float) -> void:
 	idle_timer += delta
-	
-	# 落地后保持看方向的延迟清零
-	if _look_hold > 0.0:
-		_look_hold -= delta
-		if _look_hold <= 0.0:
-			pet.eye_behavior.forced_look_dir = Vector2.ZERO
 	
 	# ── 游戏态 / 全息屏活跃: 锁定 idle，不做任何转换/触发 ──
 	if pet.gaming.active or pet.holo_screen.is_terminal_mode:

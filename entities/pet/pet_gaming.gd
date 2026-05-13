@@ -44,7 +44,7 @@ func on_gaming_changed(is_active: bool, game_ref: RefCounted) -> void:
 		# 生成踏板，缓缓升起
 		_spawn_platform()
 	else:
-		pet.eye_behavior.forced_look_dir = Vector2.ZERO
+		pet.movement.cancel()  # 清除移动方向 (瞳孔由决议层管理)
 		# 隐藏全息屏
 		pet.holo_screen.hide()
 		# 清除踏板
@@ -59,7 +59,7 @@ func on_gaming_changed(is_active: bool, game_ref: RefCounted) -> void:
 func update(delta: float) -> void:
 	if not active:
 		return
-	pet.eye_behavior.forced_look_dir = Vector2(pet.holo_screen.side, 0.15)
+	# 瞳孔方向由 pet.gd 决议层统一处理 (gaming.active 最高优先级)
 	pet.linear_velocity = Vector2.ZERO
 	# 踏板上升驱动
 	if _lift_phase == 1 and is_instance_valid(_platform):
