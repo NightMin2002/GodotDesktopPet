@@ -105,10 +105,11 @@ func _spawn_platform() -> void:
 	if pet.anti_gravity:
 		col.rotation = PI
 	body.add_child(col)
-	# 视觉效果 (复用 FreeRoamSystem 的 PlatformVisual)
+	# 视觉效果 (极简模式: 无闪光/粒子)
 	var visual = FreeRoamSystem.PlatformVisual.new()
 	visual.platform_width = pet.PET_RADIUS * 2.0
 	visual.platform_color = pet.palette.shift_color(Color(0.2, 0.6, 1.0, 0.6))
+	visual.quiet = true
 	body.add_child(visual)
 	parent.add_child(body)
 	# 淡入

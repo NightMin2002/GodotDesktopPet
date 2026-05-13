@@ -475,10 +475,9 @@ func _shatter_platform(plat: StaticBody2D) -> void:
 class PlatformVisual extends Node2D:
 	var platform_width: float = 120.0
 	var platform_color: Color = Color(0.2, 0.6, 1.0, 0.6)
+	var quiet: bool = false  # 静默模式: 强制极简 + 无粒子 (终端/游戏态用)
 	var _time: float = 0.0
 	var _expand: float = 0.0
-	var _land_flash: float = 0.0
-	var _landed: bool = false
 	
 	# 风格: -1=随机, 0=能量束, 1=脉冲链, 2=极简
 	static var style: int = 0
@@ -486,14 +485,9 @@ class PlatformVisual extends Node2D:
 	
 	func _process(delta: float) -> void:
 		if _time == 0.0:
-			_active_style = randi_range(0, 2) if style < 0 else style
+			_active_style = 2 if quiet else (randi_range(0, 2) if style < 0 else style)
 		_time += delta
 		_expand = minf(_expand + delta / 0.3, 1.0)
-		if _land_flash > 0.0:
-			_land_flash = maxf(_land_flash - delta * 3.0, 0.0)
-		if not _landed and _time > 0.35:
-			_landed = true
-			_land_flash = 1.0
 		queue_redraw()
 	
 	func _draw() -> void:
@@ -502,11 +496,10 @@ class PlatformVisual extends Node2D:
 			return
 		
 		var pulse = 0.85 + sin(_time * TAU / 2.5) * 0.15
-		var flash = _land_flash * 0.4
 		var c = Color(
-			minf(platform_color.r + flash, 1.0),
-			minf(platform_color.g + flash, 1.0),
-			minf(platform_color.b + flash * 0.5, 1.0),
+			platform_color.r,
+			platform_color.g,
+			platform_color.b,
 			platform_color.a * pulse
 		)
 		
@@ -516,11 +509,6 @@ class PlatformVisual extends Node2D:
 			2: _draw_minimal(hw, c)
 			_: _draw_energy(hw, c)
 		
-		# 着陆闪光环 (所有风格通用)
-		if _land_flash > 0.01:
-			var ring_r = hw * (1.0 + (1.0 - _land_flash) * 0.3)
-			var ring_c = Color(c.r, c.g, c.b, _land_flash * 0.5)
-			draw_arc(Vector2.ZERO, ring_r, 0, TAU, 24, ring_c, 1.5, true)
 	
 	# ── 风格 0: 能量束 ──
 	func _draw_energy(hw: float, c: Color) -> void:

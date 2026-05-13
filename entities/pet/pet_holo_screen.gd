@@ -416,6 +416,7 @@ func _spawn_platform() -> void:
 	var visual = FreeRoamSystem.PlatformVisual.new()
 	visual.platform_width = pet.PET_RADIUS * 2.0
 	visual.platform_color = pet.palette.shift_color(Color(0.2, 0.6, 1.0, 0.6))
+	visual.quiet = true
 	body.add_child(visual)
 	parent.add_child(body)
 	body.modulate.a = 0.0
