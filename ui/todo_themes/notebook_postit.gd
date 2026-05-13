@@ -74,20 +74,21 @@ class _NotebookPanel extends PanelContainer:
 		var t_pts = PackedVector2Array()
 		# 制造手撕毛边边缘
 		var steps = 8
-		# 左边缘(毛边)
+		# 左边缘(毛边 — 只向外偏移避免自交)
 		for i in range(steps + 1):
-			var lp = Vector2(-tape_w*0.5 + _rng.randf_range(-3, 3), -tape_h*0.5 + tape_h * i / steps)
+			var lp = Vector2(-tape_w*0.5 + _rng.randf_range(-3, 0), -tape_h*0.5 + tape_h * i / steps)
 			t_pts.append(tape_center + lp.rotated(tape_ang))
 		# 底边缘(直线)
 		t_pts.append(tape_center + Vector2(tape_w*0.5, tape_h*0.5).rotated(tape_ang))
-		# 右边缘(毛边)
+		# 右边缘(毛边 — 只向外偏移避免自交)
 		for i in range(steps + 1):
-			var rp = Vector2(tape_w*0.5 + _rng.randf_range(-3, 3), tape_h*0.5 - tape_h * i / steps)
+			var rp = Vector2(tape_w*0.5 + _rng.randf_range(0, 3), tape_h*0.5 - tape_h * i / steps)
 			t_pts.append(tape_center + rp.rotated(tape_ang))
 		# 顶边缘(直线)
 		t_pts.append(tape_center + Vector2(-tape_w*0.5, -tape_h*0.5).rotated(tape_ang))
 		
-		draw_polygon(t_pts, PackedColorArray([tape_c]))
+		if t_pts.size() >= 3:
+			draw_polygon(t_pts, PackedColorArray([tape_c]))
 
 func create_panel() -> PanelContainer:
 	return _NotebookPanel.new(self)
@@ -329,7 +330,8 @@ class _NotebookScrollbar extends TodoScrollbar:
 			pts.append(Vector2(cx + sin(s)*2.0, y))
 			s += 0.8
 			y += 6.0
-		draw_polyline(pts, c, 1.2)
+		if pts.size() >= 2:
+			draw_polyline(pts, c, 1.2)
 
 	func _draw_thumb(thumb: Rect2) -> void:
 		# 像是一块彩色半透明的索引贴/胶带

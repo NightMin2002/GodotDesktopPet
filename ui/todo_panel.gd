@@ -747,6 +747,8 @@ func _open_panel() -> void:
 	tween.tween_property(panel, "modulate:a", 1.0, 0.15)
 	tween.tween_property(panel, "scale", Vector2.ONE, 0.22) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	# 延迟一帧等布局算完真实尺寸后再刷新卡片宽度
+	(func(): _refresh_list(); _update_fades()).call_deferred()
 
 func _close_panel() -> void:
 	_dragging = false

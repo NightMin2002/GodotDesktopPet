@@ -427,7 +427,8 @@ class _ChalkScrollbar extends TodoScrollbar:
 				pts.append(Vector2(cx + _rng.randf_range(-1.5, 1.5), y))
 				y += 10.0
 			pts.append(Vector2(cx, track.end.y))
-			draw_polyline(pts, c, 1.5)
+			if pts.size() >= 2:
+				draw_polyline(pts, c, 1.5)
 
 	func _draw_thumb(thumb: Rect2) -> void:
 		_rng.seed = int(thumb.position.y) * 10
