@@ -471,7 +471,7 @@ func _on_pool_check(sl: Dictionary) -> void:
 	if sl.bound_idx >= 0: _toggle_todo(sl.bound_idx)
 
 func _on_pool_del(sl: Dictionary) -> void:
-	if sl.bound_idx >= 0: _delete_todo(sl.bound_idx)
+	if sl.bound_idx >= 0: _delete_todo_animated(sl.bound_idx, sl.card)
 
 func _bind_slot(slot_i: int, todo_idx: int, todos: Array, width: float) -> void:
 	var sl = _pool[slot_i]
@@ -709,7 +709,10 @@ func _delete_todo(idx: int) -> void:
 		_refresh_list()
 		_refresh_right_panel()
 
-func _delete_todo_animated(idx: int, _card: Control) -> void:
+func _delete_todo_animated(idx: int, card: Control) -> void:
+	if theme.has_method("play_delete_animation"):
+		var handled = theme.play_delete_animation(card, func(): _delete_todo(idx))
+		if handled: return
 	_delete_todo(idx)
 
 func _gen_id() -> String:

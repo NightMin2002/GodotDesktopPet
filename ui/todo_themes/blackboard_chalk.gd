@@ -28,8 +28,117 @@ func _init() -> void:
 
 class _BlackboardPanel extends PanelContainer:
 	var _t: TodoThemeBase
-	var _time: float = 0.0
+	var _last_second: int = -1
+	var _tick_anim_time: float = 1.0 
 	
+	var _is_erasing := false
+	var dust_particles: Array = []
+	var eraser_pos: Vector2 = Vector2.ZERO:
+		set(v):
+			eraser_pos = v
+			queue_redraw()
+	var _is_erasing_in_air := false
+	var _eraser_shadow_offset := 0.0
+	
+	var _erase_queue: Array = []
+	var _erase_tween: Tween
+	var _card_tween: Tween
+
+	func play_erase(card: Control, callback: Callable) -> void:
+		_erase_queue.append({"card": card, "cb": callback})
+		if not _is_erasing:
+			_is_erasing = true
+			if _erase_tween and _erase_tween.is_valid():
+				_erase_tween.kill()
+			_process_next_erase()
+
+	func _process_next_erase() -> void:
+		if _erase_queue.is_empty():
+			# 队列清空，飞回边框挂载区
+			var r_size = size
+			var bs := 18.0
+			var start_pos = Vector2(r_size.x - 170, r_size.y - bs - 10)
+			
+			_erase_tween = create_tween()
+			_erase_tween.parallel().tween_property(self, "_eraser_shadow_offset", 15.0, 0.2).set_ease(Tween.EASE_OUT)
+			_erase_tween.parallel().tween_property(self, "eraser_pos", start_pos, 0.4).set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_QUAD)
+			_erase_tween.tween_callback(func(): 
+				_is_erasing = false
+				_is_erasing_in_air = false
+				queue_redraw()
+			)
+			return
+			
+		_is_erasing_in_air = true
+		
+		var task = _erase_queue.pop_front()
+		var card = task.card
+		var callback = task.cb
+		
+		if not is_instance_valid(card):
+			callback.call()
+			call_deferred("_process_next_erase")
+			return
+			
+		var r_size = size
+		var bs := 18.0
+		var start_pos = Vector2(r_size.x - 170, r_size.y - bs - 10)
+		if not _is_erasing and not _is_erasing_in_air:
+			eraser_pos = start_pos
+		
+		var card_local = card.get_global_position() - get_global_position()
+		# 瞄准稍微偏下居中位置
+		var y_target = card_local.y + card.size.y * 0.5 + 4
+		var x_start = card_local.x + 20
+		var x_end = card_local.x + card.size.x - 10
+		var x_mid = (x_start + x_end) * 0.4
+		
+		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		
+		_erase_tween = create_tween()
+		
+		var dist = eraser_pos.distance_to(Vector2(x_start, y_target))
+		var fly_time = clampf(dist / 2000.0, 0.15, 0.35)
+		
+		# 抛物线起飞
+		_erase_tween.parallel().tween_property(self, "_eraser_shadow_offset", 20.0, fly_time * 0.5).set_ease(Tween.EASE_OUT)
+		_erase_tween.parallel().tween_property(self, "eraser_pos", Vector2(x_start, y_target), fly_time).set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_QUAD)
+		
+		# 重重砸在黑板上，缩短阴影
+		_erase_tween.chain().tween_property(self, "_eraser_shadow_offset", 0.0, 0.08).set_ease(Tween.EASE_IN)
+		
+		# 有灵魂的往复擦拭动作
+		var scrub_1 = 0.18
+		var scrub_2 = 0.15
+		var scrub_3 = 0.25
+		
+		_erase_tween.tween_property(self, "eraser_pos", Vector2(x_mid, y_target), scrub_1).set_ease(Tween.EASE_IN_OUT)
+		_erase_tween.tween_property(self, "eraser_pos", Vector2(x_start + 10, y_target + 5), scrub_2).set_ease(Tween.EASE_IN_OUT)
+		_erase_tween.tween_property(self, "eraser_pos", Vector2(x_end, y_target), scrub_3).set_ease(Tween.EASE_IN_OUT)
+		
+		if _card_tween and _card_tween.is_valid():
+			_card_tween.kill()
+		_card_tween = create_tween()
+		_card_tween.tween_interval(fly_time + 0.08)
+		# 分阶段抹除字迹
+		_card_tween.tween_property(card, "modulate:a", 0.5, scrub_1)
+		_card_tween.tween_property(card, "modulate:a", 0.25, scrub_2)
+		_card_tween.tween_property(card, "modulate:a", 0.0, scrub_3)
+		
+		_erase_tween.tween_property(self, "eraser_pos", Vector2(x_end + 10, y_target + 2), 0.1).set_trans(Tween.TRANS_BOUNCE)
+		_erase_tween.tween_callback(func(): 
+			for i in range(30):
+				dust_particles.append({
+					"pos": Vector2(eraser_pos.x, eraser_pos.y) + Vector2(randf_range(-15, 15), randf_range(-15, 15)),
+					"vel": Vector2(randf_range(-10, 80), randf_range(20, 100)),
+					"life": 0.8
+				})
+			callback.call()
+			card.modulate.a = 1.0
+			card.mouse_filter = Control.MOUSE_FILTER_PASS
+			_process_next_erase()
+		)
+
 	func _init(t: TodoThemeBase) -> void: 
 		_t = t
 		
@@ -40,8 +149,31 @@ class _BlackboardPanel extends PanelContainer:
 		
 	func _process(delta: float) -> void:
 		if not visible: return
-		_time += delta
-		queue_redraw()
+		
+		var time_dict = Time.get_time_dict_from_system()
+		var se = time_dict.second
+		var needs_redraw = false
+		
+		if se != _last_second:
+			_last_second = se
+			_tick_anim_time = 0.0
+			needs_redraw = true
+			
+		if _tick_anim_time < 0.3:
+			_tick_anim_time += delta
+			needs_redraw = true
+			
+		if _is_erasing or dust_particles.size() > 0:
+			needs_redraw = true
+			for p in dust_particles:
+				p.pos += p.vel * delta
+				p.vel.y += 400.0 * delta # 物理掉落重力感
+				p.life -= delta
+			var oc = dust_particles.size()
+			dust_particles = dust_particles.filter(func(p): return p.life > 0)
+			
+		if needs_redraw:
+			queue_redraw()
 		
 	func _draw() -> void:
 		var r = Rect2(Vector2.ZERO, size)
@@ -89,58 +221,65 @@ class _BlackboardPanel extends PanelContainer:
 		draw_line(Vector2(0,size.y), Vector2(bs, size.y-bs), Color(0,0,0, 0.8), 2.0)
 		draw_line(Vector2(size.x,size.y), Vector2(size.x-bs, size.y-bs), Color(0,0,0, 0.8), 2.0)
 
-		# 4. 粉笔残留擦痕 (白灰涂抹)
+		# 4. 粉笔残留擦痕 (真实的模糊白灰粉末感)
 		rng.seed = 8848
-		var dust_c = Color(_t.tx_primary, 0.015)
-		for i in range(25):
+		var dust_c = Color(_t.tx_primary, 0.012)
+		for i in range(120): # 大量微弱粗糙排线，放弃生硬的多边形圆块
 			var cx = rng.randf_range(bs, r.size.x - bs)
 			var cy = rng.randf_range(bs, r.size.y - bs)
-			var rad = rng.randf_range(30, 90)
-			var pts = PackedVector2Array()
-			var a_c = rng.randf_range(0.6, 1.8) 
-			for ang in range(0, 360, 30):
-				var rad_ang = deg_to_rad(ang)
-				pts.append(Vector2(cx + cos(rad_ang) * rad * a_c, cy + sin(rad_ang) * rad))
-			draw_polygon(pts, PackedColorArray([dust_c]))
+			var w = rng.randf_range(80, 200)
+			var h = rng.randf_range(30, 80)
+			var ang = rng.randf_range(-0.3, 0.3)
+			# 模拟黑板擦大力晕染擦过的一抹残象
+			for j in range(12):
+				var offset = Vector2(rng.randf_range(-w, w)*0.5, rng.randf_range(-h, h)*0.5)
+				var end_offset = offset + Vector2(cos(ang), sin(ang)) * rng.randf_range(20, 60)
+				draw_line(Vector2(cx, cy) + offset, Vector2(cx, cy) + end_offset, dust_c, rng.randf_range(4, 15))
 			
-		# 5. 零散涂鸦与彩蛋
-		var dc = Color(_t.tx_primary, 0.12)
-		# 涂鸦 A：左下角的杂乱算式
-		var cx2 = 30.0 + bs
-		var cy2 = r.size.y - bs - 50.0
-		var p2 = PackedVector2Array([
-			Vector2(cx2+5, cy2-35), Vector2(cx2-12, cy2+20), Vector2(cx2-5, cy2+28),
-			Vector2(cx2+45, cy2-25), Vector2(cx2+40, cy2-30), Vector2(cx2+25, cy2+8)
-		])
-		draw_polyline(p2, dc, 3.0)
-		draw_line(Vector2(cx2+60, cy2-8), Vector2(cx2+80, cy2-8), dc, 2.5)
-		draw_line(Vector2(cx2+60, cy2+2), Vector2(cx2+80, cy2+2), dc, 2.5)
+		# 5. 半擦除状态的隐约涂鸦彩蛋 (极低透明度多重排线，融入黑板背景)
+		rng.seed = 777
+		var dc_base = Color(_t.tx_primary, 0.035) 
 		var font = ThemeDB.fallback_font
-		draw_string(font, Vector2(cx2+90, cy2+8), "mc² = E", 0, -1, 16, dc)
-
-		# 涂鸦 B：右下方涂鸦区的井字棋
-		var tl = Vector2(r.size.x - 70, r.size.y - bs - 100)
-		var l3 = 35.0
-		var p3_lines = [
-			[Vector2(-l3, -12), Vector2(l3, -8)], [Vector2(-l3, 16), Vector2(l3, 18)],
-			[Vector2(-15, -l3), Vector2(-12, l3)], [Vector2(16, -l3), Vector2(18, l3)]
-		]
-		for L in p3_lines: draw_line(tl + L[0], tl + L[1], dc, 3.0)
-		var p3c = PackedVector2Array() 
-		for a in range(0, 380, 20): p3c.append(tl + Vector2(25, -22) + Vector2(cos(deg_to_rad(a))*12, sin(deg_to_rad(a))*14))
-		draw_polyline(p3c, dc, 2.5)
-		draw_line(tl + Vector2(-35, -35), tl + Vector2(-5, -5), dc, 2.5)
-		draw_line(tl + Vector2(-10, -35), tl + Vector2(-40, -5), dc, 2.5)
+		for loop in range(4):
+			var dx = rng.randf_range(-2.0, 2.0)
+			var dy = rng.randf_range(-2.0, 2.0)
 			
-		# 6. 右侧边缘：手绘 3D 正方体透视教学
-		var cube_orig = Vector2(r.size.x - 75, r.size.y * 0.5)
-		var cv1 = cube_orig + Vector2(0, 0); var cv2 = cube_orig + Vector2(20, -5); 
-		var cv3 = cube_orig + Vector2(20, 15); var cv4 = cube_orig + Vector2(0, 20)
-		var d = Vector2(-10, -15)
-		draw_polyline(PackedVector2Array([cv1, cv2, cv3, cv4, cv1]), dc, 2.0)
-		draw_polyline(PackedVector2Array([cv1+d, cv2+d, cv3+d, cv4+d, cv1+d]), dc, 2.0) # 背面
-		draw_line(cv1, cv1+d, dc, 2.0); draw_line(cv2, cv2+d, dc, 2.0)
-		draw_line(cv3, cv3+d, dc, 2.0); draw_line(cv4, cv4+d, dc, 2.0)
+			var cx2 = 30.0 + bs
+			var cy2 = r.size.y - bs - 50.0
+			var p2 = PackedVector2Array([
+				Vector2(cx2+5, cy2-35)+Vector2(dx,dy), Vector2(cx2-12, cy2+20)+Vector2(dx,dy), Vector2(cx2-5, cy2+28)+Vector2(dx,dy),
+				Vector2(cx2+45, cy2-25)+Vector2(dx,dy), Vector2(cx2+40, cy2-30)+Vector2(dx,dy), Vector2(cx2+25, cy2+8)+Vector2(dx,dy)
+			])
+			draw_polyline(p2, dc_base, rng.randf_range(1.5, 3.0))
+			draw_line(Vector2(cx2+60, cy2-8)+Vector2(dx,dy), Vector2(cx2+80, cy2-8)+Vector2(dx,dy), dc_base, 2.0)
+			draw_line(Vector2(cx2+60, cy2+2)+Vector2(dx,dy), Vector2(cx2+80, cy2+2)+Vector2(dx,dy), dc_base, 2.0)
+			
+			if loop == 0: 
+				draw_string(font, Vector2(cx2+90, cy2+8), "mc² = 0", 0, -1, 14, Color(_t.tx_primary, 0.05))
+				draw_string(font, Vector2(cx2+90, cy2+8) + Vector2(1,1), "mc² = 0", 0, -1, 14, Color(_t.tx_primary, 0.02))
+
+			var tl = Vector2(r.size.x - 70, r.size.y - bs - 100)
+			var l3 = 35.0
+			var p3_lines = [
+				[Vector2(-l3, -12), Vector2(l3, -8)], [Vector2(-l3, 16), Vector2(l3, 18)],
+				[Vector2(-15, -l3), Vector2(-12, l3)], [Vector2(16, -l3), Vector2(18, l3)]
+			]
+			for L in p3_lines: draw_line(tl + L[0]+Vector2(dx,dy), tl + L[1]+Vector2(dx,dy), dc_base, rng.randf_range(1.5, 3.0))
+			
+			var p3c = PackedVector2Array() 
+			for a in range(0, 380, 40): p3c.append(tl + Vector2(25, -22) + Vector2(cos(deg_to_rad(a))*12, sin(deg_to_rad(a))*14) + Vector2(dx,dy))
+			draw_polyline(p3c, dc_base, 2.0)
+			draw_line(tl + Vector2(-35, -35)+Vector2(dx,dy), tl + Vector2(-5, -5)+Vector2(dx,dy), dc_base, 2.0)
+			draw_line(tl + Vector2(-10, -35)+Vector2(dx,dy), tl + Vector2(-40, -5)+Vector2(dx,dy), dc_base, 2.0)
+				
+			var cube_orig = Vector2(r.size.x - 75, r.size.y * 0.5)
+			var cv1 = cube_orig + Vector2(0, 0)+Vector2(dx,dy); var cv2 = cube_orig + Vector2(20, -5)+Vector2(dx,dy); 
+			var cv3 = cube_orig + Vector2(20, 15)+Vector2(dx,dy); var cv4 = cube_orig + Vector2(0, 20)+Vector2(dx,dy)
+			var d = Vector2(-10, -15)
+			draw_polyline(PackedVector2Array([cv1, cv2, cv3, cv4, cv1]), dc_base, 1.5)
+			draw_polyline(PackedVector2Array([cv1+d, cv2+d, cv3+d, cv4+d, cv1+d]), dc_base, 1.5) 
+			draw_line(cv1, cv1+d, dc_base, 1.5); draw_line(cv2, cv2+d, dc_base, 1.5)
+			draw_line(cv3, cv3+d, dc_base, 1.5); draw_line(cv4, cv4+d, dc_base, 1.5)
 		
 		# 7. 实时粉笔时钟 (右上角专属空间)!
 		var time_dict = Time.get_time_dict_from_system()
@@ -171,25 +310,73 @@ class _BlackboardPanel extends PanelContainer:
 		# 根据现实时间计算旋转角
 		var hr_ang = (hr + mi/60.0) * PI/6.0 - PI/2.0
 		var mi_ang = (mi + se/60.0) * PI/30.0 - PI/2.0
+		
+		# 机械跳动秒针 (跳步+阻尼振荡过冲特效)
 		var se_ang = se * PI/30.0 - PI/2.0
+		if _tick_anim_time < 0.3:
+			# 刚跳去新的一格时，带有越界的衰减颤抖 (Damping Oscillator)
+			var bounce = sin(_tick_anim_time * PI * 18.0) * exp(-_tick_anim_time * 15.0)
+			se_ang += bounce * 0.06
+			
 		# 极其粗糙的手绘指针
 		draw_line(clock_c, clock_c + Vector2(cos(hr_ang), sin(hr_ang)) * (cr * 0.45), c_chalk, 4.0)
 		draw_line(clock_c, clock_c + Vector2(cos(mi_ang), sin(mi_ang)) * (cr * 0.75), c_chalk, 2.5)
 		draw_line(clock_c, clock_c + Vector2(cos(se_ang), sin(se_ang)) * (cr * 0.85), Color(_t.danger, 0.8), 1.5)
 		draw_circle(clock_c, 3.0, c_chalk) # 表盘轴心
 
-		# 8. 立体黑板擦 (静静地放置在底部右下角木方边框上)
+		# 8. 立体黑板擦 (智能视角切换，动画+静态混合表现)
 		var eraser_x = r.size.x - 170
 		var eraser_y = r.size.y - bs - 10
-		# 下方木条在木框内，产生一点阴影
-		draw_rect(Rect2(eraser_x + 6, eraser_y + 10, 48, 6), Color(0,0,0, 0.4)) 
-		# 蓝色厚实耐用的毡布海绵层
-		draw_rect(Rect2(eraser_x, eraser_y, 48, 10), Color(0.18, 0.28, 0.38))
-		# 黑色沉重的塑料壳/木壳把手
-		draw_rect(Rect2(eraser_x, eraser_y - 12, 48, 12), Color(0.1, 0.08, 0.05))
-		# 塑料壳高光线
-		draw_line(Vector2(eraser_x, eraser_y - 12), Vector2(eraser_x + 48, eraser_y - 12), Color(1,1,1,0.2), 2.0)
-		draw_line(Vector2(eraser_x, eraser_y), Vector2(eraser_x + 48, eraser_y), Color(1,1,1,0.2), 1.0)
+		if _is_erasing_in_air:
+			eraser_x = eraser_pos.x
+			eraser_y = eraser_pos.y
+			
+			var hw = 24.0
+			var hh = 16.0
+			var sh_dist = _eraser_shadow_offset
+			var scale_f = 1.0 + sh_dist * 0.005
+			hw *= scale_f
+			hh *= scale_f
+			
+			var shadow_rect = Rect2(eraser_x - hw + sh_dist, eraser_y - hh + sh_dist, 2*hw, 2*hh)
+			draw_rect(shadow_rect, Color(0,0,0, 0.4 - sh_dist*0.01), false, 4.0)
+			
+			var sponge_rect = Rect2(eraser_x - hw - 3, eraser_y - hh - 3, 2*hw + 6, 2*hh + 6)
+			draw_rect(sponge_rect, Color(0.85, 0.88, 0.9))
+			
+			var chalky = Color(0.9, 0.9, 0.9, 1.0)
+			rng.seed = 3344
+			for i in range(40):
+				var angle = rng.randf_range(0, TAU)
+				var dist_w = hw + rng.randf_range(1, 8)
+				var dist_h = hh + rng.randf_range(1, 8)
+				var e_p = Vector2(eraser_x + cos(angle)*dist_w, eraser_y + sin(angle)*dist_h)
+				draw_line(e_p, e_p + Vector2(cos(angle)*3, sin(angle)*3), Color(chalky, rng.randf_range(0.5, 1.0)), rng.randf_range(2, 4))
+			
+			var wood_rect = Rect2(eraser_x - hw, eraser_y - hh, 2*hw, 2*hh)
+			draw_rect(wood_rect, Color(0.5, 0.28, 0.15))
+			draw_rect(wood_rect, Color(0,0,0, 0.5), false, 1.5)
+			draw_line(Vector2(wood_rect.position.x+2, wood_rect.position.y+2), Vector2(wood_rect.end.x-2, wood_rect.position.y+2), Color(1,1,1,0.2), 2.0)
+			
+		else:
+			draw_rect(Rect2(eraser_x + 4, eraser_y + 12, 44, 6), Color(0,0,0, 0.5)) 
+			draw_rect(Rect2(eraser_x, eraser_y, 44, 12), Color(0.2, 0.25, 0.3))
+			draw_rect(Rect2(eraser_x, eraser_y+8, 44, 4), Color(0.8, 0.85, 0.8, 0.9))
+			
+			rng.seed = 5566
+			for i in range(25):
+				var px = eraser_x + rng.randf_range(0, 44)
+				var py = eraser_y + 8 + rng.randf_range(0, 4)
+				draw_line(Vector2(px, py), Vector2(px, py+rng.randf_range(1, 4)), Color(0.9,0.9,0.9,rng.randf_range(0.3,0.8)), 1.5)
+				
+			draw_rect(Rect2(eraser_x - 1, eraser_y - 12, 46, 12), Color(0.5, 0.28, 0.15))
+			draw_line(Vector2(eraser_x, eraser_y - 12), Vector2(eraser_x + 45, eraser_y - 12), Color(1,1,1,0.2), 2.0)
+			draw_line(Vector2(eraser_x+5, eraser_y - 8), Vector2(eraser_x + 40, eraser_y - 8), Color(0,0,0,0.3), 1.0)
+			
+		# 绘制动画撒落的粉笔灰动态粒子 (去除随机扰动导致的闪烁，根据物理速度拉长视觉轨迹)
+		for p in dust_particles:
+			var a = clampf(p.life, 0.0, 1.0)
+			draw_line(p.pos, p.pos + Vector2(0, maxf(3.0, p.vel.length() * 0.02)), Color(_t.tx_primary, a * 0.6), 2.0)
 		
 		# 9. 手绘感标题栏直线
 		var ty = bs + _t.title_bar_height
@@ -197,8 +384,17 @@ class _BlackboardPanel extends PanelContainer:
 		draw_line(Vector2(bs + 10, ty - 1.5), Vector2(r.size.x - bs - 140, ty + 1.5), chalk_l_c, 2.0)
 		draw_line(Vector2(bs + 8, ty + 1.0), Vector2(r.size.x - bs - 144, ty - 1.0), chalk_l_c, 1.5)
 
+var _panel_instance: _BlackboardPanel
+
 func create_panel() -> PanelContainer:
-	return _BlackboardPanel.new(self)
+	_panel_instance = _BlackboardPanel.new(self)
+	return _panel_instance
+
+func play_delete_animation(card: Control, callback: Callable) -> bool:
+	if is_instance_valid(_panel_instance):
+		_panel_instance.play_erase(card, callback)
+		return true
+	return false
 
 # ═══════════════════════════════════════════════
 #  组件覆写：粉笔颗粒堆叠与强手绘感
@@ -208,18 +404,36 @@ class _ChalkProgress extends Control:
 	var _t: TodoThemeBase
 	var _done: int = 0; var _total: int = 0
 	var _rng := RandomNumberGenerator.new()
+	var _tween: Tween
+	var _is_first_update: bool = true
+	
+	var display_ratio: float = 0.0:
+		set(v):
+			display_ratio = v
+			queue_redraw()
 
 	func _init(t: TodoThemeBase) -> void:
 		_t = t; mouse_filter = Control.MOUSE_FILTER_IGNORE
 		custom_minimum_size = Vector2(0, 26)
 
 	func update(done: int, total: int) -> void:
-		_done = done; _total = total; queue_redraw()
+		_done = done; _total = total
+		var target_ratio = 0.0 if _total <= 0 else float(_done) / float(_total)
+		
+		if _is_first_update:
+			_is_first_update = false
+			display_ratio = target_ratio
+		else:
+			if _tween and _tween.is_valid():
+				_tween.kill()
+			_tween = create_tween().set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+			_tween.tween_property(self, "display_ratio", target_ratio, 0.45)
 
 	func _draw() -> void:
 		if _total <= 0: return
 		var chalk = _t.accent if _done >= _total else Color(_t.tx_primary, 0.8)
-		var ratio = float(_done) / float(_total)
+		# 使用平滑过度的比例，实现“书写”与“退去”过程的线性绘画视觉
+		var ratio = display_ratio
 
 		var bx := 20.0; var bar_h := 16.0; var by := (size.y - bar_h) * 0.5
 		var bar_w := size.x - bx * 2
@@ -245,37 +459,36 @@ class _ChalkProgress extends Control:
 				x += 4.5
 			draw_rect(Rect2(bx + 1, by + 1, fill_w - 2, bar_h - 2), Color(chalk, 0.12))
 
-		# 掉落粉末特效
+		# 糊状脱落粉末特效 (废弃规整的 circle，改用极短的半透明糊状线形堆叠)
 		_rng.seed = 234
-		for i in range(25):
-			var px = _rng.randf_range(bx - 6, bx + bar_w + 6)
-			var py = _rng.randf_range(by - 5, by + bar_h + 5)
-			if absf(py - by) < 4 or absf(py - by - bar_h) < 4 or absf(px - bx) < 4 or absf(px - bx - bar_w) < 4:
-				draw_circle(Vector2(px, py), _rng.randf_range(0.5, 1.2), Color(chalk, _rng.randf_range(0.1, 0.4)))
+		for i in range(40):
+			var px = _rng.randf_range(bx - 10, bx + bar_w + 10)
+			var py = _rng.randf_range(by - 8, by + bar_h + 8)
+			if absf(py - by) < 6 or absf(py - by - bar_h) < 6 or absf(px - bx) < 6 or absf(px - bx - bar_w) < 6:
+				draw_line(Vector2(px, py), Vector2(px + _rng.randf_range(-2, 2), py + _rng.randf_range(1, 4)), Color(chalk, _rng.randf_range(0.05, 0.2)), _rng.randf_range(1.0, 3.0))
 
 		# 分数文本及其擦拭底霜
 		var font = ThemeDB.fallback_font
 		var text = "%d / %d" % [_done, _total]
-		var ts = font.get_string_size(text, 0, -1, 12)
-		var tx = (size.x - ts.x) * 0.5
-		var ty = (size.y + ts.y * 0.5) * 0.5
+		var ts = font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, 12)
+		var ascent = font.get_ascent(12)
+		var descent = font.get_descent(12)
+		var tx = size.x * 0.5
+		# 基线修正：保证真正的视觉垂直居中
+		var ty = size.y * 0.5 + (ascent - descent) * 0.5
 		
-		# 模拟先擦干再写入
-		var cx = size.x * 0.5
-		var cy = ty - ts.y * 0.3
+		# 模拟先擦干再写入，通过多重不规则短线段掩盖底层图案
 		var board_c = Color(_t.bg_main, 0.8)
-		for i in range(4):
-			var rx = ts.x * 0.5 + _rng.randf_range(6, 12)
-			var ry = _rng.randf_range(6, 10)
-			var pts = PackedVector2Array()
-			for ang in range(0, 360, 30):
-				pts.append(Vector2(cx + cos(deg_to_rad(ang))*rx, cy + sin(deg_to_rad(ang))*ry + _rng.randf_range(-2,2)))
-			draw_polygon(pts, PackedColorArray([board_c]))
+		for i in range(18):
+			var offset = Vector2(_rng.randf_range(-ts.x*0.6, ts.x*0.6), _rng.randf_range(-ts.y*0.6, ts.y*0.6))
+			var l_len = _rng.randf_range(8.0, 20.0)
+			var l_ang = _rng.randf_range(-0.1, 0.1)
+			draw_line(Vector2(tx, size.y * 0.5) + offset, Vector2(tx, size.y * 0.5) + offset + Vector2(cos(l_ang), sin(l_ang)) * l_len, board_c, _rng.randf_range(4, 12))
 
 		_rng.seed = 55
 		for i in range(3):
-			draw_string(font, Vector2(tx + _rng.randf_range(-1, 1), ty + _rng.randf_range(-1, 1)), text, 0, -1, 12, Color(chalk, 0.25))
-		draw_string(font, Vector2(tx, ty), text, 0, -1, 12, chalk)
+			draw_string(font, Vector2(tx + _rng.randf_range(-1, 1), ty + _rng.randf_range(-1, 1)), text, HORIZONTAL_ALIGNMENT_CENTER, -1, 12, Color(chalk, 0.25))
+		draw_string(font, Vector2(tx, ty), text, HORIZONTAL_ALIGNMENT_CENTER, -1, 12, chalk)
 
 	func _c_line(from: Vector2, to: Vector2, c: Color, w: float) -> void:
 		draw_line(from + Vector2(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1)), to + Vector2(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1)), c, w)
@@ -317,11 +530,13 @@ func make_checkbox(is_done: bool) -> Button:
 			btn.draw_line(p1 + Vector2(1, -2), p2 + Vector2(2, 0), Color(cx, 0.5), 1.5)
 			btn.draw_line(p2 + Vector2(2, 0), p3 + Vector2(-1, 1), Color(cx, 0.7), 2.5)
 			
-			# 散落粉末 (保证点位固定不变)
+			# 糊状粉尘晕开 (使用短线段代替生硬圆圈)
 			var rng = RandomNumberGenerator.new()
 			rng.seed = btn.get_instance_id() 
-			for i in range(8):
-				btn.draw_circle(Vector2(rng.randf_range(-6, 38), rng.randf_range(-6, 32)), rng.randf_range(0.8, 2.0), Color(cx, rng.randf_range(0.2, 0.8)))
+			for i in range(15):
+				var px = rng.randf_range(-6, 38)
+				var py = rng.randf_range(-6, 32)
+				btn.draw_line(Vector2(px, py), Vector2(px + rng.randf_range(-1, 2), py + rng.randf_range(1, 3)), Color(cx, rng.randf_range(0.1, 0.4)), rng.randf_range(1.0, 3.0))
 		)
 	else:
 		s.set_border_width_all(2)
@@ -432,14 +647,14 @@ class _ChalkScrollbar extends TodoScrollbar:
 
 	func _draw_thumb(thumb: Rect2) -> void:
 		_rng.seed = int(thumb.position.y) * 10
-		var chalk_c = Color(_t.tx_primary, 0.8)
+		var chalk_c = Color(_t.tx_primary, 0.6)
 		if _dragging: chalk_c = _t.accent
-		# 画一堆密集的粉笔灰颗粒形成拇指块
-		for i in range(25):
-			var p = thumb.position + Vector2(_rng.randf_range(2, thumb.size.x-2), _rng.randf_range(2, thumb.size.y-2))
-			var r = _rng.randf_range(1.0, 3.0)
-			var a = _rng.randf_range(0.3, 0.9) if not _dragging else 1.0
-			draw_circle(p, r, Color(chalk_c, a))
+		# 用致密且模糊的短线段堆叠出真实的粉笔粗糙滑块，不再使用颗粒感强的纯圆
+		for i in range(45):
+			var p = thumb.position + Vector2(_rng.randf_range(1, thumb.size.x-1), _rng.randf_range(1, thumb.size.y-1))
+			var dy = _rng.randf_range(2.0, 5.0)
+			var w = _rng.randf_range(1.0, 3.0)
+			draw_line(p, p + Vector2(_rng.randf_range(-1, 1), dy), Color(chalk_c, _rng.randf_range(0.1, 0.8) if not _dragging else 1.0), w)
 
 func make_scrollbar() -> Control:
 	return _ChalkScrollbar.new(self)

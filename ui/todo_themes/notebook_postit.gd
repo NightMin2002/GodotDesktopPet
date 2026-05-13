@@ -4,10 +4,10 @@ class_name TodoThemeNotebookPostit extends TodoThemeBase
 
 func _init() -> void:
 	_from_seeds(
-		Color(0.99, 0.96, 0.89),   # base: 温暖的奶油黄纸张
-		Color(0.15, 0.18, 0.22),   # text: 碳素墨水黑/深灰
-		Color(0.88, 0.25, 0.25),   # accent: 红圆珠笔批注
-		Color(0.60, 0.55, 0.65),   # danger: 褪色紫/暗灰完成感
+		Color(0.99, 0.97, 0.92),   # base: 更加清爽明亮的奶油白纸张
+		Color(0.08, 0.10, 0.12),   # text: 高对比度的深邃碳素黑墨水，解决对比度低糊入背景的问题
+		Color(0.90, 0.25, 0.25),   # accent: 红圆珠笔批注
+		Color(0.45, 0.48, 0.52),   # danger: 铅笔灰划除感
 		1.0                        # alpha: 纸张实体
 	)
 	
@@ -301,9 +301,16 @@ func apply_note_edit_style(edit: TextEdit) -> void:
 
 func apply_card_title_style(label: Label, is_done: bool, is_selected: bool) -> void:
 	label.add_theme_font_size_override("font_size", item_font_size)
+	# 手写纸是亮白底+黑字，绝对不能带有发光和阴影，否则会显得很脏、颜色晕进背景里
+	label.remove_theme_color_override("font_shadow_color")
+	label.remove_theme_color_override("font_outline_color")
+	label.remove_theme_constant_override("shadow_offset_x")
+	label.remove_theme_constant_override("shadow_offset_y")
+	label.remove_theme_constant_override("shadow_outline_size")
+	
 	if is_done:
-		# 完成时的文字像是被铅笔划掉一样灰显
-		label.add_theme_color_override("font_color", danger) 
+		# 完成时的文字像是被HB铅笔划掉一样灰显，稍微加点透明度
+		label.add_theme_color_override("font_color", Color(danger, 0.7)) 
 	elif is_selected:
 		label.add_theme_color_override("font_color", tx_primary)
 	else:
@@ -311,6 +318,10 @@ func apply_card_title_style(label: Label, is_done: bool, is_selected: bool) -> v
 
 func apply_title_label_style(l: Label) -> void:
 	l.add_theme_font_size_override("font_size", title_font_size + 2) # 稍微放大
+	# 重点突破：彻底解决纯白导致与底纸融为一体的问题
+	l.add_theme_color_override("font_color", tx_primary)
+	l.remove_theme_color_override("font_shadow_color")
+	l.remove_theme_color_override("font_outline_color")
 
 # ==========================================
 # 自定义滚动条：水波浪笔迹与胶带贴纸
