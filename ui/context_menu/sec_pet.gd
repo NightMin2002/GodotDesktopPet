@@ -8,10 +8,8 @@ var _chatter_btn: Button
 var _clone_btn: Button
 var _reminder_btn: Button
 var _todo_btn: Button
-var _profile_btn: Button
 var _deploy_clone_btn: Button
 var _dismiss_btn: Button
-var _profile_labels: Dictionary = {}
 
 # ── 碎碎念 ──
 const CHATTER_MODE_LABELS := ["碎碎念 · 已关闭 [+]", "碎碎念 · 每30分钟 [+]", "碎碎念 · 每60分钟 [+]"]
@@ -47,12 +45,6 @@ func build() -> void:
 	)
 	vbox.add_child(_todo_btn)
 
-	_profile_btn = ctx._make_menu_btn("训练数据 [+]", Color(0.2, 0.85, 1.0, 1))
-	vbox.add_child(_profile_btn)
-	ctx._bind_l3_trigger(_profile_btn, "pet_profile", "sec_pet")
-
-
-
 	var terminal_btn = ctx._make_menu_btn("个人终端 [+]", Color(0.2, 0.85, 1.0, 1))
 	vbox.add_child(terminal_btn)
 	ctx._bind_l3_trigger(terminal_btn, "holo_terminal", "sec_pet")
@@ -72,8 +64,6 @@ func build() -> void:
 
 	# L3: 分身操作面板
 	_build_clone_l3_panel()
-	# L3: 经验等级
-	_build_profile_panel()
 	# L3: 个人终端
 	_build_terminal_l3_panel()
 
@@ -131,152 +121,17 @@ func update_clone_label() -> void:
 		if _deploy_clone_btn:
 			_deploy_clone_btn.text = "部署分身 (" + str(count) + "/" + str(max_c) + ")"
 
-# ── 训练数据 (Profile) ──
-
-func _build_profile_panel() -> void:
-	var panel = ctx._submenu._make_panel()
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 6)
-	panel.add_child(vbox)
-
-	var title = Label.new()
-	title.text = "- 游戏熟练度 -"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 16)
-	title.add_theme_color_override("font_color", Color(0.6, 0.75, 0.9, 0.8))
-	vbox.add_child(title)
-
-	# 等级
-	var lv_label = Label.new()
-	lv_label.add_theme_font_size_override("font_size", 22)
-	lv_label.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0, 1))
-	lv_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(lv_label)
-	_profile_labels["level"] = lv_label
-
-	# XP 进度
-	var xp_label = Label.new()
-	xp_label.add_theme_font_size_override("font_size", 13)
-	xp_label.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7, 0.7))
-	xp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(xp_label)
-	_profile_labels["xp"] = xp_label
-
-	# XP 进度条
-	var bar_bg = Panel.new()
-	bar_bg.custom_minimum_size = Vector2(160, 6)
-	var bar_bg_style = StyleBoxFlat.new()
-	bar_bg_style.bg_color = Color(0.1, 0.12, 0.2, 0.6)
-	bar_bg_style.set_corner_radius_all(3)
-	bar_bg.add_theme_stylebox_override("panel", bar_bg_style)
-	var bar_wrapper = CenterContainer.new()
-	bar_wrapper.add_child(bar_bg)
-	vbox.add_child(bar_wrapper)
-
-	var bar_fill = Panel.new()
-	bar_fill.position = Vector2.ZERO
-	bar_fill.size = Vector2(0, 6)
-	var bar_fill_style = StyleBoxFlat.new()
-	bar_fill_style.bg_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.85, 0.8)
-	bar_fill_style.set_corner_radius_all(3)
-	bar_fill.add_theme_stylebox_override("panel", bar_fill_style)
-	bar_bg.add_child(bar_fill)
-	_profile_labels["bar_fill"] = bar_fill
-	_profile_labels["bar_bg"] = bar_bg
-
-	# 失误率
-	var rate_label = Label.new()
-	rate_label.add_theme_font_size_override("font_size", 13)
-	rate_label.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7, 0.7))
-	rate_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(rate_label)
-	_profile_labels["rate"] = rate_label
-
-	# 操作按钮行
-	var btn_row = HBoxContainer.new()
-	btn_row.add_theme_constant_override("separation", 6)
-	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_child(btn_row)
-
-	var btn_style_normal = StyleBoxFlat.new()
-	btn_style_normal.bg_color = Color(0.15, 0.18, 0.28, 0.7)
-	btn_style_normal.set_corner_radius_all(4)
-	btn_style_normal.content_margin_left = 8
-	btn_style_normal.content_margin_right = 8
-	btn_style_normal.content_margin_top = 3
-	btn_style_normal.content_margin_bottom = 3
-	var btn_style_hover = StyleBoxFlat.new()
-	btn_style_hover.bg_color = Color(0.25, 0.3, 0.45, 0.8)
-	btn_style_hover.set_corner_radius_all(4)
-	btn_style_hover.content_margin_left = 8
-	btn_style_hover.content_margin_right = 8
-	btn_style_hover.content_margin_top = 3
-	btn_style_hover.content_margin_bottom = 3
-
-	for item in [{"label": "-", "action": "down"}, {"label": "∝", "action": "reset"}, {"label": "+", "action": "up"}]:
-		var btn = Button.new()
-		btn.text = item.label
-		btn.add_theme_font_size_override("font_size", 14)
-		btn.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9, 0.8))
-		btn.add_theme_stylebox_override("normal", btn_style_normal)
-		btn.add_theme_stylebox_override("hover", btn_style_hover)
-		btn.add_theme_stylebox_override("pressed", btn_style_hover)
-		var action = item.action
-		btn.pressed.connect(func(): _on_profile_action(action))
-		btn_row.add_child(btn)
-
-	panel.mouse_entered.connect(func(): ctx._submenu.on_l3_panel_enter())
-	panel.mouse_exited.connect(func(): ctx._submenu.on_l3_panel_exit())
-	ctx.add_child(panel)
-	ctx._submenu.l3_panels["pet_profile"] = panel
-	ctx._submenu._l3_parent_map["pet_profile"] = "sec_pet"
+# ── 训练数据 (已迁移至装置档案面板 能力数据 Tab) ──
 
 func refresh_profile() -> void:
-	var info = SettingsManager.get_gaming_level_progress()
-	if _profile_labels.has("level"):
-		_profile_labels["level"].text = "Lv.%d" % info.level
-	if _profile_labels.has("xp"):
-		if info.level >= SettingsManager.MAX_LEVEL:
-			_profile_labels["xp"].text = "XP: %d (MAX)" % info.xp
-		else:
-			_profile_labels["xp"].text = "XP: %d / %d" % [info.xp, info.xp_next]
-	if _profile_labels.has("bar_fill") and _profile_labels.has("bar_bg"):
-		var bar_w = _profile_labels["bar_bg"].custom_minimum_size.x
-		_profile_labels["bar_fill"].size = Vector2(bar_w * clampf(info.progress, 0, 1), 6)
-		var fill_style = _profile_labels["bar_fill"].get_theme_stylebox("panel") as StyleBoxFlat
-		if fill_style:
-			fill_style.bg_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.85, 0.8)
-	if _profile_labels.has("rate"):
-		_profile_labels["rate"].text = "失误率: %.1f%%" % (info.rate * 100.0)
+	pass  # 等级控制已迁移至 pet_profile_panel.gd
 
-func _on_profile_action(action: String) -> void:
-	var pet_node = _get_pet()
-	var level = SettingsManager.get_gaming_level()
-	if action == "up":
-		if level >= SettingsManager.MAX_LEVEL:
-			if pet_node: pet_node.show_local_bubble("...已是最高等级。")
-			return
-		var target_xp = SettingsManager.LEVEL_XP[mini(level, SettingsManager.MAX_LEVEL - 1)]
-		SettingsManager.set_int("gaming_xp", target_xp)
-		if pet_node: pet_node.show_local_bubble("...后台训练模块的数据已同步。Lv.%d。" % SettingsManager.get_gaming_level())
-	elif action == "down":
-		if level <= 1:
-			if pet_node: pet_node.show_local_bubble("...已经 Lv.1。没有可回退的数据。")
-			return
-		var target_xp = SettingsManager.LEVEL_XP[level - 2]
-		SettingsManager.set_int("gaming_xp", target_xp)
-		if pet_node: pet_node.show_local_bubble("训练数据回退。Lv.%d。...不太理解目的。" % SettingsManager.get_gaming_level())
-	elif action == "reset":
-		SettingsManager.set_int("gaming_xp", 0)
-		if pet_node: pet_node.show_local_bubble("检测到用户越权清除训练数据。...已批准。")
-	refresh_profile()
 
 func _get_pet() -> Node:
 	var main_n = ctx.get_tree().root.get_node_or_null("Main")
 	if main_n and "pet_instances" in main_n and main_n.pet_instances.size() > 0:
 		return main_n.pet_instances[0]
 	return null
-
 
 # ── 个人终端 ──
 
