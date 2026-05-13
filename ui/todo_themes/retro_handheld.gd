@@ -148,14 +148,24 @@ class _8BitHearts extends Control:
 		var scale_size := 3.0
 		var heart_w = 7 * scale_size
 		var gap = 6.0
-		var max_visible_hearts = int((size.x - 20) / (heart_w + gap))
+		
+		var font = ThemeDB.fallback_font
+		var text = "Lv %02d/%02d" % [_done, _total]
+		var fs := 14
+		var text_size = font.get_string_size(text, HORIZONTAL_ALIGNMENT_RIGHT, -1, fs)
+		
+		var max_visible_hearts = max(1, int((size.x - 20 - text_size.x - 10) / (heart_w + gap)))
 		var hearts_to_draw = min(_total, max_visible_hearts)
+		
+		var fill_count = _done
+		if _total > max_visible_hearts:
+			fill_count = int(round(hearts_to_draw * (float(_done) / float(_total))))
 
 		var cx = 10.0
 		var cy = (size.y - 6 * scale_size) * 0.5
 		
 		for i in range(hearts_to_draw):
-			var is_done = (i < _done)
+			var is_done = (i < fill_count)
 			if is_done:
 				for p in heart_pts: draw_rect(Rect2(cx + p[0]*scale_size, cy + p[1]*scale_size, scale_size, scale_size), c_full)
 			else:
@@ -169,10 +179,6 @@ class _8BitHearts extends Control:
 				for p in empty_inner: draw_rect(Rect2(cx + p[0]*scale_size, cy + p[1]*scale_size, scale_size, scale_size), c_bg)
 			cx += heart_w + gap
 
-		var font = ThemeDB.fallback_font
-		var text = "Lv %02d/%02d" % [_done, _total]
-		var fs := 14
-		var text_size = font.get_string_size(text, HORIZONTAL_ALIGNMENT_RIGHT, -1, fs)
 		draw_string(font, Vector2(size.x - 10 - text_size.x, size.y * 0.5 + text_size.y * 0.35), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, c_full)
 		
 		var sep_y = size.y - 2

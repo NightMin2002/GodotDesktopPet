@@ -126,13 +126,22 @@ class _PostitProgress extends Control:
 		var ink_c = _t.tx_primary
 		var fill_c = _t.accent
 		
-		# 仅仅最多画 12 个圆圈，多于12个则压缩间距，保证不溢出
-		var visible_total = min(_total, int(bar_w / gap))
-		var real_gap = bar_w / visible_total if visible_total > 0 else gap
+		var font = ThemeDB.fallback_font
+		var fs := 14
+		var text = "%d/%d" % [_done, _total]
+		var text_size = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 		
-		for i in range(visible_total):
+		var max_avail_w = size.x - pad_x * 2 - text_size.x - 20
+		var max_visible = max(1, int(max_avail_w / gap))
+		
+		var draw_count = min(_total, max_visible)
+		var fill_count = _done
+		if _total > max_visible:
+			fill_count = int(round(draw_count * (float(_done) / float(_total))))
+		
+		for i in range(draw_count):
 			_rng.seed = 100 + i # 保证每个圈的毛躁不变
-			var cx = start_x + i * real_gap
+			var cx = start_x + i * gap
 			var cr = 6.5
 			var center = Vector2(cx, bar_y)
 			
@@ -140,11 +149,7 @@ class _PostitProgress extends Control:
 			_draw_wobbly_circle(center, cr, ink_c, 1.2)
 			_draw_wobbly_circle(center, cr-0.5, Color(ink_c, 0.6), 0.8)
 			
-			# 如果已完成，则在圈内用红色马克笔涂满 (随意的折线)
-			var cur_done_ratio = float(_done) / float(_total)
-			var active_blocks = int(visible_total * cur_done_ratio)
-			
-			if i < active_blocks:
+			if i < fill_count:
 				var pc = PackedVector2Array()
 				# 随意涂五下
 				pc.append(center + Vector2(-cr+1, -cr+2))
@@ -154,13 +159,7 @@ class _PostitProgress extends Control:
 				pc.append(center + Vector2(-cr+3, cr))
 				draw_polyline(pc, fill_c, 2.0)
 				
-		var font = ThemeDB.fallback_font
-		var fs := 14
-		var text = "%d/%d" % [_done, _total]
-		var text_size = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-		
-		# 手写体感觉的进度数字，带一点倾斜
-		var tx = start_x + visible_total * real_gap + 10
+		var tx = size.x - pad_x - text_size.x
 		var ty = bar_y + text_size.y * 0.3
 		draw_string(font, Vector2(tx, ty), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, ink_c)
 
