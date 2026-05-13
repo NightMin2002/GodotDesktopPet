@@ -7,7 +7,7 @@ extends CanvasLayer
 #  主题注册表 — 新增主题只需往这两个数组加一条
 # ═══════════════════════════════════════════════
 
-const _THEME_NAMES := ["默认", "黑板"]
+const _THEME_NAMES := ["默认", "黑板", "赛博终端", "蓝图", "手账", "掌机"]
 
 var theme: TodoThemeBase
 var _current_theme_idx: int = 0
@@ -64,6 +64,10 @@ func _ready() -> void:
 func _create_theme(idx: int) -> TodoThemeBase:
 	match idx:
 		1: return TodoThemeBlackboardChalk.new()
+		2: return TodoThemeCyberTerminal.new()
+		3: return TodoThemeBlueprintDraft.new()
+		4: return TodoThemeNotebookPostit.new()
+		5: return TodoThemeRetroHandheld.new()
 		_:
 			var t = TodoThemeBase.new()
 			t._from_seeds(
