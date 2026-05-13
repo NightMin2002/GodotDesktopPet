@@ -141,7 +141,7 @@ func _append_platform_style_capsule() -> void:
 	)
 	vbox.add_child(btn)
 
-# ── 指令序列 (调试行为子菜单) ──
+# ── 指令序列 (行为子菜单) ──
 
 func _build_debug_behavior_submenu() -> void:
 	var panel = ctx._submenu._make_panel()
@@ -151,11 +151,6 @@ func _build_debug_behavior_submenu() -> void:
 
 	var debug_items := [
 		{"label": "眼睑下垂", "behavior": "drowsy", "desc": "模拟困倦半闭眼效果"},
-
-
-		{"label": "警告标识", "behavior": "_icon:alert", "desc": "显示警告感叹号图标"},
-		{"label": "待解标识", "behavior": "_icon:question", "desc": "显示问号疑问图标"},
-		{"label": "错误标识", "behavior": "_icon:error", "desc": "显示操作失败交叉图标"},
 		{"label": "碎碎念", "behavior": "_chatter", "desc": "立即触发一次碎碎念气泡"},
 		{"label": "待办提醒", "behavior": "_todo_prompt", "desc": "强制触发一次待办主动提醒"},
 		{"label": "空间跳跃", "behavior": "_free_roam", "desc": "触发一次空间跳跃踏板序列"},
@@ -198,12 +193,7 @@ func _on_debug_behavior_pressed(behavior: String) -> void:
 
 	var main_node = ctx.get_tree().root.get_node_or_null("Main")
 
-	if behavior.begins_with("_icon:"):
-		var icon_type = behavior.substr(6)
-		EventBus.pet_show_eye_icon.emit(icon_type)
-		await ctx.get_tree().create_timer(5.0).timeout
-		EventBus.pet_show_eye_icon.emit("")
-	elif behavior == "_chatter":
+	if behavior == "_chatter":
 		if main_node:
 			for child in main_node.get_children():
 				if child.has_method("_trigger_chatter"):

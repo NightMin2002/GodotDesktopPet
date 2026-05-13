@@ -124,6 +124,8 @@ func update(delta: float) -> void:
 		_hibernate_anim_time += delta
 	if active_behavior == "hibernate":
 		_update_hibernate(delta)
+	elif active_behavior == "drowsy":
+		_update_drowsy(delta)
 ## 当前是否有活跃的微行为
 func is_active() -> bool:
 	return active_behavior != ""
@@ -158,6 +160,7 @@ func trigger(behavior: String) -> void:
 	_behavior_timer = 0.0
 	match behavior:
 		"hibernate": _enter_hibernate()
+		"drowsy": _enter_drowsy()
 ## 取消当前微行为 (被交互打断)
 func cancel() -> void:
 	_cancel_current()
@@ -205,6 +208,21 @@ func _is_pet_at_nighttime_slot() -> bool:
 		return false
 	var target_x: float = pet.get_meta("retreat_target_x")
 	return absf(pet.global_position.x - target_x) < 25.0
+
+# ── 眼睑下垂 (调试/演示用独立行为) ──
+# 独立于休眠，纯粹展示半闭眼效果: 1s渐进 → 5s持续 → 1s恢复
+const DROWSY_DURATION := 5.0  # 半闭眼持续时间
+
+func _enter_drowsy() -> void:
+	pet.eye_behavior.start_drowsy(0.7)
+
+func _update_drowsy(_delta: float) -> void:
+	if _behavior_timer > DROWSY_DURATION:
+		pet.eye_behavior.stop_drowsy()
+		_finish("drowsy")
+	else:
+		# 半闭眼呼吸微调
+		pet.eye_behavior._drowsy_target = 0.7 + sin(_behavior_timer * TAU / 4.0) * 0.1
 
 # ── 休眠 (低功耗模式) ──
 # 触发条件: 鼠标静止 5 分钟以上 (用户离开电脑) 或 深夜模式到位
@@ -277,6 +295,9 @@ func _cancel_current() -> void:
 			pet.linear_damp = 0.8
 			pet.angular_damp = 1.0
 			pet.lock_rotation = false  # 解锁旋转
+		"drowsy":
+			pet.eye_behavior.stop_drowsy()
+			pet.eye_behavior.drowsy_amount = 0.0
 
 	active_behavior = ""
 	_behavior_timer = 0.0

@@ -201,7 +201,6 @@ func _ready() -> void:
 	EventBus.pet_color_changed.connect(_on_pet_color_changed)
 	EventBus.trigger_idle_behavior.connect(_on_trigger_idle_behavior)
 	EventBus.trigger_free_roam.connect(_on_trigger_free_roam)
-	EventBus.pet_show_eye_icon.connect(_on_pet_show_eye_icon)
 	EventBus.trigger_squash_test.connect(_on_trigger_squash_test)
 	EventBus.nighttime_mode_changed.connect(_on_nighttime_mode_changed)
 	EventBus.pet_gaming_changed.connect(_on_pet_gaming_changed)
@@ -273,13 +272,6 @@ func _on_trigger_idle_behavior(behavior: String) -> void:
 		idle_behaviors.hibernate_style = style
 	idle_behaviors.trigger(base_behavior)
 
-func _on_pet_show_eye_icon(icon_type: String) -> void:
-	if is_clone:
-		return
-	if icon_type == "":
-		eye_behavior.hide_eye_icon()
-	else:
-		eye_behavior.show_eye_icon(icon_type)
 func _on_pet_color_changed(pet_index: int, hue: float, sat: float, val: float) -> void:
 	var my_index = get_meta("pet_index", 0)
 	if pet_index != my_index:
@@ -566,15 +558,6 @@ func _draw_body(world_offset: Vector2) -> void:
 		draw_circle(Vector2.ZERO, screen_r, Color(0.03, 0.05, 0.12, h_blend * 0.95), true, -1.0, true)
 		match idle_behaviors.hibernate_style:
 			1: _draw_loading_spinner(screen_r, h_blend, idle_behaviors._hibernate_anim_time)
-	var icon_blend = eye_behavior.eye_icon_blend
-	if icon_blend > 0.01:
-		var icon_r = PET_RADIUS * 0.83
-		draw_circle(Vector2.ZERO, icon_r, Color(0.03, 0.05, 0.12, icon_blend * 0.95), true, -1.0, true)
-		match eye_behavior.eye_icon_type:
-			"mail": _draw_eye_icon_mail(icon_r, icon_blend, eye_behavior.eye_icon_time)
-			"alert": _draw_eye_icon_alert(icon_r, icon_blend, eye_behavior.eye_icon_time)
-			"question": _draw_eye_icon_question(icon_r, icon_blend, eye_behavior.eye_icon_time)
-			"error": _draw_eye_icon_error(icon_r, icon_blend, eye_behavior.eye_icon_time)
 	var drowsy = eye_behavior.get_drowsy_amount()
 	var is_shutter = idle_behaviors.active_behavior != "hibernate" or idle_behaviors.hibernate_style == 0
 	if drowsy > 0.01 and iris_scale > 0.05 and is_shutter:
@@ -657,100 +640,3 @@ func _draw_loading_spinner(radius: float, alpha: float, time: float) -> void:
 	# 弧尾渐隐尾迹 (更细、更透明)
 	var trail_color = Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.3)
 	draw_arc(Vector2.ZERO, spin_r, spin_angle - PI * 0.3, spin_angle, 12, trail_color, 1.0, true)
-
-
-## 绘制邮件图标 (信封轮廓 + V 型翻盖 + 呼吸脉冲)
-func _draw_eye_icon_mail(radius: float, alpha: float, time: float) -> void:
-	var s = radius * 0.06  # 缩放因子 (填满白边框区域)
-	var glow_color = palette.shift_color(Color(0.3, 0.7, 1.0, alpha * 0.9))
-	# 呼吸脉冲
-	var pulse = 0.85 + sin(time * TAU / 3.0) * 0.15
-	var c = Color(glow_color.r, glow_color.g, glow_color.b, alpha * pulse)
-	var lw = 1.2 * (radius / 16.0)  # 线宽随半径缩放
-	# 信封主体 (矩形轮廓)
-	var hw = 7.0 * s  # 半宽
-	var hh = 5.0 * s  # 半高
-	var body_pts = PackedVector2Array([
-		Vector2(-hw, -hh), Vector2(hw, -hh),
-		Vector2(hw, hh), Vector2(-hw, hh),
-		Vector2(-hw, -hh),  # 闭合
-	])
-	draw_polyline(body_pts, c, lw, true)
-	# V 型翻盖 (从左上角 → 中下 → 右上角)
-	var flap_pts = PackedVector2Array([
-		Vector2(-hw, -hh),
-		Vector2(0, hh * 0.35),
-		Vector2(hw, -hh),
-	])
-	draw_polyline(flap_pts, c, lw, true)
-	# 外环微光
-	var ring_c = Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.3)
-	draw_arc(Vector2.ZERO, radius * 0.7, 0, TAU, 32, ring_c, 0.8, true)
-
-## 绘制感叹号图标 (锥形竖条 + 醒目圆点 + 警示闪烁)
-func _draw_eye_icon_alert(radius: float, alpha: float, time: float) -> void:
-	var s = radius * 0.06
-	var flash = 0.7 + sin(time * TAU / 1.5) * 0.3  # 1.5s 周期闪烁
-	var glow_color = palette.shift_color(Color(1.0, 0.6, 0.15, alpha * flash))
-	# 竖条主体 (上宽下窄的锥形多边形，而非均匀细线)
-	var top_y = -8.5 * s
-	var bot_y = 0.5 * s
-	var top_hw = 1.8 * s   # 顶部半宽 (宽)
-	var bot_hw = 0.7 * s   # 底部半宽 (窄)
-	var bar_pts = PackedVector2Array([
-		Vector2(-top_hw, top_y), Vector2(top_hw, top_y),  # 顶边
-		Vector2(bot_hw, bot_y), Vector2(-bot_hw, bot_y),  # 底边
-	])
-	draw_colored_polygon(bar_pts, glow_color)
-	# 抗锯齿轮廓
-	var outline = bar_pts.duplicate()
-	outline.append(bar_pts[0])
-	draw_polyline(outline, glow_color, 0.8, true)
-	# 底部圆点 (醒目，与竖条有明确间距)
-	var dot_y = 4.0 * s
-	draw_circle(Vector2(0, dot_y), 1.8 * (radius / 16.0), glow_color, true, -1.0, true)
-	# 外环 (警示橙色)
-	var ring_c = Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.4)
-	draw_arc(Vector2.ZERO, radius * 0.7, 0, TAU, 32, ring_c, 1.0, true)
-
-## 绘制问号图标 (弧线 + 竖线 + 圆点 + 微摆动)
-func _draw_eye_icon_question(radius: float, alpha: float, time: float) -> void:
-	var s = radius * 0.06
-	var glow_color = palette.shift_color(Color(0.5, 0.8, 1.0, alpha * 0.9))
-	var lw = 1.6 * (radius / 16.0)
-	# 微小浮动 (好奇的左右摆动)
-	var sway = sin(time * TAU / 2.5) * 1.0 * s
-	# 问号上半弧 (C 形曲线，采样绘制)
-	var arc_pts = PackedVector2Array()
-	var arc_cx = sway
-	var arc_cy = -3.0 * s
-	var arc_r = 3.5 * s
-	for i in range(17):
-		var t = float(i) / 16.0
-		var a = PI * 1.1 + t * PI * 1.4  # 从左上绕到右下
-		arc_pts.append(Vector2(arc_cx + cos(a) * arc_r, arc_cy + sin(a) * arc_r))
-	draw_polyline(arc_pts, glow_color, lw, true)
-	# 竖线段 (弧线底部到圆点上方)
-	var stem_top = arc_cy + arc_r * sin(PI * 1.1 + PI * 1.4)
-	var stem_bot = 2.0 * s
-	draw_line(Vector2(sway, stem_top), Vector2(sway, stem_bot), glow_color, lw, true)
-	# 底部圆点
-	var dot_y = 4.5 * s
-	draw_circle(Vector2(sway, dot_y), 1.0 * (radius / 16.0), glow_color, true, -1.0, true)
-	# 外环微光
-	var ring_c = Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.35)
-	draw_arc(Vector2.ZERO, radius * 0.7, 0, TAU, 32, ring_c, 0.8, true)
-
-## 绘制错误标识 (红色交叉线 + 外环 + 闪烁)
-func _draw_eye_icon_error(radius: float, alpha: float, time: float) -> void:
-	var s = radius * 0.06
-	var flash = 0.9 + sin(time * TAU / 3.0) * 0.1  # 3s 缓慢呼吸，微微明暗变化
-	var glow_color = palette.shift_color(Color(1.0, 0.25, 0.2, alpha * flash))
-	var lw = 2.2 * (radius / 16.0)
-	# 交叉线 (左上→右下 + 右上→左下)
-	var d = 5.5 * s  # 交叉半径
-	draw_line(Vector2(-d, -d), Vector2(d, d), glow_color, lw, true)
-	draw_line(Vector2(d, -d), Vector2(-d, d), glow_color, lw, true)
-	# 外环 (警示红色)
-	var ring_c = Color(glow_color.r, glow_color.g, glow_color.b, alpha * 0.45)
-	draw_arc(Vector2.ZERO, radius * 0.7, 0, TAU, 32, ring_c, 1.2, true)
