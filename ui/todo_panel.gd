@@ -19,8 +19,8 @@ var note_title: LineEdit
 var note_empty: VBoxContainer
 var save_badge: PanelContainer
 var save_badge_label: Label
-var scroll_hint_top: Panel
-var scroll_hint_btm: Panel
+var _fade_top: Control
+var _fade_btm: Control
 
 var _selected_idx: int = -1
 var _guard_frames := 0
@@ -42,6 +42,8 @@ var _spacer: Control
 var _pool: Array[Dictionary] = []
 var _row_h: float = 48.0
 var _empty_hint: CenterContainer
+var _scrollbar: Control
+var _scroll_area: HBoxContainer
 
 # ── 拖拽 ──
 var _dragging: bool = false
@@ -135,6 +137,8 @@ func _switch_theme_to(idx: int) -> void:
 		panel.scale = Vector2.ONE
 		panel.show()
 		panel.pivot_offset = panel.size / 2.0
+	# 延迟一帧等布局算完再刷新卡片宽度
+	(func(): _refresh_list(); _update_fades()).call_deferred()
 
 func _update_theme_btn_text() -> void:
 	if _theme_btn:
@@ -197,12 +201,28 @@ func _build_ui() -> void:
 	_new_btn.pressed.connect(_on_add_pressed)
 	left_col.add_child(_new_btn)
 
+	# 包裹层：普通 Control 让 fade 遮罩能用锚点叠加
+	var _scroll_wrapper = Control.new()
+	_scroll_wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scroll_wrapper.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_scroll_wrapper.clip_contents = true
+	left_col.add_child(_scroll_wrapper)
+
+	_scroll_area = HBoxContainer.new()
+	_scroll_area.add_theme_constant_override("separation", 0)
+	_scroll_area.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_scroll_wrapper.add_child(_scroll_area)
+
 	scroll = ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	left_col.add_child(scroll)
+	_scroll_area.add_child(scroll)
+
+	_scrollbar = theme.make_scrollbar()
+	_scrollbar.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_scroll_area.add_child(_scrollbar)
 
 	_spacer = Control.new()
 	_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -210,9 +230,16 @@ func _build_ui() -> void:
 	_row_h = _calc_row_h()
 	_pool.clear()
 
-	scroll_hint_top = _make_scroll_hint(true)
-	scroll_hint_btm = _make_scroll_hint(false)
-	scroll.get_v_scroll_bar().value_changed.connect(func(_v): _refresh_list())
+	scroll.get_v_scroll_bar().value_changed.connect(func(_v): _refresh_list(); _update_fades())
+	_scrollbar.bind(scroll)
+
+	# 滚动指示条 — 叠加在 wrapper 上，锚点定位生效
+	_fade_top = _ScrollFade.new(theme, true)
+	_fade_btm = _ScrollFade.new(theme, false)
+	_fade_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fade_btm.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_scroll_wrapper.add_child(_fade_top)
+	_scroll_wrapper.add_child(_fade_btm)
 
 	_empty_hint = CenterContainer.new()
 	_empty_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -336,41 +363,76 @@ func _build_title_bar() -> Control:
 	return bar
 
 # ═══════════════════════════════════════════════
-#  滚动提示条
+#  滚动指示器 — 隐藏条目计数徽章
 # ═══════════════════════════════════════════════
 
-func _make_scroll_hint(is_top: bool) -> Panel:
-	var hint = Panel.new()
-	hint.custom_minimum_size = Vector2(0, 3)
-	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hint.add_theme_stylebox_override("panel", theme.make_scroll_hint_style())
-	hint.visible = false
-	_add_hint_deferred.call_deferred(hint, is_top)
-	return hint
+class _ScrollFade extends Control:
+	var _t: TodoThemeBase
+	var _is_top: bool
+	var _alpha := 0.0
+	var _count := 0
+	const BADGE_H := 22.0
 
-func _add_hint_deferred(hint: Panel, is_top: bool) -> void:
-	var left_col = scroll.get_parent()
-	if not left_col:
-		return
-	if is_top:
-		left_col.add_child(hint)
-		left_col.move_child(hint, left_col.get_children().find(scroll))
-	else:
-		var scroll_idx = left_col.get_children().find(scroll)
-		left_col.add_child(hint)
-		left_col.move_child(hint, scroll_idx + 1)
+	func _init(t: TodoThemeBase, is_top: bool) -> void:
+		_t = t; _is_top = is_top
+		anchor_left = 0; anchor_right = 1
+		if is_top:
+			anchor_top = 0; anchor_bottom = 0
+			offset_bottom = BADGE_H
+		else:
+			anchor_top = 1; anchor_bottom = 1
+			offset_top = -BADGE_H
 
-func _update_scroll_hints() -> void:
+	func update_state(alpha: float, count: int) -> void:
+		var new_a = clampf(alpha, 0.0, 1.0)
+		if absf(new_a - _alpha) > 0.01 or count != _count:
+			_alpha = new_a
+			_count = count
+			queue_redraw()
+
+	func _draw() -> void:
+		if _alpha < 0.01 or _count <= 0: return
+		var font = ThemeDB.fallback_font
+		var fs := 11
+		var arrow = "\u25b2 " if _is_top else "\u25bc "
+		var text = arrow + str(_count)
+		var ts = font.get_string_size(text, 0, -1, fs)
+		var pill_w = ts.x + 16
+		var pill_h = BADGE_H - 4
+		var px = (size.x - pill_w) * 0.5
+		var py := 1.0 if _is_top else 3.0
+		# 药丸背景
+		draw_rect(Rect2(px, py, pill_w, pill_h), Color(_t.bg_main, _alpha * 0.8))
+		# 边框
+		draw_rect(Rect2(px, py, pill_w, pill_h), Color(_t.accent, _alpha * 0.6), false, 1.0)
+		# 文字
+		var tx = px + 8
+		var ty = py + pill_h * 0.5 + ts.y * 0.3
+		draw_string(font, Vector2(tx, ty), text, 0, -1, fs, Color(_t.accent, _alpha))
+
+func _update_fades() -> void:
 	var vbar = scroll.get_v_scroll_bar()
-	if not vbar:
+	if not vbar or vbar.max_value <= vbar.page:
+		_fade_top.update_state(0.0, 0)
+		_fade_btm.update_state(0.0, 0)
 		return
-	var can_scroll = vbar.max_value > vbar.page
-	scroll_hint_top.visible = can_scroll and vbar.value > 2
-	scroll_hint_btm.visible = can_scroll and vbar.value < vbar.max_value - vbar.page - 2
-
-# ═══════════════════════════════════════════════
-#  虚拟滚动列表 — 节点池 + 视窗裁剪
-# ═══════════════════════════════════════════════
+	var range_val = vbar.max_value - vbar.page
+	if range_val <= 0:
+		_fade_top.update_state(0.0, 0)
+		_fade_btm.update_state(0.0, 0)
+		return
+	var todos = SettingsManager.get_todos()
+	var total = todos.size()
+	var first_visible = maxi(0, int(vbar.value / _row_h))
+	var vp_h = scroll.size.y
+	if vp_h <= 0: vp_h = 400
+	var last_visible = mini(total - 1, int((vbar.value + vp_h) / _row_h))
+	var hidden_above = first_visible
+	var hidden_below = maxi(0, total - 1 - last_visible)
+	var top_ratio = clampf(vbar.value / minf(range_val, 80.0), 0.0, 1.0)
+	var btm_ratio = clampf((range_val - vbar.value) / minf(range_val, 80.0), 0.0, 1.0)
+	_fade_top.update_state(top_ratio, hidden_above)
+	_fade_btm.update_state(btm_ratio, hidden_below)
 
 func _calc_row_h() -> float:
 	return theme.checkbox_size_px.y + theme.card_padding[2] + theme.card_padding[3] + theme.list_spacing + 6
@@ -484,7 +546,7 @@ func _refresh_list() -> void:
 		scroll.visible = false
 		_empty_hint.visible = true
 		_update_progress(todos)
-		_update_scroll_hints_deferred()
+		(func(): _update_fades()).call_deferred()
 		return
 
 	scroll.visible = true
@@ -514,10 +576,7 @@ func _refresh_list() -> void:
 		_pool[i].card.visible = false
 
 	_update_progress(todos)
-	_update_scroll_hints_deferred()
-
-func _update_scroll_hints_deferred() -> void:
-	(func(): _update_scroll_hints()).call_deferred()
+	(func(): _update_fades()).call_deferred()
 
 # ═══════════════════════════════════════════════
 #  右栏备注

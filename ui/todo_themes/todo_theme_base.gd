@@ -72,6 +72,7 @@ var card_padding      := [12, 10, 10, 10]
 var input_padding     := [14, 14, 12, 12]
 var input_corner      := 4
 var title_bar_height  := 56.0
+var scrollbar_width   := 14
 
 # ═══════════════════════════════════════════════
 #  种子色推算
@@ -487,3 +488,107 @@ func _build_text_btn(text: String, normal_color: Color, hover_color: Color) -> B
 	btn.add_theme_stylebox_override("hover", h)
 	btn.add_theme_stylebox_override("pressed", h)
 	return btn
+
+# ═══════════════════════════════════════════════
+#  自定义滚动条 (像素风默认)
+# ═══════════════════════════════════════════════
+
+class TodoScrollbar extends Control:
+	var _t: TodoThemeBase
+	var _scroll: ScrollContainer
+	var _dragging := false
+	var _drag_offset := 0.0
+
+	func _init(t: TodoThemeBase) -> void:
+		_t = t
+		mouse_filter = MOUSE_FILTER_STOP
+		custom_minimum_size.x = t.scrollbar_width
+
+	func bind(sc: ScrollContainer) -> void:
+		_scroll = sc
+		_scroll.get_v_scroll_bar().value_changed.connect(func(_v): queue_redraw())
+
+	func _get_track_rect() -> Rect2:
+		var pad := 6.0
+		return Rect2(0, pad, size.x, size.y - pad * 2)
+
+	func _get_thumb_rect() -> Rect2:
+		if not _scroll: return Rect2()
+		var vbar = _scroll.get_v_scroll_bar()
+		if vbar.max_value <= vbar.page: return Rect2()
+		var track = _get_track_rect()
+		var ratio = vbar.page / vbar.max_value
+		var thumb_h = maxf(16.0, track.size.y * ratio)
+		var usable = track.size.y - thumb_h
+		var scroll_ratio = 0.0
+		if vbar.max_value - vbar.page > 0:
+			scroll_ratio = vbar.value / (vbar.max_value - vbar.page)
+		var thumb_y = track.position.y + scroll_ratio * usable
+		return Rect2(2, thumb_y, size.x - 4, thumb_h)
+
+	func _can_scroll() -> bool:
+		if not _scroll: return false
+		var vbar = _scroll.get_v_scroll_bar()
+		return vbar.max_value > vbar.page
+
+	func _draw() -> void:
+		if not _can_scroll(): return
+		var track = _get_track_rect()
+		var thumb = _get_thumb_rect()
+		_draw_track(track)
+		_draw_thumb(thumb)
+
+	func _draw_track(track: Rect2) -> void:
+		var c = Color(_t.tx_primary, 0.25)
+		var cx = track.position.x + track.size.x * 0.5
+		# 上端横线
+		draw_line(Vector2(track.position.x + 2, track.position.y), Vector2(track.end.x - 2, track.position.y), c, 1.0)
+		# 下端横线
+		draw_line(Vector2(track.position.x + 2, track.end.y), Vector2(track.end.x - 2, track.end.y), c, 1.0)
+		# 中间竖轨道
+		draw_line(Vector2(cx, track.position.y), Vector2(cx, track.end.y), c, 1.0)
+
+	func _draw_thumb(thumb: Rect2) -> void:
+		var c = Color(_t.tx_primary, 0.45)
+		var hover_c = Color(_t.tx_primary, 0.65)
+		var fc = hover_c if _dragging else c
+		draw_rect(thumb, fc)
+		# 中间两条抓握纹
+		var mid_y = thumb.position.y + thumb.size.y * 0.5
+		if thumb.size.y > 24:
+			draw_line(Vector2(thumb.position.x + 3, mid_y - 2), Vector2(thumb.end.x - 3, mid_y - 2), Color(_t.bg_main, 0.5), 1.0)
+			draw_line(Vector2(thumb.position.x + 3, mid_y + 2), Vector2(thumb.end.x - 3, mid_y + 2), Color(_t.bg_main, 0.5), 1.0)
+
+	func _gui_input(event: InputEvent) -> void:
+		if not _can_scroll(): return
+		var vbar = _scroll.get_v_scroll_bar()
+
+		if event is InputEventMouseButton:
+			if event.button_index == MOUSE_BUTTON_LEFT:
+				if event.pressed:
+					var thumb = _get_thumb_rect()
+					if thumb.has_point(event.position):
+						_dragging = true
+						_drag_offset = event.position.y - thumb.position.y
+					else:
+						var track = _get_track_rect()
+						var r = clampf((event.position.y - track.position.y) / track.size.y, 0.0, 1.0)
+						vbar.value = r * (vbar.max_value - vbar.page)
+				else:
+					_dragging = false
+				queue_redraw()
+			elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
+				vbar.value -= vbar.page * 0.15
+			elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				vbar.value += vbar.page * 0.15
+
+		elif event is InputEventMouseMotion and _dragging:
+			var track = _get_track_rect()
+			var thumb_h = _get_thumb_rect().size.y
+			var usable = track.size.y - thumb_h
+			if usable > 0:
+				var r = clampf((event.position.y - _drag_offset - track.position.y) / usable, 0.0, 1.0)
+				vbar.value = r * (vbar.max_value - vbar.page)
+
+func make_scrollbar() -> Control:
+	return TodoScrollbar.new(self)

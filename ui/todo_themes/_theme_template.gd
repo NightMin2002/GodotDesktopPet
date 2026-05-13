@@ -108,3 +108,14 @@ func create_panel() -> PanelContainer:
 #     示例: 透明背景融入面板 (蓝图风/黑板风)
 # func apply_card_title_style(label: Label, is_done: bool, is_selected: bool) -> void:
 #     示例: 完成项用半透明色模拟被擦掉 (黑板风)
+
+# ── 进度指示器 ──
+# func make_progress_indicator() -> Control:
+#     返回自绘 Control，由 update_progress_indicator() 驱动
+#     示例: 粉笔涂鸦条 (黑板风)、条形码 (小票风)、像素爱心 (掌机风)
+# func update_progress_indicator(ctrl: Control, done: int, total: int) -> void:
+
+# ── 自定义滚动条 ──
+# func make_scrollbar() -> Control:
+#     返回 TodoScrollbar 子类，默认像素风竖轨道 + 方块拇指
+#     示例: 粉笔竖线 (黑板风)、霓虹发光条 (赛博风)、LCD栅格 (掌机风)
