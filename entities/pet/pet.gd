@@ -329,6 +329,32 @@ func get_shockwaves_count() -> int:
 	return pet_effects.get_shockwave_count()
 
 
+# ── UI 锚点 (反重力自适应) ──
+
+## 获取宠物 UI 定位锚点 (统一处理反重力方向)
+## 返回字典:
+##   center: Vector2  — 宠物屏幕中心
+##   head_dir: float   — 头顶方向 (-1=头朝上/正常, +1=头朝下/反重力)
+##   head_y: float     — 头顶边缘 Y (放气泡/按钮的起点)
+##   foot_y: float     — 脚底边缘 Y
+func get_ui_anchor() -> Dictionary:
+	var screen_pos = get_global_transform_with_canvas().get_origin()
+	if anti_gravity:
+		return {
+			"center": screen_pos,
+			"head_dir": 1.0,
+			"head_y": screen_pos.y + PET_RADIUS,
+			"foot_y": screen_pos.y - PET_RADIUS,
+		}
+	else:
+		return {
+			"center": screen_pos,
+			"head_dir": -1.0,
+			"head_y": screen_pos.y - PET_RADIUS,
+			"foot_y": screen_pos.y + PET_RADIUS,
+		}
+
+
 # ── 辅助方法 ──
 
 func is_mouse_on_pet() -> bool:

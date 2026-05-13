@@ -545,13 +545,14 @@ func _update_close_btn_hover() -> void:
 func _update_close_btn_position() -> void:
 	if not is_instance_valid(_close_btn):
 		return
-	# 位置: 宠物头顶上方
-	var pet_screen = pet.get_global_transform_with_canvas().get_origin()
-	var above_y = pet_screen.y - pet.PET_RADIUS * (1.0 if not pet.anti_gravity else -1.0) - 30.0
-	# 水平居中于宠物
+	var anchor = pet.get_ui_anchor()
 	var btn_size = _close_btn.size if _close_btn.size.x > 0 else Vector2(70, 22)
-	var btn_x = pet_screen.x - btn_size.x * 0.5
-	_close_btn.position = Vector2(btn_x, above_y)
+	var btn_x = anchor.center.x - btn_size.x * 0.5
+	# 按钮放在宠物头顶方向 (正常=上方, 反重力=下方)
+	var btn_y = anchor.head_y + anchor.head_dir * 10.0
+	if anchor.head_dir < 0:
+		btn_y -= btn_size.y  # 正常模式: 按钮底边对齐头顶
+	_close_btn.position = Vector2(btn_x, btn_y)
 
 func _remove_close_btn() -> void:
 	if is_instance_valid(_close_btn):

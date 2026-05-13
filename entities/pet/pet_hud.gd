@@ -68,9 +68,9 @@ func show_bubble(message: String) -> void:
 	_local_bubbles.append(panel)
 	
 	# 弹入动画
-	var pet_pos = pet.get_global_transform_with_canvas().get_origin()
-	var init_bubble_y = 50.0 if pet.anti_gravity else -90.0
-	panel.position = pet_pos + Vector2(-80, init_bubble_y)
+	var anchor = pet.get_ui_anchor()
+	var init_offset_y = anchor.head_dir * 50.0
+	panel.position = anchor.center + Vector2(-80, init_offset_y)
 	panel.modulate.a = 0.0
 	panel.scale = Vector2(0.5, 0.5)
 	panel.show()
@@ -90,8 +90,8 @@ func _schedule_bubble_removal(panel: PanelContainer) -> void:
 	
 	var fade = pet.create_tween().set_parallel(true)
 	fade.tween_property(panel, "modulate:a", 0.0, 0.6)
-	var fade_y = 30.0 if pet.anti_gravity else -30.0
-	fade.tween_property(panel, "position:y", panel.position.y + fade_y, 0.6)
+	var fade_y_dir = pet.get_ui_anchor().head_dir * 30.0
+	fade.tween_property(panel, "position:y", panel.position.y + fade_y_dir, 0.6)
 	await fade.finished
 	if not is_instance_valid(panel): return
 	_local_bubbles.erase(panel)
@@ -123,19 +123,15 @@ func _update_bubble_stacking(delta: float) -> void:
 			valid_bubbles.append(b)
 	_local_bubbles = valid_bubbles
 	
-	var pet_pos = pet.get_global_transform_with_canvas().get_origin()
+	var anchor = pet.get_ui_anchor()
 	var stack_y := 0.0
 	var vp = pet.get_viewport_rect().size
 	# 从最新到最旧遍历 (最新的紧贴宠物头顶)
 	for i in range(_local_bubbles.size() - 1, -1, -1):
 		var panel = _local_bubbles[i]
 		var min_size = panel.get_combined_minimum_size()
-		var bubble_y: float
-		if pet.anti_gravity:
-			bubble_y = 50 + stack_y  # 宠物下方向下堆叠
-		else:
-			bubble_y = -90 - stack_y  # 宠物上方向上堆叠
-		var target_pos = pet_pos + Vector2(-min_size.x / 2.0, bubble_y)
+		var bubble_y = anchor.head_dir * (50 + stack_y)
+		var target_pos = anchor.center + Vector2(-min_size.x / 2.0, bubble_y)
 		target_pos.x = clampf(target_pos.x, 8, vp.x - min_size.x - 8)
 		target_pos.y = clampf(target_pos.y, 8, vp.y - min_size.y - 8)
 		panel.position = panel.position.lerp(target_pos, delta * 10.0)

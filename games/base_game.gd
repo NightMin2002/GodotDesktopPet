@@ -794,28 +794,44 @@ func _update_chrome_positions() -> void:
 	var gc_size = game_container.size
 	var gap := 8.0
 
-	# 标题气泡: 居中在面板上方
+	# 标题气泡: 优先居中在面板上方, 空间不足时翻转到下方
 	if is_instance_valid(_title_bubble):
 		var tb_size = _title_bubble.size
 		var x = gc_pos.x + (gc_size.x - tb_size.x) / 2.0
-		var y = gc_pos.y - tb_size.y - gap
 		x = clampf(x, 8.0, screen_size.x - tb_size.x - 8.0)
-		y = maxf(y, 8.0)
-		_title_bubble.position = Vector2(x, y)
-
-	# 连接线: 从标题底部到面板顶部
-	if is_instance_valid(_connector) and is_instance_valid(_title_bubble):
-		var tb_bottom = _title_bubble.position.y + _title_bubble.size.y
-		var line_height = gc_pos.y - tb_bottom
-		if line_height > 1:
-			_connector.size = Vector2(1, line_height)
-			_connector.position = Vector2(
-				gc_pos.x + gc_size.x / 2.0,
-				tb_bottom
-			)
-			_connector.show()
+		var above_y = gc_pos.y - tb_size.y - gap
+		if above_y >= 8.0:
+			# 上方有空间
+			_title_bubble.position = Vector2(x, above_y)
 		else:
-			_connector.hide()
+			# 上方空间不足 (反重力/面板靠顶) → 放到面板下方
+			var below_y = gc_pos.y + gc_size.y + gap
+			below_y = clampf(below_y, 8.0, screen_size.y - tb_size.y - 8.0)
+			_title_bubble.position = Vector2(x, below_y)
+
+	# 连接线: 在标题和面板之间 (自动判断方向)
+	if is_instance_valid(_connector) and is_instance_valid(_title_bubble):
+		var tb_pos_y = _title_bubble.position.y
+		var tb_end_y = tb_pos_y + _title_bubble.size.y
+		var title_above = (tb_pos_y + _title_bubble.size.y <= gc_pos.y)
+		if title_above:
+			# 标题在面板上方: 线从标题底到面板顶
+			var line_height = gc_pos.y - tb_end_y
+			if line_height > 1:
+				_connector.size = Vector2(1, line_height)
+				_connector.position = Vector2(gc_pos.x + gc_size.x / 2.0, tb_end_y)
+				_connector.show()
+			else:
+				_connector.hide()
+		else:
+			# 标题在面板下方: 线从面板底到标题顶
+			var line_height = tb_pos_y - (gc_pos.y + gc_size.y)
+			if line_height > 1:
+				_connector.size = Vector2(1, line_height)
+				_connector.position = Vector2(gc_pos.x + gc_size.x / 2.0, gc_pos.y + gc_size.y)
+				_connector.show()
+			else:
+				_connector.hide()
 
 	# 侧边按钮: 面板外侧顶部对齐
 	if is_instance_valid(_side_container):

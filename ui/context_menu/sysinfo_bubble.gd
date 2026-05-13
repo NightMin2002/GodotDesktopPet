@@ -33,10 +33,9 @@ func _show(text: String, show_confirm: bool = false) -> void:
 	_bubble.reset_size()
 	var pet = _find_pet()
 	if is_instance_valid(pet):
-		var pos = pet.get_global_transform_with_canvas().get_origin()
-		# 反重力时气泡出现在宠物下方, 正常时出现在上方
-		var y_off = 80.0 if pet.anti_gravity else -120.0
-		var init_pos = pos + Vector2(-100, y_off)
+		var anchor = pet.get_ui_anchor()
+		var y_off = anchor.head_dir * 80.0
+		var init_pos = anchor.center + Vector2(-100, y_off)
 		_bubble.position = _clamp_to_viewport(init_pos)
 	if not _bubble.visible:
 		_bubble.modulate.a = 0.0
@@ -116,13 +115,13 @@ func process_tick() -> void:
 	if _bubble != null and _bubble.visible:
 		var pet = _find_pet()
 		if is_instance_valid(pet):
-			var pos = pet.get_global_transform_with_canvas().get_origin()
-			# 反重力时气泡跟随在宠物下方, 正常时跟随在上方
+			var anchor = pet.get_ui_anchor()
+			# 气泡跟随宠物头顶方向
 			var tp: Vector2
-			if pet.anti_gravity:
-				tp = pos + Vector2(-_bubble.size.x * 0.5, 30)
+			if anchor.head_dir > 0:
+				tp = anchor.center + Vector2(-_bubble.size.x * 0.5, 30)
 			else:
-				tp = pos + Vector2(-_bubble.size.x * 0.5, -_bubble.size.y - 30)
+				tp = anchor.center + Vector2(-_bubble.size.x * 0.5, -_bubble.size.y - 30)
 			tp = _clamp_to_viewport(tp)
 			_bubble.position = _bubble.position.lerp(tp, 0.15)
 			pet.overlay_rect = Rect2(_bubble.position, _bubble.size).grow(10)

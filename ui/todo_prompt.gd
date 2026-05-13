@@ -258,32 +258,38 @@ func _update_positions() -> void:
 		_dismiss_all()
 		return
 	
-	var pet_pos = _pet.global_position
+	var anchor = _pet.get_ui_anchor()
 	var vp = get_viewport().get_visible_rect().size
 	var pet_r: float = _pet.PET_RADIUS
 	const MARGIN := 4.0  # 屏幕边距
 	
-	# ── 气泡: 宠物正上方居中 ──
+	# ── 气泡: 宠物头顶方向居中 ──
 	if is_instance_valid(_bubble):
 		var bw = _bubble.size.x
 		var bh = _bubble.size.y
-		_bubble.position = Vector2(
-			pet_pos.x - bw * 0.5,
-			pet_pos.y - pet_r - bh - 16.0
-		)
-		# 上边界守卫: 上方放不下就翻到下方
+		var bubble_y: float
+		if anchor.head_dir < 0:
+			# 正常: 头顶上方
+			bubble_y = anchor.head_y - bh - 16.0
+		else:
+			# 反重力: 头顶下方
+			bubble_y = anchor.head_y + 16.0
+		_bubble.position = Vector2(anchor.center.x - bw * 0.5, bubble_y)
+		# 边界守卫: 放不下就翻到对面
 		if _bubble.position.y < MARGIN:
-			_bubble.position.y = pet_pos.y + pet_r + 16.0
-		# 左右边界守卫: clamp 到屏幕内
+			_bubble.position.y = anchor.foot_y + 16.0
+		elif _bubble.position.y + bh > vp.y - MARGIN:
+			_bubble.position.y = anchor.foot_y - bh - 16.0
+		# 左右边界守卫
 		_bubble.position.x = clampf(_bubble.position.x, MARGIN, maxf(MARGIN, vp.x - bw - MARGIN))
 	
 	# ── 按钮垂直居中与宠物 ──
-	var btn_y = pet_pos.y - 14.0  # 按钮中心对齐宠物中心
-	var btn_gap = 12.0            # 按钮与宠物的间距
+	var btn_y = anchor.center.y - 14.0
+	var btn_gap = 12.0
 	
-	# 检查左侧是否有足够空间 (需 ~90px)
-	var left_space = pet_pos.x - pet_r - btn_gap
-	var right_space = vp.x - (pet_pos.x + pet_r + btn_gap)
+	# 检查左侧是否有足够空间
+	var left_space = anchor.center.x - pet_r - btn_gap
+	var right_space = vp.x - (anchor.center.x + pet_r + btn_gap)
 	
 	if is_instance_valid(_btn_dismiss) and is_instance_valid(_btn_accept):
 		var dw = _btn_dismiss.size.x
@@ -294,35 +300,23 @@ func _update_positions() -> void:
 		if left_space >= dw + 10 and right_space >= aw + 10:
 			# ── 标准布局: 左知道了 / 右查看待办 ──
 			_btn_dismiss.position = Vector2(
-				pet_pos.x - pet_r - btn_gap - dw,
-				btn_y
-			)
+				anchor.center.x - pet_r - btn_gap - dw, btn_y)
 			_btn_accept.position = Vector2(
-				pet_pos.x + pet_r + btn_gap,
-				btn_y
-			)
+				anchor.center.x + pet_r + btn_gap, btn_y)
 		elif right_space >= dw + aw + 20:
 			# ── 左侧不够: 两个按钮都放右侧 ──
 			_btn_dismiss.position = Vector2(
-				pet_pos.x + pet_r + btn_gap,
-				btn_y
-			)
+				anchor.center.x + pet_r + btn_gap, btn_y)
 			_btn_accept.position = Vector2(
-				pet_pos.x + pet_r + btn_gap + dw + 8.0,
-				btn_y
-			)
+				anchor.center.x + pet_r + btn_gap + dw + 8.0, btn_y)
 		else:
 			# ── 右侧也不够: 都放左侧 ──
 			_btn_accept.position = Vector2(
-				pet_pos.x - pet_r - btn_gap - aw,
-				btn_y
-			)
+				anchor.center.x - pet_r - btn_gap - aw, btn_y)
 			_btn_dismiss.position = Vector2(
-				pet_pos.x - pet_r - btn_gap - aw - dw - 8.0,
-				btn_y
-			)
+				anchor.center.x - pet_r - btn_gap - aw - dw - 8.0, btn_y)
 		
-		# ── 最终边界 clamp: 确保按钮不超出屏幕 ──
+		# ── 最终边界 clamp ──
 		_btn_dismiss.position.x = clampf(_btn_dismiss.position.x, MARGIN, maxf(MARGIN, vp.x - dw - MARGIN))
 		_btn_dismiss.position.y = clampf(_btn_dismiss.position.y, MARGIN, maxf(MARGIN, vp.y - dh - MARGIN))
 		_btn_accept.position.x = clampf(_btn_accept.position.x, MARGIN, maxf(MARGIN, vp.x - aw - MARGIN))
