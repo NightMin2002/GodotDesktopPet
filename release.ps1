@@ -2,7 +2,7 @@
 # 用法: .\release.ps1 -Version "1.8" [-Notes "更新说明"]
 # 流程: 改版本号 → git commit → git tag → git push → 提示上传安装包
 param(
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory = $true)]
     [string]$Version,
     
     [string]$Notes = ""
@@ -25,7 +25,8 @@ foreach ($f in $files) {
     $newContent = $content -replace $f.Pattern, $f.Replace
     if ($content -eq $newContent) {
         Write-Host "[跳过] $($f.Path | Split-Path -Leaf) 已是目标版本" -ForegroundColor Yellow
-    } else {
+    }
+    else {
         [System.IO.File]::WriteAllText($f.Path, $newContent, [System.Text.UTF8Encoding]::new($false))
         Write-Host "[更新] $($f.Path | Split-Path -Leaf) -> v$Version" -ForegroundColor Green
     }
@@ -48,28 +49,34 @@ git push origin "v$Version"
 $installer = Get-ChildItem "$Root\dist" -Filter "*$Version*Setup.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($installer) {
     Write-Host "`n[就绪] 安装包: $($installer.Name) ($([math]::Round($installer.Length / 1MB, 1)) MB)" -ForegroundColor Green
-} else {
+}
+else {
     $latest = Get-ChildItem "$Root\dist" -Filter "*Setup.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($latest) {
         Write-Host "`n[注意] 未找到 v$Version 安装包，最新文件: $($latest.Name)" -ForegroundColor Yellow
-    } else {
+    }
+    else {
         Write-Host "`n[注意] dist/ 目录下无安装包，请先用 Inno Setup 编译" -ForegroundColor Yellow
     }
 }
 
 # ── 4. 提示下一步 ──
 
-Write-Host "`n=== 下一步 ===" -ForegroundColor Cyan
-Write-Host "1. 确认安装包已编译到 dist/ 目录"
-Write-Host "2. 在 GitHub 仓库创建 Release:"
+Write-Host "`n=== 下一步 (按顺序!) ===" -ForegroundColor Cyan
+Write-Host "1. [已完成] 版本号已更新 + Git 已推送"
+Write-Host "2. Godot 导出项目到 builds/ (此时代码已是 v$Version)"
+Write-Host "3. Inno Setup 编译 installer.iss -> dist/"
+Write-Host "4. 在 GitHub 创建 Release 并上传安装包:"
 Write-Host "   https://github.com/NightMin2002/GodotDesktopPet/releases/new?tag=v$Version"
-Write-Host "3. 上传安装包到 Release 附件"
+Write-Host ""
+Write-Host "!! 注意: 必须先跑本脚本再导出项目, 否则安装包版本号不对 !!" -ForegroundColor Red
 
 if (Get-Command gh -ErrorAction SilentlyContinue) {
     Write-Host "`n或者直接用 gh CLI:" -ForegroundColor Cyan
     if ($installer) {
         Write-Host "   gh release create v$Version `"$($installer.FullName)`" --title `"v$Version`" --notes `"$Notes`""
-    } else {
+    }
+    else {
         Write-Host "   gh release create v$Version --title `"v$Version`" --notes `"$Notes`""
     }
 }
