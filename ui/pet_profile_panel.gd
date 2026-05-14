@@ -1,4 +1,4 @@
-# pet_profile_panel.gd — 装置档案面板 (骨架)
+# pet_profile_panel.gd — 装置终端面板 (骨架)
 # 职责: 面板框架、标题栏、Tab 切换、围栏物理、开关动画
 # 内容模块: ui/profile/ 目录下的独立文件
 extends CanvasLayer
@@ -28,6 +28,7 @@ func _ready() -> void:
 	_calc_panel_size()
 	_build_ui()
 	EventBus.show_pet_profile.connect(_on_toggle)
+	EventBus.show_pet_profile_reminder.connect(_on_show_reminder_tab)
 	EventBus.ui_theme_changed.connect(_on_ui_theme_changed)
 
 func _calc_panel_size() -> void:
@@ -173,6 +174,12 @@ func _build_ui() -> void:
 	tab_stack.add_child(tab1)
 	_tab_contents.append(tab1)
 
+	var tab2 = preload("res://ui/profile/profile_tab_reminder.gd").new()
+	tab2.build()
+	tab2.set_anchors_preset(Control.PRESET_FULL_RECT)
+	tab_stack.add_child(tab2)
+	_tab_contents.append(tab2)
+
 	_switch_tab(0)
 
 # ═══════════════════════════════════════════════
@@ -186,7 +193,7 @@ func _build_title_bar() -> Control:
 	bar.gui_input.connect(_on_title_bar_input)
 
 	var title = Label.new()
-	title.text = "装置档案"
+	title.text = "装置终端"
 	title.add_theme_font_size_override("font_size", 22)
 	title.add_theme_color_override("font_color", Color(0.70, 0.80, 0.92, 0.9))
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -238,6 +245,10 @@ func _on_title_bar_input(event: InputEvent) -> void:
 		else:
 			_dragging = false
 	elif event is InputEventMouseMotion and _dragging:
+		# 安全检查: 鼠标左键没按住说明松手事件丢失了，自动取消拖拽
+		if not (event.button_mask & MOUSE_BUTTON_MASK_LEFT):
+			_dragging = false
+			return
 		panel.position = _clamp_pos(panel.get_global_mouse_position() - _drag_offset)
 
 # ═══════════════════════════════════════════════
@@ -248,7 +259,7 @@ func _build_tab_bar() -> HBoxContainer:
 	var bar = HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 4)
 
-	var tabs = ["游戏战绩", "能力数据"]
+	var tabs = ["游戏战绩", "能力数据", "定时提醒"]
 	for i in range(tabs.size()):
 		var btn = Button.new()
 		btn.text = tabs[i]
@@ -520,3 +531,9 @@ func _on_frame_drawer_draw() -> void:
 
 func _on_ui_theme_changed(hue: float) -> void:
 	_refresh_tab_styles()
+
+## 从菜单直接跳到定时提醒 Tab
+func _on_show_reminder_tab() -> void:
+	if not panel.visible:
+		_open_panel()
+	_switch_tab(2)

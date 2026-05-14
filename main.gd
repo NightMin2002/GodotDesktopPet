@@ -345,11 +345,12 @@ func _restore_after_entrance(pet: RigidBody2D, wall: StaticBody2D, had_wrap: boo
 # ── 提醒系统 ──
 
 func _setup_reminder_system() -> void:
-	var panel_script = load("res://ui/reminder_panel.gd")
-	if panel_script:
-		var panel_node = CanvasLayer.new()
-		panel_node.set_script(panel_script)
-		add_child(panel_node)
+	# 后台服务: 定时检查提醒 (UI 由装置终端 Tab 负责)
+	var service_script = load("res://ui/reminder_service.gd")
+	if service_script:
+		var service_node = Node.new()
+		service_node.set_script(service_script)
+		add_child(service_node)
 	
 	var bubble_script = load("res://ui/reminder_bubble.gd")
 	if bubble_script:

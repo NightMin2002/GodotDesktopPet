@@ -1,4 +1,4 @@
-# profile_styles.gd — 装置档案共享样式工厂
+# profile_styles.gd — 装置终端共享样式工厂
 # 提供统一的色值、科技感 StyleBox 与多层级文本/布局
 class_name ProfileStyles
 

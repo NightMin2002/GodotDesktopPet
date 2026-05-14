@@ -6,7 +6,6 @@ var ctx  # ContextMenu 引用
 # ── 按钮引用 ──
 var _chatter_btn: Button
 var _clone_btn: Button
-var _reminder_btn: Button
 var _todo_btn: Button
 var _deploy_clone_btn: Button
 var _dismiss_btn: Button
@@ -30,13 +29,6 @@ func build() -> void:
 	_clone_btn = ctx._make_menu_btn("分身 (0/5) [+]", Color(0.2, 0.85, 1.0, 1))
 	vbox.add_child(_clone_btn)
 	ctx._bind_l3_trigger(_clone_btn, "clone", "sec_pet")
-
-	_reminder_btn = ctx._make_menu_btn("提醒管理", Color(0.2, 0.85, 1.0, 1))
-	ctx._apply_capsule_style(_reminder_btn, Color(0.12, 0.22, 0.42, 0.7), Color(0.4, 0.6, 0.9, 0.5))
-	_reminder_btn.pressed.connect(func():
-		ctx._close_and_emit(EventBus.show_reminder_panel)
-	)
-	vbox.add_child(_reminder_btn)
 
 	_todo_btn = ctx._make_menu_btn("待办清单", Color(0.2, 0.85, 1.0, 1))
 	ctx._apply_capsule_style(_todo_btn, Color(0.12, 0.22, 0.42, 0.7), Color(0.4, 0.6, 0.9, 0.5))
@@ -121,7 +113,7 @@ func update_clone_label() -> void:
 		if _deploy_clone_btn:
 			_deploy_clone_btn.text = "部署分身 (" + str(count) + "/" + str(max_c) + ")"
 
-# ── 训练数据 (已迁移至装置档案面板 能力数据 Tab) ──
+# ── 训练数据 (已迁移至装置终端面板 能力数据 Tab) ──
 
 func refresh_profile() -> void:
 	pass  # 等级控制已迁移至 pet_profile_panel.gd
