@@ -34,7 +34,7 @@ foreach ($f in $files) {
 
 # ── 1b. 提交计数同步 ──
 
-$commitCount = (git rev-list --count HEAD) + 1  # +1 算上即将产生的 release commit
+$commitCount = [int](git rev-list --count HEAD) + 1  # +1 算上即将产生的 release commit
 $checkerPath = "$Root\core\update_checker.gd"
 $checkerContent = Get-Content $checkerPath -Raw -Encoding UTF8
 $newCheckerContent = $checkerContent -replace 'const COMMIT_COUNT := \d+', "const COMMIT_COUNT := $commitCount"

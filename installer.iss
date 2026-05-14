@@ -3,7 +3,7 @@
 ; Non-commercial use only
 
 #define MyAppName "桌面宠物"
-#define MyAppVersion "1.8"
+#define MyAppVersion "1.9"
 #define MyAppExeName "Pet.exe"
 
 [Setup]
