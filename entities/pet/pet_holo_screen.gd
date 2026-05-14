@@ -58,10 +58,8 @@ var _renderers: Dictionary = {}  # Mode -> RefCounted 实例缓存
 var _idle_duration: float = 0.0  # 屏保总时长 (0=不自动隐藏)
 var _idle_elapsed: float = 0.0  # 屏保已运行时间
 
-# ── 待机模式: 宠物锁定 + 踏板 ──
-var _platform: StaticBody2D = null
-var _lift_phase: int = 0  # 0=空闲, 1=上升中, 2=已到位
-var _lift_target_y: float = 0.0
+# ── 宠物锁定 + 踏板 (委托 PetPlatform) ──
+var _plat := PetPlatform.new()
 
 # ── 待机模式: 关闭按钮 ──
 var _close_btn: Button = null
@@ -239,26 +237,7 @@ func update(delta: float) -> void:
 		pet.queue_redraw()
 	# 动态间距平滑过渡
 	_update_dynamic_gap(delta)
-	# 屏保动画 + 自动隐藏计时
-	if mode == Mode.IDLE and visible:
-		_get_renderer(Mode.IDLE).time += delta
-		_idle_elapsed += delta
-		# 到时自动收起
-		if _idle_duration > 0.0 and _idle_elapsed >= _idle_duration and not _retracting:
-			hide()
-		# 踏板上升驱动
-		_update_platform(delta)
-		# 锁定宠物位置
-		if _lift_phase == 2 and is_instance_valid(_platform):
-			pet.linear_velocity = Vector2.ZERO
-			pet.global_position.y = _platform.position.y - pet.PET_RADIUS * pet.gravity_sign
-		elif _lift_phase == 0:
-			pet.linear_velocity = Vector2.ZERO
-		# 关闭按钮: 悬停检测 + 位置同步
-		_update_close_btn_hover()
-		_update_close_btn_position()
-		pet.queue_redraw()
-	# 动画通用逻辑 (注册表驱动, 共用更新计时器)
+	# 终端模式通用逻辑 (含 IDLE, 注册表驱动)
 	if is_terminal_mode and visible:
 		var active_renderer = _get_renderer(mode)
 		if active_renderer and "time" in active_renderer:
@@ -266,11 +245,9 @@ func update(delta: float) -> void:
 		_idle_elapsed += delta
 		if _idle_duration > 0.0 and _idle_elapsed >= _idle_duration and not _retracting:
 			hide()
-		_update_platform(delta)
-		if _lift_phase == 2 and is_instance_valid(_platform):
-			pet.linear_velocity = Vector2.ZERO
-			pet.global_position.y = _platform.position.y - pet.PET_RADIUS * pet.gravity_sign
-		elif _lift_phase == 0:
+		# 踏板升降驱动 + 位置锁定
+		_plat.update(pet, delta)
+		if not _plat.is_active:
 			pet.linear_velocity = Vector2.ZERO
 		_update_close_btn_hover()
 		_update_close_btn_position()
@@ -363,80 +340,15 @@ func get_screen_rect() -> Rect2:
 	return Rect2(rect_x, rect_y, holo_w + 8.0, holo_h + 8.0)
 
 # ══════════════════════════════════════
-# 宠物锁定 + 踏板 (待机模式)
+# 宠物锁定 + 踏板 (委托 PetPlatform)
 # ══════════════════════════════════════
 
 func _lock_pet() -> void:
-	# 取消正在进行的空间跳跃
-	if pet.free_roam_sys.active:
-		pet.free_roam_sys.finish()
-	# 高阻尼停下来
-	pet.linear_damp = 20.0
-	pet.linear_velocity = Vector2.ZERO
-	# 切到 idle 状态
-	if pet.current_state_name != "idle":
-		pet.transition_to("idle")
-	# 生成踏板
-	_spawn_platform()
+	_plat.lock_pet(pet)
 
 func _unlock_pet() -> void:
-	_lift_phase = 0
-	pet.gravity_scale = pet.gravity_sign  # 恢复重力
-	# 移除踏板
-	if is_instance_valid(_platform):
-		for child in _platform.get_children():
-			if child is CollisionShape2D:
-				child.disabled = true
-		var plat = _platform
-		_platform = null
-		var tween = plat.create_tween()
-		tween.tween_property(plat, "modulate:a", 0.0, 0.3)
-		tween.finished.connect(func():
-			if is_instance_valid(plat):
-				plat.queue_free()
-		)
-	# 切 fall 状态自然过渡
+	_plat.unlock_pet(pet)
 	pet.transition_to("fall")
-
-func _spawn_platform() -> void:
-	var parent = pet.get_parent()
-	if not parent:
-		return
-	var plat_y = pet.global_position.y + pet.PET_RADIUS * pet.gravity_sign
-	var body = StaticBody2D.new()
-	body.position = Vector2(pet.global_position.x, plat_y)
-	var col = CollisionShape2D.new()
-	var shape = RectangleShape2D.new()
-	shape.size = Vector2(pet.PET_RADIUS * 2.0, 8.0)
-	col.shape = shape
-	col.one_way_collision = true
-	if pet.anti_gravity:
-		col.rotation = PI
-	body.add_child(col)
-	var visual = FreeRoamSystem.PlatformVisual.new()
-	visual.platform_width = pet.PET_RADIUS * 2.0
-	visual.platform_color = pet.palette.shift_color(Color(0.2, 0.6, 1.0, 0.6))
-	visual.quiet = true
-	body.add_child(visual)
-	parent.add_child(body)
-	body.modulate.a = 0.0
-	var tween = body.create_tween()
-	tween.tween_property(body, "modulate:a", 1.0, 0.3)
-	_platform = body
-	_lift_target_y = plat_y - 15.0 * pet.gravity_sign
-	_lift_phase = 1
-	pet.gravity_scale = 0.0
-
-func _update_platform(delta: float) -> void:
-	if _lift_phase == 1 and is_instance_valid(_platform):
-		var lift_speed = 80.0
-		_platform.position.y -= lift_speed * delta * pet.gravity_sign
-		pet.global_position.y = _platform.position.y - pet.PET_RADIUS * pet.gravity_sign
-		var dist = (_platform.position.y - _lift_target_y) * pet.gravity_sign
-		if dist <= 0.0:
-			_platform.position.y = _lift_target_y
-			pet.global_position.y = _lift_target_y - pet.PET_RADIUS * pet.gravity_sign
-			_lift_phase = 2
 
 ## 动态间距: 根据当前模式计算目标 gap 并平滑过渡
 func _update_dynamic_gap(delta: float) -> void:
