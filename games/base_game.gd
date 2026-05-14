@@ -1,4 +1,4 @@
-# base_game.gd — 小游戏接口基类
+﻿# base_game.gd — 小游戏接口基类
 # 所有游戏包中的游戏脚本必须继承此类，实现标准接口
 # 生命周期: GameManager 注入属性 → start() → [游戏进行中] → game_finished 信号 → cleanup()
 class_name BaseGame extends RefCounted
@@ -33,24 +33,11 @@ const AUTO_PLAY_ALPHA := 0.6  # 自玩时面板透明度
 # ── 教程面板 ──
 var _tutorial_panel: PanelContainer = null
 var _tutorial_visible: bool = false
-var _help_btn: Button = null
 
-# ── 悬浮组件 (解构式 UI) ──
-var _title_bubble: PanelContainer = null   # 悬浮标题气泡
-var _side_container: VBoxContainer = null  # 侧边按钮组
-var _connector: ColorRect = null           # 标题-面板连接线
-var _restart_bubble: Button = null         # 悬浮重开按钮 (game over 后显示)
-var _speech_bubble: Control = null         # 悬浮发言气泡 (面板侧面)
-var _speech_label: Label = null            # 发言文字
-var _chrome_close_btn: Button = null       # 悬浮关闭按钮
-var _chrome_side: int = 1                  # 按钮朝向 (1=右侧, -1=左侧)
-var _chrome_dragging: bool = false
-var _chrome_drag_offset: Vector2 = Vector2.ZERO
-var _pending_speech: String = ""                 # _say() 在气泡创建前调用时暂存
-var _compare_label: Label = null                 # 双方成绩对比行
-
-# ── 全息合成器 (委托给 HoloCompositor) ──
-var _holo: HoloCompositor = null
+# ── 悬浮组件 (委托给 GameChrome) ──
+var _chrome: GameChrome = null
+var _compare_label: Label = null  # 双方成绩对比行
+var _pending_speech: String = ""  # _say() 在 chrome 创建前调用时暂存
 
 # ── 元数据 (子类覆写) ──
 
@@ -71,7 +58,9 @@ func start() -> void:
 
 ## 清理资源: 移除所有 UI 节点、断开信号
 func cleanup() -> void:
-	_cleanup_chrome()
+	if _chrome:
+		_chrome.cleanup()
+		_chrome = null
 	_destroy_tutorial()
 
 # ── 教程系统 (子类按需覆写) ──
@@ -262,7 +251,7 @@ func _auto_fade(target_alpha: float, dur: float = 0.25) -> void:
 		return
 	var tw = game_container.create_tween().set_parallel(true)
 	tw.tween_property(game_container, "modulate:a", target_alpha, dur)
-	for node in [_title_bubble, _side_container, _connector, _speech_bubble, _restart_bubble]:
+	for node in [_chrome.title_bubble, _chrome.side_container, _chrome.connector, _chrome.speech_bubble, _chrome.restart_bubble] if _chrome else []:
 		if is_instance_valid(node):
 			tw.tween_property(node, "modulate:a", target_alpha, dur)
 
@@ -322,8 +311,8 @@ func _stop_auto_play() -> void:
 	if was_auto:
 		_takeover = true  # 用户接管 → 本局战绩作废
 		# 恢复发言气泡
-		if is_instance_valid(_speech_bubble):
-			_speech_bubble.visible = true
+		if is_instance_valid(_chrome.speech_bubble) if _chrome else false:
+			_chrome.speech_bubble.visible = true
 		# 恢复面板透明度 + 显示接管台词
 		if not _game_over:
 			# 恢复面板显示
@@ -349,24 +338,10 @@ func _auto_finish_and_close() -> void:
 
 ## 宠物发言 (通过悬浮气泡 + 淡入高亮动画)
 func _say(text: String) -> void:
-	if _auto_play:
-		return  # 自玩时不在面板气泡发言 (不自言自语)
-	if not _speech_label:
-		# 气泡尚未创建，暂存文本
+	if _chrome:
+		_chrome.say(text)
+	elif not _auto_play:
 		_pending_speech = text
-		return
-	_speech_label.text = text
-	# 同步全息克隆体的文字
-	if _holo:
-		_holo.sync_speech_text(text)
-	if is_instance_valid(_speech_bubble):
-		_speech_bubble.modulate = Color(1.4, 1.4, 1.4, 1.0)
-		var owner_node: Node = null
-		if is_instance_valid(game_container): owner_node = game_container
-		elif game_viewport: owner_node = game_viewport
-		if owner_node:
-			var tween = owner_node.create_tween()
-			tween.tween_property(_speech_bubble, "modulate", Color.WHITE, 0.5)
 
 ## 同步 SubViewport 大小到面板内容 (面板 resized 时调用)
 func sync_viewport_size() -> void:
@@ -423,8 +398,12 @@ func _mount_panel(panel: PanelContainer) -> void:
 		tween.tween_property(game_container, "scale", Vector2.ONE, 0.3) \
 			.set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
 
-	# 悬浮组件 (标题气泡 + 侧边按钮 + 发言气泡 + 重开按钮)
-	_setup_floating_chrome(get_game_name(), _close_game, _on_restart)
+	# 悬浮组件 (委托给 GameChrome)
+	_chrome = GameChrome.new()
+	_chrome.game = self
+	_chrome.pending_speech = _pending_speech
+	_pending_speech = ""
+	_chrome.setup(get_game_name(), _close_game, _on_restart)
 
 ## 面板定位: 宠物侧面, 避让全息迷你屏, 底部预留重开按钮空间
 func _position_near_pet() -> void:
@@ -504,16 +483,16 @@ func _on_panel_input(event: InputEvent) -> void:
 			return
 		var local = panel.get_local_mouse_position()
 		if event.pressed and local.y < 50.0:
-			_chrome_dragging = true
-			_chrome_drag_offset = game_container.get_viewport().get_mouse_position() - game_container.position
+			if _chrome: _chrome._dragging = true
+			if _chrome: _chrome._drag_offset = game_container.get_viewport().get_mouse_position() - game_container.position
 			EventBus.drag_started.emit()
 		else:
-			if _chrome_dragging:
+			if _chrome and _chrome._dragging:
 				EventBus.drag_ended.emit()
-			_chrome_dragging = false
-	elif event is InputEventMouseMotion and _chrome_dragging:
+			if _chrome: _chrome._dragging = false
+	elif event is InputEventMouseMotion and _chrome and _chrome._dragging:
 		var vp = screen_size
-		var new_pos = game_container.get_viewport().get_mouse_position() - _chrome_drag_offset
+		var new_pos = game_container.get_viewport().get_mouse_position() - _chrome._drag_offset
 		new_pos.x = clampf(new_pos.x, 8.0, vp.x - game_container.size.x - 8.0)
 		new_pos.y = clampf(new_pos.y, 8.0, vp.y - game_container.size.y - 8.0)
 		game_container.position = new_pos
@@ -557,7 +536,7 @@ func _close_game() -> void:
 	# 子类额外清理
 	_on_close_cleanup()
 	# 退场动画
-	_animate_chrome_out()
+	if _chrome: _chrome.animate_out()
 	if is_instance_valid(game_container):
 		game_container.pivot_offset = game_container.size / 2.0
 		var tween = game_container.create_tween().set_parallel(true)
@@ -568,510 +547,26 @@ func _close_game() -> void:
 		)
 
 # ══════════════════════════════════════════════
-# 悬浮组件系统 (标题气泡 + 侧边按钮 + 连接线)
+# 悬浮组件委托 (实现在 game_chrome.gd)
 # ══════════════════════════════════════════════
 
-## 创建悬浮组件 (游戏在面板构建完成、定位之后调用)
-func _setup_floating_chrome(game_name: String, on_close: Callable, on_restart: Callable = Callable()) -> void:
-	var parent = game_container.get_parent()
-	if not parent:
-		return
-	var hue = EventBus.ui_hue
-
-	# ── 标题气泡 ──
-	_title_bubble = PanelContainer.new()
-	var tb_bg = StyleBoxFlat.new()
-	tb_bg.bg_color = Color(0.04, 0.06, 0.12, 0.92)
-	tb_bg.border_color = Color.from_hsv(hue, 0.45, 0.85, 0.35)
-	tb_bg.set_border_width_all(1)
-	tb_bg.set_corner_radius_all(14)
-	tb_bg.content_margin_left = 18
-	tb_bg.content_margin_right = 18
-	tb_bg.content_margin_top = 5
-	tb_bg.content_margin_bottom = 5
-	_title_bubble.add_theme_stylebox_override("panel", tb_bg)
-	_title_bubble.mouse_filter = Control.MOUSE_FILTER_STOP
-	_title_bubble.mouse_default_cursor_shape = Control.CURSOR_MOVE
-
-	var title_label = Label.new()
-	title_label.text = game_name
-	title_label.add_theme_font_size_override("font_size", 14)
-	title_label.add_theme_color_override("font_color", Color.from_hsv(hue, 0.4, 1.0, 0.9))
-	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_title_bubble.add_child(title_label)
-
-	_title_bubble.gui_input.connect(_on_chrome_drag_input)
-	parent.add_child(_title_bubble)
-
-	# ── 连接线 ──
-	_connector = ColorRect.new()
-	_connector.color = Color.from_hsv(hue, 0.4, 0.8, 0.2)
-	_connector.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(_connector)
-
-	# ── 侧边按钮组 ──
-	_side_container = VBoxContainer.new()
-	_side_container.add_theme_constant_override("separation", 6)
-	_side_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# i 按钮 (有教程内容时才创建)
-	var steps = get_tutorial_steps()
-	if not steps.is_empty():
-		var info_btn = _create_chrome_button("i", false)
-		info_btn.pressed.connect(_toggle_tutorial)
-		_help_btn = info_btn
-		_side_container.add_child(info_btn)
-	# 隐藏按钮 (收起面板, 只留全息屏)
-	var hide_btn = _create_chrome_button("▽", false)
-	hide_btn.pressed.connect(func(): set_panel_visible(false))
-	_side_container.add_child(hide_btn)
-	# 关闭按钮
-	_chrome_close_btn = _create_chrome_button("✕", true)
-	_chrome_close_btn.pressed.connect(on_close)
-	_side_container.add_child(_chrome_close_btn)
-	parent.add_child(_side_container)
-
-	# ── 重开按钮 (初始隐藏, game over 后显示) ──
-	if on_restart.is_valid():
-		_restart_bubble = _create_restart_bubble(on_restart)
-		parent.add_child(_restart_bubble)
-		_restart_bubble.hide()
-
-	# 确定按钮朝向
-	_chrome_side = _determine_chrome_side()
-
-	# ── 发言气泡 (在侧边按钮对面, 靠近宠物的一侧) ──
-	_speech_bubble = _create_speech_bubble()
-	parent.add_child(_speech_bubble)
-
-	if _auto_play:
-		# 自玩时隐藏发言气泡 (不自言自语)
-		_speech_bubble.visible = false
-		_pending_speech = ""
-	elif _pending_speech != "":
-		# 如果 start() 中的 _say() 先于气泡创建，立即显示暂存文本
-		_speech_label.text = _pending_speech
-		_pending_speech = ""
-
-	# 等布局完成后定位
-	await parent.get_tree().process_frame
-	_update_chrome_positions()
-	# 先创建全息合成器 (此时各组件位置正确, 包围盒精确)
-	_holo = HoloCompositor.new()
-	_holo.setup(_get_holo_chrome_refs())
-	if _panel_hidden:
-		# 面板已隐藏: chrome 直接隐藏, 跳过入场动画
-		for node in [_title_bubble, _side_container, _connector, _speech_bubble]:
-			if is_instance_valid(node):
-				node.visible = false
-	else:
-		# 再启动入场动画 (动画会临时修改位置/透明度, 不影响全息布局)
-		_animate_chrome_in()
-
-## 创建圆形悬浮按钮
-func _create_chrome_button(text: String, is_close: bool) -> Button:
-	var btn = Button.new()
-	btn.text = text
-	btn.custom_minimum_size = Vector2(30, 30)
-	btn.add_theme_font_size_override("font_size", 13)
-	var hue = EventBus.ui_hue
-	if is_close:
-		btn.add_theme_color_override("font_color", Color(0.5, 0.55, 0.65, 0.7))
-		btn.add_theme_color_override("font_hover_color", Color(1.0, 0.35, 0.35, 1.0))
-		btn.add_theme_color_override("font_pressed_color", Color(1.0, 0.2, 0.2, 1.0))
-	else:
-		btn.add_theme_color_override("font_color", Color(0.5, 0.55, 0.65, 0.7))
-		btn.add_theme_color_override("font_hover_color", Color.from_hsv(hue, 0.5, 1.0, 1.0))
-		btn.add_theme_color_override("font_pressed_color", Color.from_hsv(hue, 0.6, 1.0, 1.0))
-	# normal 背景
-	var normal_bg = StyleBoxFlat.new()
-	normal_bg.bg_color = Color(0.05, 0.08, 0.15, 0.88)
-	normal_bg.border_color = Color.from_hsv(hue, 0.35, 0.65, 0.3)
-	normal_bg.set_border_width_all(1)
-	normal_bg.set_corner_radius_all(15)  # 圆形
-	normal_bg.set_content_margin_all(0)
-	# hover 背景
-	var hover_bg = StyleBoxFlat.new()
-	if is_close:
-		hover_bg.bg_color = Color(0.18, 0.06, 0.06, 0.9)
-		hover_bg.border_color = Color(0.8, 0.25, 0.25, 0.5)
-	else:
-		hover_bg.bg_color = Color(0.08, 0.12, 0.22, 0.9)
-		hover_bg.border_color = Color.from_hsv(hue, 0.5, 0.9, 0.5)
-	hover_bg.set_border_width_all(1)
-	hover_bg.set_corner_radius_all(15)
-	hover_bg.set_content_margin_all(0)
-
-	btn.add_theme_stylebox_override("normal", normal_bg)
-	btn.add_theme_stylebox_override("hover", hover_bg)
-	btn.add_theme_stylebox_override("pressed", hover_bg)
-	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	return btn
-
-## 创建悬浮发言气泡 (在面板侧面, 带小三角指向面板)
-func _create_speech_bubble() -> Control:
-	var hue = EventBus.ui_hue
-	var wrapper = Control.new()
-	wrapper.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	# 主气泡面板
-	var bubble = PanelContainer.new()
-	bubble.custom_minimum_size = Vector2(140, 0)
-	var bg = StyleBoxFlat.new()
-	bg.bg_color = Color(0.04, 0.06, 0.12, 0.92)
-	bg.border_color = Color.from_hsv(hue, 0.45, 0.85, 0.35)
-	bg.set_border_width_all(1)
-	bg.set_corner_radius_all(10)
-	bg.content_margin_left = 10
-	bg.content_margin_right = 10
-	bg.content_margin_top = 6
-	bg.content_margin_bottom = 6
-	bubble.add_theme_stylebox_override("panel", bg)
-	bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	_speech_label = Label.new()
-	_speech_label.text = ""
-	_speech_label.add_theme_font_size_override("font_size", 13)
-	_speech_label.add_theme_color_override("font_color", Color(0.55, 0.75, 0.95, 0.9))
-	_speech_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	_speech_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_speech_label.custom_minimum_size = Vector2(120, 0)
-	_speech_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bubble.add_child(_speech_label)
-
-	# 小三角箭头 (用 _draw 绘制, 方向在定位时更新)
-	var arrow = _SpeechArrow.new()
-	arrow.hue = hue
-	arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	wrapper.add_child(arrow)
-	wrapper.add_child(bubble)
-	wrapper.set_meta("_bubble", bubble)
-	wrapper.set_meta("_arrow", arrow)
-	return wrapper
-
-## 创建悬浮重开按钮 (pill 形状, 居中在面板下方)
-func _create_restart_bubble(on_restart: Callable) -> Button:
-	var btn = Button.new()
-	btn.text = "再来一局"
-	btn.custom_minimum_size = Vector2(100, 32)
-	btn.add_theme_font_size_override("font_size", 14)
-	var hue = EventBus.ui_hue
-	btn.add_theme_color_override("font_color", Color.from_hsv(hue, 0.35, 0.85, 0.8))
-	btn.add_theme_color_override("font_hover_color", Color.from_hsv(hue, 0.5, 1.0, 1.0))
-	btn.add_theme_color_override("font_pressed_color", Color.from_hsv(hue, 0.6, 1.0, 1.0))
-	var normal_bg = StyleBoxFlat.new()
-	normal_bg.bg_color = Color(0.05, 0.08, 0.15, 0.88)
-	normal_bg.border_color = Color.from_hsv(hue, 0.35, 0.65, 0.3)
-	normal_bg.set_border_width_all(1)
-	normal_bg.set_corner_radius_all(16)
-	normal_bg.content_margin_left = 18
-	normal_bg.content_margin_right = 18
-	normal_bg.content_margin_top = 4
-	normal_bg.content_margin_bottom = 4
-	var hover_bg = StyleBoxFlat.new()
-	hover_bg.bg_color = Color(0.08, 0.12, 0.22, 0.9)
-	hover_bg.border_color = Color.from_hsv(hue, 0.5, 0.9, 0.5)
-	hover_bg.set_border_width_all(1)
-	hover_bg.set_corner_radius_all(16)
-	hover_bg.content_margin_left = 18
-	hover_bg.content_margin_right = 18
-	hover_bg.content_margin_top = 4
-	hover_bg.content_margin_bottom = 4
-	btn.add_theme_stylebox_override("normal", normal_bg)
-	btn.add_theme_stylebox_override("hover", hover_bg)
-	btn.add_theme_stylebox_override("pressed", hover_bg)
-	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	btn.pressed.connect(on_restart)
-	return btn
-
-## 显示悬浮重开按钮 (game over 后调用, 自动处理屏幕空间不足)
 func _show_restart_bubble() -> void:
-	if _panel_hidden:
-		return
-	if not is_instance_valid(_restart_bubble) or not is_instance_valid(game_container):
-		return
-	_restart_bubble.show()
-	# 同步全息克隆体可见性
-	if _holo:
-		_holo.sync_restart_visible(true)
-	# 检查面板下方是否有足够空间放置按钮 (用固定常量, 和预留空间一致)
-	var gc_pos = game_container.position
-	var gc_size = game_container.size
-	var needed_bottom = gc_pos.y + gc_size.y + _RESTART_GAP + _RESTART_RESERVE.y + _RESTART_GAP
-	if needed_bottom > screen_size.y:
-		var shift = needed_bottom - screen_size.y
-		game_container.position.y = maxf(gc_pos.y - shift, 8.0)
-	_update_chrome_positions()
-	# 弹入动画
-	_restart_bubble.modulate.a = 0.0
-	_restart_bubble.scale = Vector2(0.5, 0.5)
-	_restart_bubble.pivot_offset = _restart_bubble.size / 2.0 if _restart_bubble.size.x > 1 else Vector2(50, 16)
-	var tw = _restart_bubble.create_tween().set_parallel(true)
-	tw.tween_property(_restart_bubble, "modulate:a", 1.0, 0.2)
-	tw.tween_property(_restart_bubble, "scale", Vector2.ONE, 0.25) \
-		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	if _chrome: _chrome.show_restart()
 
-## 隐藏悬浮重开按钮 (重新开始时调用)
 func _hide_restart_bubble() -> void:
-	_takeover = false  # 重开新局，清除接管标记
-	if is_instance_valid(_restart_bubble):
-		_restart_bubble.hide()
-	if _holo:
-		_holo.sync_restart_visible(false)
-		_holo.update_layout(_get_holo_chrome_refs())
+	if _chrome: _chrome.hide_restart()
 
-## 判断按钮应该在面板哪一侧 (远离宠物)
-func _determine_chrome_side() -> int:
-	var pet_x = screen_size.x / 2.0
-	if is_instance_valid(_pet):
-		pet_x = _pet.get_global_transform_with_canvas().get_origin().x
-	var panel_center_x = game_container.position.x + game_container.size.x / 2.0
-	if panel_center_x > pet_x:
-		return 1  # 面板在宠物右边 → 按钮在面板右侧 (更远离宠物)
-	else:
-		return -1  # 面板在宠物左边 → 按钮在面板左侧
-
-## 同步悬浮组件位置 (面板移动时调用)
 func _update_chrome_positions() -> void:
-	if not is_instance_valid(game_container):
-		return
-	var gc_pos = game_container.position
-	var gc_size = game_container.size
-	var gap := 8.0
+	if _chrome: _chrome.update_positions()
 
-	# 标题气泡: 优先居中在面板上方, 空间不足时翻转到下方
-	if is_instance_valid(_title_bubble):
-		var tb_size = _title_bubble.size
-		var x = gc_pos.x + (gc_size.x - tb_size.x) / 2.0
-		x = clampf(x, 8.0, screen_size.x - tb_size.x - 8.0)
-		var above_y = gc_pos.y - tb_size.y - gap
-		if above_y >= 8.0:
-			# 上方有空间
-			_title_bubble.position = Vector2(x, above_y)
-		else:
-			# 上方空间不足 (反重力/面板靠顶) → 放到面板下方
-			var below_y = gc_pos.y + gc_size.y + gap
-			below_y = clampf(below_y, 8.0, screen_size.y - tb_size.y - 8.0)
-			_title_bubble.position = Vector2(x, below_y)
-
-	# 连接线: 在标题和面板之间 (自动判断方向)
-	if is_instance_valid(_connector) and is_instance_valid(_title_bubble):
-		var tb_pos_y = _title_bubble.position.y
-		var tb_end_y = tb_pos_y + _title_bubble.size.y
-		var title_above = (tb_pos_y + _title_bubble.size.y <= gc_pos.y)
-		if title_above:
-			# 标题在面板上方: 线从标题底到面板顶
-			var line_height = gc_pos.y - tb_end_y
-			if line_height > 1:
-				_connector.size = Vector2(1, line_height)
-				_connector.position = Vector2(gc_pos.x + gc_size.x / 2.0, tb_end_y)
-				_connector.show()
-			else:
-				_connector.hide()
-		else:
-			# 标题在面板下方: 线从面板底到标题顶
-			var line_height = tb_pos_y - (gc_pos.y + gc_size.y)
-			if line_height > 1:
-				_connector.size = Vector2(1, line_height)
-				_connector.position = Vector2(gc_pos.x + gc_size.x / 2.0, gc_pos.y + gc_size.y)
-				_connector.show()
-			else:
-				_connector.hide()
-
-	# 侧边按钮: 面板外侧顶部对齐
-	if is_instance_valid(_side_container):
-		var sc_size = _side_container.size
-		var x: float
-		if _chrome_side > 0:
-			x = gc_pos.x + gc_size.x + gap
-		else:
-			x = gc_pos.x - sc_size.x - gap
-		var y = gc_pos.y
-		x = clampf(x, 8.0, screen_size.x - sc_size.x - 8.0)
-		y = clampf(y, 8.0, screen_size.y - sc_size.y - 8.0)
-		_side_container.position = Vector2(x, y)
-
-	# 发言气泡: 面板侧面 (侧边按钮对面, 即靠近宠物的一侧)
-	if is_instance_valid(_speech_bubble):
-		var bubble: PanelContainer = _speech_bubble.get_meta("_bubble") as PanelContainer
-		var arrow: Control = _speech_bubble.get_meta("_arrow") as Control
-		if bubble:
-			var speech_side = -_chrome_side  # 和侧边按钮相反的一侧
-			var b_size = bubble.size
-			var arrow_w := 8.0
-			var sx: float
-			if speech_side > 0:
-				# 气泡在面板右侧
-				sx = gc_pos.x + gc_size.x + gap + arrow_w
-			else:
-				# 气泡在面板左侧
-				sx = gc_pos.x - b_size.x - gap - arrow_w
-			var sy = gc_pos.y + 8.0  # 稍低于面板顶部
-			sx = clampf(sx, 8.0, screen_size.x - b_size.x - 8.0)
-			sy = clampf(sy, 8.0, screen_size.y - b_size.y - 8.0)
-			bubble.position = Vector2(sx, sy)
-			# 箭头定位
-			if arrow:
-				var arrow_h := 12.0
-				var ax: float
-				if speech_side > 0:
-					ax = sx - arrow_w
-					(arrow as _SpeechArrow).pointing_right = false  # 箭头指向左边(面板)
-				else:
-					ax = sx + b_size.x
-					(arrow as _SpeechArrow).pointing_right = true  # 箭头指向右边(面板)
-				var ay = sy + b_size.y / 2.0 - arrow_h / 2.0
-				arrow.position = Vector2(ax, ay)
-				arrow.size = Vector2(arrow_w, arrow_h)
-				arrow.queue_redraw()
-
-	# 重开按钮: 居中在面板下方
-	if is_instance_valid(_restart_bubble) and _restart_bubble.visible:
-		var rb_size = _restart_bubble.size
-		var rx = gc_pos.x + (gc_size.x - rb_size.x) / 2.0
-		var ry = gc_pos.y + gc_size.y + gap
-		rx = clampf(rx, 8.0, screen_size.x - rb_size.x - 8.0)
-		ry = clampf(ry, 8.0, screen_size.y - rb_size.y - 8.0)
-		_restart_bubble.position = Vector2(rx, ry)
-
-	# 教程面板
-	_position_tutorial()
-	# 全息合成视口布局同步
-	if _holo:
-		_holo.update_layout(_get_holo_chrome_refs())
-
-## 标题气泡拖拽 → 带动整个面板移动
-func _on_chrome_drag_input(event: InputEvent) -> void:
-	if not is_instance_valid(game_container):
-		return
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if event.pressed:
-			_chrome_dragging = true
-			_chrome_drag_offset = game_container.get_viewport().get_mouse_position() - game_container.position
-			EventBus.drag_started.emit()
-		else:
-			if _chrome_dragging:
-				EventBus.drag_ended.emit()
-			_chrome_dragging = false
-	elif event is InputEventMouseMotion and _chrome_dragging:
-		var vp = screen_size
-		var new_pos = game_container.get_viewport().get_mouse_position() - _chrome_drag_offset
-		new_pos.x = clampf(new_pos.x, 8.0, vp.x - game_container.size.x - 8.0)
-		new_pos.y = clampf(new_pos.y, 8.0, vp.y - game_container.size.y - 8.0)
-		game_container.position = new_pos
-		_update_chrome_positions()
-
-## 悬浮组件分层入场动画
-func _animate_chrome_in() -> void:
-	# 标题气泡: 从下方浮上 + 淡入
-	if is_instance_valid(_title_bubble):
-		var target_y = _title_bubble.position.y
-		_title_bubble.position.y += 12
-		_title_bubble.modulate.a = 0.0
-		var tw = _title_bubble.create_tween().set_parallel(true)
-		tw.tween_property(_title_bubble, "position:y", target_y, 0.28) \
-			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT) \
-			.set_delay(0.12)
-		tw.tween_property(_title_bubble, "modulate:a", 1.0, 0.2).set_delay(0.12)
-
-	# 连接线: 淡入
-	if is_instance_valid(_connector):
-		_connector.modulate.a = 0.0
-		var tw = _connector.create_tween()
-		tw.tween_property(_connector, "modulate:a", 1.0, 0.2).set_delay(0.18)
-
-	# 侧边按钮: 逐个弹出
-	if is_instance_valid(_side_container):
-		for i in range(_side_container.get_child_count()):
-			var child = _side_container.get_child(i) as Control
-			if not child:
-				continue
-			child.modulate.a = 0.0
-			child.scale = Vector2(0.3, 0.3)
-			child.pivot_offset = child.size / 2.0
-			var delay = 0.2 + i * 0.08
-			var tw = child.create_tween().set_parallel(true)
-			tw.tween_property(child, "modulate:a", 1.0, 0.15).set_delay(delay)
-			tw.tween_property(child, "scale", Vector2.ONE, 0.22) \
-				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT) \
-				.set_delay(delay)
-
-	# 发言气泡: 淡入
-	if is_instance_valid(_speech_bubble):
-		_speech_bubble.modulate.a = 0.0
-		var tw = _speech_bubble.create_tween()
-		tw.tween_property(_speech_bubble, "modulate:a", 1.0, 0.25).set_delay(0.15)
-
-# ══════════════════════════════════════════════
-# 全息合成 (委托给 HoloCompositor)
-# ══════════════════════════════════════════════
-
-## 构建传递给 HoloCompositor 的组件引用字典
-func _get_holo_chrome_refs() -> Dictionary:
-	return {
-		"game_viewport": game_viewport,
-		"game_container": game_container,
-		"parent": game_container.get_parent() if is_instance_valid(game_container) else null,
-		"title": _title_bubble,
-		"connector": _connector,
-		"side": _side_container,
-		"restart": _restart_bubble,
-		"speech": _speech_bubble,
-		"chrome_side": _chrome_side,
-	}
-
-## 获取全息合成纹理 (供 PetHoloScreen 渲染)
-func get_holo_texture() -> Texture2D:
-	if _holo:
-		var tex = _holo.get_texture()
-		if tex:
-			return tex
-	if game_viewport:
-		return game_viewport.get_texture()
-	return null
-
-## 悬浮组件退场动画
-func _animate_chrome_out() -> void:
-	for node in [_title_bubble, _side_container, _connector, _restart_bubble, _speech_bubble]:
-		if is_instance_valid(node):
-			var tw = node.create_tween()
-			tw.tween_property(node, "modulate:a", 0.0, 0.12)
-
-## 清理悬浮组件
-func _cleanup_chrome() -> void:
-	for node in [_title_bubble, _side_container, _connector, _restart_bubble, _speech_bubble]:
-		if is_instance_valid(node):
-			node.queue_free()
-	_title_bubble = null
-	_side_container = null
-	_connector = null
-	_restart_bubble = null
-	_speech_bubble = null
-	_speech_label = null
-	_chrome_close_btn = null
-	_help_btn = null
-	if _holo:
-		_holo.cleanup()
-		_holo = null
-
-## 返回悬浮组件的屏幕矩形 (供 hit_region_manager 注册)
 func get_chrome_rects() -> Array[Rect2]:
-	if _panel_hidden:
-		return []
-	var rects: Array[Rect2] = []
-	if is_instance_valid(_title_bubble):
-		rects.append(Rect2(_title_bubble.position, _title_bubble.size))
-	if is_instance_valid(_side_container):
-		rects.append(Rect2(_side_container.position, _side_container.size))
-	if is_instance_valid(_restart_bubble) and _restart_bubble.visible:
-		rects.append(Rect2(_restart_bubble.position, _restart_bubble.size))
-	if is_instance_valid(_speech_bubble):
-		var bubble: PanelContainer = _speech_bubble.get_meta("_bubble") as PanelContainer
-		if bubble:
-			rects.append(Rect2(bubble.position, bubble.size))
-	return rects
+	if _chrome: return _chrome.get_rects()
+	return []
+
+func get_holo_texture() -> Texture2D:
+	if _chrome: return _chrome.get_holo_texture()
+	if game_viewport: return game_viewport.get_texture()
+	return null
 
 ## 显示/隐藏游戏面板 (隐藏时游戏继续运行, 全息屏不受影响)
 func set_panel_visible(show: bool) -> void:
@@ -1091,17 +586,19 @@ func set_panel_visible(show: bool) -> void:
 			tw.tween_property(game_container, "modulate:a", 1.0, 0.2)
 			tw.tween_property(game_container, "scale", Vector2.ONE, 0.25) \
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		var show_nodes: Array = [_title_bubble, _side_container, _connector]
-		if not _auto_play:
-			show_nodes.append(_speech_bubble)
+		var show_nodes: Array = []
+		if _chrome:
+			show_nodes = [_chrome.title_bubble, _chrome.side_container, _chrome.connector]
+			if not _auto_play:
+				show_nodes.append(_chrome.speech_bubble)
 		for node in show_nodes:
 			if is_instance_valid(node):
 				node.visible = true
 				node.modulate.a = 0.0
 				var tw2 = node.create_tween()
 				tw2.tween_property(node, "modulate:a", 1.0, 0.2)
-		if is_instance_valid(_restart_bubble) and _game_over:
-			_restart_bubble.visible = true
+		if _chrome and is_instance_valid(_chrome.restart_bubble) and _game_over:
+			_chrome.restart_bubble.visible = true
 		if is_instance_valid(_tutorial_panel) and _tutorial_visible:
 			_tutorial_panel.visible = true
 		# 自玩中显示面板时保持半透明
@@ -1111,9 +608,10 @@ func set_panel_visible(show: bool) -> void:
 	else:
 		# 隐藏悬浮组件 (带退场动画)
 		var chrome_nodes: Array[Control] = []
-		for node in [_title_bubble, _side_container, _connector, _speech_bubble, _restart_bubble]:
-			if is_instance_valid(node) and node.visible:
-				chrome_nodes.append(node)
+		if _chrome:
+			for node in [_chrome.title_bubble, _chrome.side_container, _chrome.connector, _chrome.speech_bubble, _chrome.restart_bubble]:
+				if is_instance_valid(node) and node.visible:
+					chrome_nodes.append(node)
 		if is_instance_valid(_tutorial_panel):
 			chrome_nodes.append(_tutorial_panel)
 		# 面板用 modulate.a=0 而不是 visible=false (SubViewport 需要继续渲染)
@@ -1149,13 +647,13 @@ func _show_tutorial() -> void:
 	_build_tutorial_panel(steps)
 
 	# 按钮高亮 (表示教程已展开)
-	if _help_btn:
-		_help_btn.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.5, 1.0, 0.9))
+	if _chrome and _chrome.help_btn:
+		_chrome.help_btn.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.5, 1.0, 0.9))
 
 func _hide_tutorial() -> void:
 	_tutorial_visible = false
-	if _help_btn:
-		_help_btn.add_theme_color_override("font_color", Color(0.5, 0.55, 0.65, 0.7))
+	if _chrome and _chrome.help_btn:
+		_chrome.help_btn.add_theme_color_override("font_color", Color(0.5, 0.55, 0.65, 0.7))
 	if is_instance_valid(_tutorial_panel):
 		var panel = _tutorial_panel
 		_tutorial_panel = null
@@ -1294,13 +792,13 @@ func _position_tutorial() -> void:
 		# 游戏面板在宠物右边 → 教程放游戏面板右边
 		x = gc_pos.x + gc_size.x + gap
 		# 如果有侧边按钮在右边，教程再往外推
-		if _chrome_side > 0 and is_instance_valid(_side_container):
-			x += _side_container.size.x + gap
+		if _chrome and _chrome.chrome_side > 0 and is_instance_valid(_chrome.side_container):
+			x += _chrome.side_container.size.x + gap
 	else:
 		# 游戏面板在宠物左边 → 教程放游戏面板左边
 		x = gc_pos.x - tp_size.x - gap
-		if _chrome_side < 0 and is_instance_valid(_side_container):
-			x -= _side_container.size.x + gap
+		if _chrome and _chrome.chrome_side < 0 and is_instance_valid(_chrome.side_container):
+			x -= _chrome.side_container.size.x + gap
 
 	# Y: 顶部对齐游戏面板
 	var y = gc_pos.y
@@ -1317,40 +815,7 @@ func _position_tutorial() -> void:
 
 	_tutorial_panel.position = Vector2(x, y)
 
-# ══════════════════════════════════════════════
-# 内嵌类: 发言气泡小三角箭头
-# ══════════════════════════════════════════════
 
-class _SpeechArrow extends Control:
-	var hue: float = 0.55
-	var pointing_right: bool = false  # true = 箭头尖端朝右 (面板在右侧)
-
-	func _draw() -> void:
-		var w = size.x
-		var h = size.y
-		if w < 1 or h < 1:
-			return
-		var points: PackedVector2Array
-		if pointing_right:
-			# 尖端在右
-			points = PackedVector2Array([
-				Vector2(0, 0),
-				Vector2(w, h / 2.0),
-				Vector2(0, h),
-			])
-		else:
-			# 尖端在左
-			points = PackedVector2Array([
-				Vector2(w, 0),
-				Vector2(0, h / 2.0),
-				Vector2(w, h),
-			])
-		var fill_color = Color(0.04, 0.06, 0.12, 0.92)
-		draw_colored_polygon(points, fill_color)
-		# 边框线 (只画两条斜边，不画底边)
-		var border_color = Color.from_hsv(hue, 0.45, 0.85, 0.35)
-		draw_line(points[0], points[1], border_color, 1.0, true)
-		draw_line(points[1], points[2], border_color, 1.0, true)
 
 # ═══════════════════════════════════════════
 # 通用内嵌类: 网格渲染器
