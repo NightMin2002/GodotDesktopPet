@@ -231,8 +231,23 @@ func _build_system_info(parent: VBoxContainer) -> void:
 		renderer = "Vulkan Forward+"
 	_add_info_row(vbox, "渲染后端", renderer)
 
-	# 操作系统
-	_add_info_row(vbox, "操作系统", OS.get_name() + " " + OS.get_version())
+	# 操作系统 (Windows 11 内部版本号仍为 10.0.x，需根据 build 区分)
+	var os_str := OS.get_name()
+	var os_ver := OS.get_version()
+	if os_str == "Windows":
+		# os_ver 格式: "10.0.22631" 等, build >= 22000 为 Win11
+		var parts = os_ver.split(".")
+		if parts.size() >= 3 and int(parts[2]) >= 22000:
+			os_str = "Windows 11"
+		else:
+			os_str = "Windows 10"
+		os_str += " (Build %s)" % parts[2] if parts.size() >= 3 else ""
+	else:
+		os_str += " " + os_ver
+	_add_info_row(vbox, "操作系统", os_str)
+
+	# 数据迭代次数
+	_add_info_row(vbox, "数据迭代", "第 %d 次更新" % _UpdateChecker.COMMIT_COUNT)
 
 func _add_info_row(parent: VBoxContainer, key: String, value: String) -> void:
 	var row = HBoxContainer.new()

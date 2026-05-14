@@ -32,6 +32,17 @@ foreach ($f in $files) {
     }
 }
 
+# ── 1b. 提交计数同步 ──
+
+$commitCount = (git rev-list --count HEAD) + 1  # +1 算上即将产生的 release commit
+$checkerPath = "$Root\core\update_checker.gd"
+$checkerContent = Get-Content $checkerPath -Raw -Encoding UTF8
+$newCheckerContent = $checkerContent -replace 'const COMMIT_COUNT := \d+', "const COMMIT_COUNT := $commitCount"
+if ($checkerContent -ne $newCheckerContent) {
+    [System.IO.File]::WriteAllText($checkerPath, $newCheckerContent, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "[更新] update_checker.gd -> 第 $commitCount 次迭代" -ForegroundColor Green
+}
+
 # ── 2. Git 提交 + Tag ──
 
 Write-Host "`n--- Git 操作 ---" -ForegroundColor Cyan
