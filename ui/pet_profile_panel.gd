@@ -18,6 +18,9 @@ var _current_tab: int = 0
 var _left_column  # ProfileLeftColumn
 var _is_open: bool = false
 
+var _frame_drawer: Control
+var _time_passed: float = 0.0
+
 # ── 档案围栏 ──
 var _confine_walls: Array[StaticBody2D] = []
 
@@ -42,8 +45,11 @@ func _clamp_pos(pos: Vector2) -> Vector2:
 #  主循环
 # ═══════════════════════════════════════════════
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if panel and _is_open:
+		_time_passed += delta
+		if is_instance_valid(_frame_drawer):
+			_frame_drawer.queue_redraw()
 		if _confine_walls.size() > 0:
 			_sync_confine_walls()
 		var pet = _get_pet()
@@ -61,21 +67,22 @@ func _build_ui() -> void:
 	panel = PanelContainer.new()
 	panel.visible = false
 	panel.custom_minimum_size = Vector2(_panel_w, _panel_h)
-	var ps = StyleBoxFlat.new()
-	ps.bg_color = Color(0.04, 0.06, 0.13, 0.97)
-	ps.set_border_width_all(1)
-	ps.border_color = Color.from_hsv(EventBus.ui_hue, 0.6, 0.85, 0.5)
-	ps.set_corner_radius_all(10)
-	ps.set_content_margin_all(0)
+	var ps = StyleBoxEmpty.new()
 	panel.add_theme_stylebox_override("panel", ps)
 	panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(panel)
 
+	_frame_drawer = Control.new()
+	_frame_drawer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_frame_drawer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_frame_drawer.draw.connect(_on_frame_drawer_draw)
+	panel.add_child(_frame_drawer)
+
 	var margin = MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 18)
-	margin.add_theme_constant_override("margin_right", 18)
-	margin.add_theme_constant_override("margin_top", 14)
-	margin.add_theme_constant_override("margin_bottom", 14)
+	margin.add_theme_constant_override("margin_left", 32)
+	margin.add_theme_constant_override("margin_right", 32)
+	margin.add_theme_constant_override("margin_top", 24)
+	margin.add_theme_constant_override("margin_bottom", 32)
 	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	margin.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -139,11 +146,12 @@ func _build_ui() -> void:
 	tab_content_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tab_content_area.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	var tca_s = StyleBoxFlat.new()
-	tca_s.bg_color = Color(0.03, 0.05, 0.10, 0.5)
-	tca_s.set_corner_radius_all(6)
+	tca_s.bg_color = Color(0.02, 0.03, 0.06, 0.5)
+	tca_s.set_corner_radius_all(0)
 	tca_s.set_content_margin_all(12)
 	tab_content_area.add_theme_stylebox_override("panel", tca_s)
 	tab_content_area.mouse_filter = Control.MOUSE_FILTER_PASS
+	ProfileStyles.add_tech_brackets(tab_content_area, 5.0, 0.0)
 	right_col.add_child(tab_content_area)
 
 	var tab_stack = Control.new()
@@ -267,7 +275,7 @@ func _refresh_tab_styles() -> void:
 		if is_active:
 			var s = StyleBoxFlat.new()
 			s.bg_color = Color(accent.r * 0.15, accent.g * 0.15, accent.b * 0.15, 0.6)
-			s.set_corner_radius_all(4)
+			s.set_corner_radius_all(0)
 			s.border_width_bottom = 2
 			s.border_color = accent
 			s.content_margin_left = 12; s.content_margin_right = 12
@@ -279,7 +287,7 @@ func _refresh_tab_styles() -> void:
 		else:
 			var s = StyleBoxFlat.new()
 			s.bg_color = Color(0.06, 0.08, 0.14, 0.3)
-			s.set_corner_radius_all(4)
+			s.set_corner_radius_all(0)
 			s.content_margin_left = 12; s.content_margin_right = 12
 			s.content_margin_top = 6; s.content_margin_bottom = 6
 			btn.add_theme_stylebox_override("normal", s)
@@ -405,13 +413,110 @@ func _destroy_confine_walls() -> void:
 	_confine_walls.clear()
 
 # ═══════════════════════════════════════════════
-#  UI 主题色
+#  自定义机能画板渲染
+# ═══════════════════════════════════════════════
+
+func _on_frame_drawer_draw() -> void:
+	if not _frame_drawer: return
+	var hue = EventBus.ui_hue
+	var w = _frame_drawer.size.x
+	var h = _frame_drawer.size.y
+	
+	# 1. 计算六边形切角多边形
+	var c_l = 30.0 # 切角段尺寸
+	var pts = PackedVector2Array()
+	pts.append(Vector2(c_l, 0))          # 左上结束
+	pts.append(Vector2(w, 0))            # 右上顶点 (不切)
+	pts.append(Vector2(w, h - c_l))      # 右下开始
+	pts.append(Vector2(w - c_l, h))      # 右下结束
+	pts.append(Vector2(0, h))            # 左下顶点 (不切)
+	pts.append(Vector2(0, c_l))          # 左上开始
+	pts.append(Vector2(c_l, 0))          # 闭合
+	
+	# 2. 绘制深色磨砂背景
+	var bg_c = Color(0.03, 0.05, 0.09, 0.95)
+	_frame_drawer.draw_polygon(pts, PackedColorArray([bg_c]))
+	
+	# 3. 绘制主边界线
+	var border_c = Color.from_hsv(hue, 0.4, 0.7, 0.4)
+	_frame_drawer.draw_polyline(pts, border_c, 1.2, true)
+	
+	# 4. 绘制机甲边缘刻度线 (Tick Marks)
+	var tick_c = Color.from_hsv(hue, 0.5, 0.8, 0.3)
+	var cx = w * 0.5
+	for i in range(-25, 26):
+		var tx = cx + i * 8.0
+		var ty_len = 3.0 if i % 5 != 0 else 7.0
+		if tx > c_l and tx < w - c_l:
+			_frame_drawer.draw_line(Vector2(tx, 0), Vector2(tx, ty_len), tick_c, 1.0)
+			
+	var cy = h * 0.5
+	for i in range(-15, 16):
+		var ty = cy + i * 8.0
+		var tx_len = 3.0 if i % 5 != 0 else 7.0
+		if ty > c_l and ty < h - c_l:
+			_frame_drawer.draw_line(Vector2(0, ty), Vector2(tx_len, ty), tick_c, 1.0)
+			
+	# 5. 动态心跳呼吸锁扣
+	var breathe = (sin(_time_passed * 4.0) * 0.5 + 0.5) * 0.6 + 0.4 # 0.4 ~ 1.0
+	var br_c = Color.from_hsv(hue, 0.6, 0.9, 0.8 * breathe)
+	var br_lw = 3.0
+	
+	# 切角加持
+	_frame_drawer.draw_line(pts[5], pts[6], br_c, br_lw, true) # 左上切角
+	_frame_drawer.draw_line(pts[2], pts[3], br_c, br_lw, true) # 右下切角
+	
+	# 直角加持 (小 L 型托座)
+	var L_len = 16.0
+	_frame_drawer.draw_polyline(PackedVector2Array([
+		pts[1] + Vector2(-L_len, 0), pts[1], pts[1] + Vector2(0, L_len)
+	]), br_c, br_lw, true)
+	_frame_drawer.draw_polyline(PackedVector2Array([
+		pts[4] + Vector2(L_len, 0), pts[4], pts[4] + Vector2(0, -L_len)
+	]), br_c, br_lw, true)
+	
+	# 6. 电流游走 (Data Flow Runner)
+	var total_len = 0.0
+	var segs = []
+	for i in range(6):
+		var p1 = pts[i]
+		var p2 = pts[i+1]
+		var d = p1.distance_to(p2)
+		segs.append({ "p1": p1, "p2": p2, "dist": d, "offset": total_len })
+		total_len += d
+		
+	var runner_len = 150.0 # 游走电流长度
+	var speed = 700.0 # px/s
+	var current_head = fmod(_time_passed * speed, total_len)
+	var highlight_c = Color.from_hsv(hue, 0.4, 0.95, 0.9)
+	var glow_c = Color.from_hsv(hue, 0.6, 0.95, 0.3)
+	
+	for wrap in range(-1, 2):
+		var head = current_head + wrap * total_len
+		var tail = head - runner_len
+		if tail >= total_len or head <= 0:
+			continue
+			
+		var start_d = maxf(0.0, tail)
+		var end_d = minf(total_len, head)
+		
+		for seg in segs:
+			var s_offset = seg.offset
+			var e_offset = seg.offset + seg.dist
+			if end_d <= s_offset or start_d >= e_offset:
+				continue
+				
+			var t_start = maxf(0.0, start_d - s_offset) / seg.dist
+			var t_end = minf(seg.dist, end_d - s_offset) / seg.dist
+			var p_s = seg.p1.lerp(seg.p2, t_start)
+			var p_e = seg.p1.lerp(seg.p2, t_end)
+			
+			_frame_drawer.draw_line(p_s, p_e, glow_c, 6.0, true)
+			_frame_drawer.draw_line(p_s, p_e, highlight_c, 2.0, true)
+
+# ═══════════════════════════════════════════════
+#  UI 主题色同步
 # ═══════════════════════════════════════════════
 
 func _on_ui_theme_changed(hue: float) -> void:
-	var ps = panel.get_theme_stylebox("panel") as StyleBoxFlat
-	if ps:
-		ps = ps.duplicate()
-		ps.border_color = Color.from_hsv(hue, 0.6, 0.85, 0.5)
-		panel.add_theme_stylebox_override("panel", ps)
 	_refresh_tab_styles()
