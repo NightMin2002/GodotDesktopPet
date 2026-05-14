@@ -297,7 +297,7 @@ func _end_game(won: bool) -> void:
 	if is_instance_valid(_tick_timer):
 		_tick_timer.stop()
 	# 更新最长记录
-	if _snake.size() > _best_length:
+	if not _takeover and _snake.size() > _best_length:
 		_best_length = _snake.size()
 		SettingsManager.set_int(_score_key("best_len"), _best_length)
 	if _compare_label:
@@ -310,8 +310,9 @@ func _end_game(won: bool) -> void:
 		_add_gaming_xp(5)
 		_say(_pick(_q_lose, _POOL_LOSE))
 	# 记录局数
-	var games = SettingsManager.get_int(_score_key("games"), 0) + 1
-	SettingsManager.set_int(_score_key("games"), games)
+	if not _takeover:
+		var games = SettingsManager.get_int(_score_key("games"), 0) + 1
+		SettingsManager.set_int(_score_key("games"), games)
 	_update_labels()
 	_show_restart_bubble()
 	if is_instance_valid(game_viewport):
@@ -326,8 +327,9 @@ func _on_restart() -> void:
 func _on_close_extra_cleanup() -> void:
 	if is_instance_valid(_tick_timer):
 		_tick_timer.stop()
-	var games = SettingsManager.get_int(_score_key("games"), 0) + 1
-	SettingsManager.set_int(_score_key("games"), games)
+	if not _takeover:
+		var games = SettingsManager.get_int(_score_key("games"), 0) + 1
+		SettingsManager.set_int(_score_key("games"), games)
 
 func get_close_speech_pool() -> Array:
 	return _POOL_CLOSE_MID

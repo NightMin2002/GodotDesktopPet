@@ -11,7 +11,7 @@ func build() -> void:
 	var vbox = ProfileStyles.make_tab_vbox(10)
 	add_child(vbox)
 
-	# 对局记录 2x2 网格
+	# 对局记录 2 列网格 (自动换行，第 5 张卡独占行)
 	var grid = GridContainer.new()
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 10)
@@ -23,11 +23,72 @@ func build() -> void:
 	_add_game_card(grid, "威胁评估", "minesweeper")
 	_add_game_card(grid, "矩阵叠加", "2048")
 	_add_game_card(grid, "路径规划", "snake")
+	_add_game_card(grid, "结构堆叠", "tetris")
+
+	# ── 底部清除按钮 ──
+	var spacer = Control.new()
+	spacer.custom_minimum_size = Vector2(0, 6)
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(spacer)
+
+	var reset_btn = Button.new()
+	reset_btn.text = "数据归零"
+	reset_btn.flat = true
+	reset_btn.add_theme_font_size_override("font_size", 11)
+	reset_btn.add_theme_color_override("font_color", Color(0.45, 0.35, 0.35, 0.4))
+	reset_btn.add_theme_color_override("font_hover_color", Color(0.85, 0.3, 0.3, 0.7))
+	reset_btn.add_theme_color_override("font_pressed_color", Color(1.0, 0.2, 0.2, 0.9))
+	reset_btn.mouse_filter = Control.MOUSE_FILTER_PASS
+	reset_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var state := {"pending": false}
+	reset_btn.pressed.connect(func():
+		if not state.pending:
+			state.pending = true
+			reset_btn.text = "确认清除全部战绩？"
+			reset_btn.add_theme_color_override("font_color", Color(0.85, 0.3, 0.3, 0.7))
+			# 3 秒后自动恢复
+			var tw = reset_btn.create_tween()
+			tw.tween_interval(3.0)
+			tw.tween_callback(func():
+				if is_instance_valid(reset_btn):
+					state.pending = false
+					reset_btn.text = "数据归零"
+					reset_btn.add_theme_color_override("font_color", Color(0.45, 0.35, 0.35, 0.4))
+			)
+		else:
+			state.pending = false
+			_clear_all_game_records()
+			refresh()
+	)
+	vbox.add_child(reset_btn)
 
 func refresh() -> void:
 	for child in get_children():
 		child.queue_free()
 	build()
+
+# ── 清除全部战绩 ──
+
+func _clear_all_game_records() -> void:
+	# 枚举所有游戏的存储 key 全部归零
+	var game_keys := [
+		# tic_tac_toe (无 auto 分栏)
+		"game_tic_tac_toe_wins", "game_tic_tac_toe_losses", "game_tic_tac_toe_draws",
+		# minesweeper
+		"game_minesweeper_wins", "game_minesweeper_losses",
+		"game_minesweeper_auto_wins", "game_minesweeper_auto_losses",
+		# 2048
+		"game_2048_best", "game_2048_best_tile",
+		"game_2048_auto_best", "game_2048_auto_best_tile",
+		# snake
+		"game_snake_best_len", "game_snake_games",
+		"game_snake_auto_best_len", "game_snake_auto_games",
+		# tetris
+		"game_tetris_best", "game_tetris_games", "game_tetris_lines",
+		"game_tetris_auto_best", "game_tetris_auto_games", "game_tetris_auto_lines",
+	]
+	for key in game_keys:
+		SettingsManager.set_int(key, 0)
 
 # ── 游戏机能风看板阵列 ──
 
@@ -90,6 +151,13 @@ func _add_game_card(parent: GridContainer, display_name: String, game_id: String
 					var l = SettingsManager.get_int(prefix + "losses", 0)
 					stats_data.append({"lbl": "排除威胁", "val": w, "c": c})
 					stats_data.append({"lbl": "触雷损毁", "val": l, "c": c})
+				"tetris":
+					var best = SettingsManager.get_int(prefix + "best", 0)
+					var lines = SettingsManager.get_int(prefix + "lines", 0)
+					var gm = SettingsManager.get_int(prefix + "games", 0)
+					stats_data.append({"lbl": "最高得分", "val": best, "c": c})
+					stats_data.append({"lbl": "总消行数", "val": lines, "c": c})
+					stats_data.append({"lbl": "堆叠局数", "val": gm, "c": c})
 					
 			_build_faction_group(v_stats, side_name, stats_data)
 

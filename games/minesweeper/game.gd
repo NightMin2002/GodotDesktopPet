@@ -436,7 +436,8 @@ func _end_game(won: bool) -> void:
 	_game_won = won
 	_timer_running = false
 	if won:
-		_wins += 1
+		if not _takeover:
+			_wins += 1
 		_add_gaming_xp(40)
 		_say(_pick(_q_win, _POOL_WIN))
 		# 胜利: 自动标记所有雷
@@ -450,7 +451,8 @@ func _end_game(won: bool) -> void:
 		var secs = int(_elapsed) % 60
 		_timer_label.text = "[ TIME ]  %02d:%02d" % [mins, secs]
 	else:
-		_losses += 1
+		if not _takeover:
+			_losses += 1
 		_add_gaming_xp(5)
 		_say(_pick(_q_lose, _POOL_LOSE))
 		# 揭开所有雷 + 标出错误插旗
@@ -459,7 +461,8 @@ func _end_game(won: bool) -> void:
 				_revealed[i] = true
 	_refresh_all_cells()
 	_update_score_label()
-	_save_scores()
+	if not _takeover:
+		_save_scores()
 	if _compare_label:
 		var my_w = SettingsManager.get_int(_score_key("wins"), 0)
 		var my_l = SettingsManager.get_int(_score_key("losses"), 0)

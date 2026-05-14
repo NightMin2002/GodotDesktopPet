@@ -531,6 +531,8 @@ func _end_game_maxed() -> void:
 
 ## 持久化战绩 (公用)
 func _persist_scores() -> void:
+	if _takeover:
+		return  # 用户接管自玩局，战绩作废
 	var best = SettingsManager.get_int(_score_key("best"), 0)
 	if _score > best:
 		SettingsManager.set_int(_score_key("best"), _score)

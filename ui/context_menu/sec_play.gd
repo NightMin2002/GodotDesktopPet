@@ -103,5 +103,9 @@ func update_game_list() -> void:
 			ctx._close_hud()
 			EventBus.launch_game.emit(gid)
 		)
-		btn.tooltip_text = gdesc
+		if gdesc != "":
+			var b = btn
+			var desc_text = gdesc
+			btn.mouse_entered.connect(func(): ctx._tooltip.show_for(b, desc_text, true))
+			btn.mouse_exited.connect(func(): ctx._tooltip.show_for(b, desc_text, false))
 		_game_container.add_child(btn)

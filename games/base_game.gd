@@ -22,6 +22,7 @@ var _pet: Node2D = null                    # 宠物原体引用
 var _wins: int = 0
 var _losses: int = 0
 var _game_over: bool = false
+var _takeover: bool = false  # 用户接管自玩局 → 战绩作废不计
 
 # ── 自动操作 (AI 自玩, 通用基础设施) ──
 var _auto_play: bool = false
@@ -178,7 +179,7 @@ func _load_scores() -> void:
 
 ## 保存战绩到 SettingsManager (结束/关闭时调用)
 func _save_scores() -> void:
-	if get_game_id() == "":
+	if get_game_id() == "" or _takeover:
 		return
 	SettingsManager.set_int(_score_key("wins"), _wins)
 	SettingsManager.set_int(_score_key("losses"), _losses)
@@ -317,6 +318,7 @@ func _stop_auto_play() -> void:
 	_auto_play = false
 	_auto_destroy_timer()
 	if was_auto:
+		_takeover = true  # 用户接管 → 本局战绩作废
 		# 恢复发言气泡
 		if is_instance_valid(_speech_bubble):
 			_speech_bubble.visible = true
@@ -497,8 +499,9 @@ func _on_close_cleanup() -> bool:
 	if not _game_over:
 		_game_over = true
 		_on_close_extra_cleanup()
-		_losses += 1
-		_save_scores()
+		if not _takeover:
+			_losses += 1
+			_save_scores()
 		game_finished.emit(Result.LOSE)
 		if is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
 			if was_auto:
@@ -769,6 +772,7 @@ func _show_restart_bubble() -> void:
 
 ## 隐藏悬浮重开按钮 (重新开始时调用)
 func _hide_restart_bubble() -> void:
+	_takeover = false  # 重开新局，清除接管标记
 	if is_instance_valid(_restart_bubble):
 		_restart_bubble.hide()
 	if _holo:

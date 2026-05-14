@@ -525,6 +525,8 @@ func _update_score() -> void:
 
 ## 保存最高分到 SettingsManager
 func _save_best() -> void:
+	if _takeover:
+		return  # 用户接管自玩局，战绩作废
 	SettingsManager.set_int(_score_key("best"), _best)
 	SettingsManager.set_int(_score_key("best_tile"), _best_tile)
 
