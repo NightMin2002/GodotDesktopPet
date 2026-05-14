@@ -3,8 +3,8 @@
 extends Node
 
 ## 当前版本号 (发版时同步修改此处 + installer.iss)
-const CURRENT_VERSION := "1.8"
-const COMMIT_COUNT := 260  ## 发版时由 release.ps1 自动更新
+const CURRENT_VERSION := "1.9"
+const COMMIT_COUNT := 2611  ## 发版时由 release.ps1 自动更新
 
 ## GitHub 仓库信息
 const REPO_OWNER := "NightMin2002"
