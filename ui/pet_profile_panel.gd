@@ -180,6 +180,12 @@ func _build_ui() -> void:
 	tab_stack.add_child(tab2)
 	_tab_contents.append(tab2)
 
+	var tab3 = preload("res://ui/profile/profile_tab_about.gd").new()
+	tab3.build()
+	tab3.set_anchors_preset(Control.PRESET_FULL_RECT)
+	tab_stack.add_child(tab3)
+	_tab_contents.append(tab3)
+
 	_switch_tab(0)
 
 # ═══════════════════════════════════════════════
@@ -259,7 +265,7 @@ func _build_tab_bar() -> HBoxContainer:
 	var bar = HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 4)
 
-	var tabs = ["游戏战绩", "能力数据", "定时提醒"]
+	var tabs = ["游戏战绩", "能力数据", "定时提醒", "关于"]
 	for i in range(tabs.size()):
 		var btn = Button.new()
 		btn.text = tabs[i]

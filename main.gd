@@ -99,6 +99,7 @@ func _ready() -> void:
 		EventBus.ui_hue = float(saved_ui_hue) / 360.0
 	
 	_setup_system_tray()
+	_setup_update_checker()
 
 # ── 子管理器初始化 ──
 
@@ -427,6 +428,15 @@ func _setup_pet_profile_panel() -> void:
 	var script = load("res://ui/pet_profile_panel.gd")
 	if script:
 		var node = CanvasLayer.new()
+		node.set_script(script)
+		add_child(node)
+
+# ── 版本更新检测 ──
+
+func _setup_update_checker() -> void:
+	var script = load("res://core/update_checker.gd")
+	if script:
+		var node = Node.new()
 		node.set_script(script)
 		add_child(node)
 
