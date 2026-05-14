@@ -3,7 +3,7 @@
 extends Node
 
 ## 当前版本号 (发版时同步修改此处 + installer.iss)
-const CURRENT_VERSION := "1.7"
+const CURRENT_VERSION := "1.8"
 
 ## GitHub 仓库信息
 const REPO_OWNER := "NightMin2002"
