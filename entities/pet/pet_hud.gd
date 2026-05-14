@@ -69,8 +69,12 @@ func show_bubble(message: String) -> void:
 	
 	# 弹入动画
 	var anchor = pet.get_ui_anchor()
-	var init_offset_y = anchor.head_dir * 50.0
-	panel.position = anchor.center + Vector2(-80, init_offset_y)
+	var init_y: float
+	if anchor.head_dir < 0:
+		init_y = anchor.head_y - 60.0
+	else:
+		init_y = anchor.head_y + 20.0
+	panel.position = Vector2(anchor.center.x - 80, init_y)
 	panel.modulate.a = 0.0
 	panel.scale = Vector2(0.5, 0.5)
 	panel.show()
@@ -130,8 +134,16 @@ func _update_bubble_stacking(delta: float) -> void:
 	for i in range(_local_bubbles.size() - 1, -1, -1):
 		var panel = _local_bubbles[i]
 		var min_size = panel.get_combined_minimum_size()
-		var bubble_y = anchor.head_dir * (50 + stack_y)
-		var target_pos = anchor.center + Vector2(-min_size.x / 2.0, bubble_y)
+		# 气泡定位: 从 head_y 开始向头顶方向堆叠
+		var target_pos: Vector2
+		if anchor.head_dir < 0:
+			# 正常模式: 气泡在头顶上方 (需减去气泡高度, 底边对齐 head_y)
+			var y = anchor.head_y - min_size.y - 8.0 - stack_y
+			target_pos = Vector2(anchor.center.x - min_size.x / 2.0, y)
+		else:
+			# 反重力: 气泡在头顶下方 (顶边对齐 head_y)
+			var y = anchor.head_y + 8.0 + stack_y
+			target_pos = Vector2(anchor.center.x - min_size.x / 2.0, y)
 		target_pos.x = clampf(target_pos.x, 8, vp.x - min_size.x - 8)
 		target_pos.y = clampf(target_pos.y, 8, vp.y - min_size.y - 8)
 		panel.position = panel.position.lerp(target_pos, delta * 10.0)
