@@ -32,8 +32,8 @@ func _ready() -> void:
 
 func _calc_panel_size() -> void:
 	var vp = get_viewport().get_visible_rect().size
-	_panel_w = clampf(vp.x * 0.70, 700, 1400)
-	_panel_h = clampf(vp.y * 0.70, 500, 900)
+	_panel_w = clampf(vp.x * 0.80, 850, 1600)
+	_panel_h = clampf(vp.y * 0.80, 600, 1000)
 
 func _clamp_pos(pos: Vector2) -> Vector2:
 	var vp = get_viewport().get_visible_rect().size

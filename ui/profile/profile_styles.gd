@@ -106,6 +106,27 @@ static func make_tab_vbox(separation: int = 10) -> VBoxContainer:
 	vbox.mouse_filter = Control.MOUSE_FILTER_PASS
 	return vbox
 
+static func setup_custom_scrollbar(scroll: ScrollContainer) -> void:
+	var v_scroll = scroll.get_v_scroll_bar()
+	var s_bg = StyleBoxFlat.new()
+	s_bg.bg_color = Color(0.04, 0.05, 0.08, 0.6)
+	s_bg.border_width_left = 1
+	s_bg.border_color = Color.from_hsv(EventBus.ui_hue, 0.3, 0.4, 0.2)
+	v_scroll.add_theme_stylebox_override("scroll", s_bg)
+	v_scroll.add_theme_stylebox_override("scroll_focus", s_bg)
+	
+	var s_grabber = StyleBoxFlat.new()
+	s_grabber.bg_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.6, 0.6)
+	s_grabber.set_corner_radius_all(2)
+	v_scroll.add_theme_stylebox_override("grabber", s_grabber)
+	
+	var s_grabber_hl = s_grabber.duplicate()
+	s_grabber_hl.bg_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.8)
+	v_scroll.add_theme_stylebox_override("grabber_highlight", s_grabber_hl)
+	v_scroll.add_theme_stylebox_override("grabber_pressed", s_grabber_hl)
+	
+	v_scroll.custom_minimum_size.x = 8
+
 # ── 特效绘制: 科技感角落包边 (L型保护托座) ──
 
 static func add_tech_brackets(control: Control, bracket_len: float = 8.0, inset: float = 0.0) -> void:

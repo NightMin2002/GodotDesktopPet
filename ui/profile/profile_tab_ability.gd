@@ -1,5 +1,5 @@
 # profile_tab_ability.gd — 能力数据 Tab (等级/经验/控制/互动)
-extends ScrollContainer
+extends HBoxContainer
 
 var _level_label: Label
 var _xp_label: Label
@@ -10,14 +10,27 @@ var _level_bar_bg: Panel
 func _init() -> void:
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
-	horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	mouse_filter = Control.MOUSE_FILTER_PASS
 
 func build() -> void:
+	var scroll = ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER # 彻底隐形原生滚动条
+	scroll.mouse_filter = Control.MOUSE_FILTER_PASS
+	add_child(scroll)
+
 	var card = PanelContainer.new()
 	card.add_theme_stylebox_override("panel", ProfileStyles.card_style())
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	add_child(card)
+	
+	var margin = MarginContainer.new()
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 16)
+	margin.add_child(card)
+	scroll.add_child(margin)
 
 	var vbox = ProfileStyles.make_tab_vbox(16)
 	card.add_child(vbox)
@@ -145,6 +158,11 @@ func build() -> void:
 	var spacer = Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ctrl_row.add_child(spacer)
+
+	# ── 独立科幻滚动指示器 ──
+	var indicator = preload("res://ui/profile/cyber_scroll_indicator.gd").new()
+	indicator.bind_scroll(scroll)
+	add_child(indicator)
 
 func refresh() -> void:
 	for child in get_children():
