@@ -179,7 +179,7 @@ func launch_game_auto(game_id: String, pet: Node2D) -> bool:
 ## 返回游戏面板 + 教程面板的屏幕矩形 (供 hit_region_manager 注册)
 func get_panel_rects() -> Array[Rect2]:
 	var result: Array[Rect2] = []
-	if is_instance_valid(_game_container) and _game_container.visible:
+	if is_instance_valid(_game_container) and _game_container.visible and not (_current_game and _current_game._panel_hidden):
 		result.append(Rect2(_game_container.position, _game_container.size))
 	if _current_game:
 		if is_instance_valid(_current_game._tutorial_panel):

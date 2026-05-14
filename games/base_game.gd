@@ -23,6 +23,7 @@ var _wins: int = 0
 var _losses: int = 0
 var _game_over: bool = false
 var _takeover: bool = false  # 用户接管自玩局 → 战绩作废不计
+var _panel_hidden: bool = false  # 面板隐藏状态 (游戏仍在后台运行, 全息屏不受影响)
 
 # ── 自动操作 (AI 自玩, 通用基础设施) ──
 var _auto_play: bool = false
@@ -203,6 +204,8 @@ func _add_gaming_xp(amount: int) -> void:
 
 ## XP 飘字动画 (面板底部, 带背景, 向上浮起淡出)
 func _show_xp_popup(amount: int) -> void:
+	if _panel_hidden:
+		return
 	if not is_instance_valid(game_container):
 		return
 	var parent = game_container.get_parent()
@@ -296,7 +299,6 @@ func _start_auto_play() -> void:
 		await game_viewport.get_tree().create_timer(0.6).timeout
 	if not _auto_play or not is_instance_valid(game_container):
 		return
-	_auto_fade(AUTO_PLAY_ALPHA)
 	_on_auto_play_started()
 	_auto_create_timer(get_auto_play_interval())
 
@@ -323,8 +325,9 @@ func _stop_auto_play() -> void:
 		if is_instance_valid(_speech_bubble):
 			_speech_bubble.visible = true
 		# 恢复面板透明度 + 显示接管台词
-		if not _game_over and is_instance_valid(game_container) and game_container.modulate.a < 1.0:
-			_auto_fade(1.0)
+		if not _game_over:
+			# 恢复面板显示
+			set_panel_visible(true)
 			var lines = _get_takeover_lines()
 			if lines.size() > 0 and is_instance_valid(_pet) and _pet.has_method("show_local_bubble"):
 				_pet.show_local_bubble(lines[randi() % lines.size()])
@@ -406,14 +409,19 @@ func _mount_panel(panel: PanelContainer) -> void:
 	sync_viewport_size()
 	_position_near_pet()
 
-	# 弹入动画
-	game_container.modulate.a = 0.0
-	game_container.scale = Vector2(0.6, 0.6)
-	game_container.pivot_offset = game_container.size / 2.0
-	var tween = game_container.create_tween().set_parallel(true)
-	tween.tween_property(game_container, "modulate:a", 1.0, 0.2)
-	tween.tween_property(game_container, "scale", Vector2.ONE, 0.3) \
-		.set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
+	if _auto_play:
+		# 自玩模式: 面板从一开始就隐藏 (modulate.a=0 保持 SubViewport 渲染)
+		game_container.modulate.a = 0.0
+		_panel_hidden = true
+	else:
+		# 弹入动画
+		game_container.modulate.a = 0.0
+		game_container.scale = Vector2(0.6, 0.6)
+		game_container.pivot_offset = game_container.size / 2.0
+		var tween = game_container.create_tween().set_parallel(true)
+		tween.tween_property(game_container, "modulate:a", 1.0, 0.2)
+		tween.tween_property(game_container, "scale", Vector2.ONE, 0.3) \
+			.set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
 
 	# 悬浮组件 (标题气泡 + 侧边按钮 + 发言气泡 + 重开按钮)
 	_setup_floating_chrome(get_game_name(), _close_game, _on_restart)
@@ -450,6 +458,29 @@ func _position_near_pet() -> void:
 	var bottom_reserve := _RESTART_GAP + _RESTART_RESERVE.y + _RESTART_GAP
 	x = clampf(x, 8.0, vp.x - pw - 8.0)
 	y = clampf(y, 8.0, vp.y - ph - bottom_reserve)
+	# 强制推离: clamp 后面板仍可能与宠物+全息屏横向重叠
+	var pet_zone_left = pet_pos.x - pet_r
+	var pet_zone_right = pet_pos.x + pet_r
+	if holo_rect.size.x > 0:
+		pet_zone_left = minf(pet_zone_left, holo_rect.position.x)
+		pet_zone_right = maxf(pet_zone_right, holo_rect.position.x + holo_rect.size.x)
+	var panel_left = x
+	var panel_right = x + pw
+	# 检测横向重叠 (面板和宠物区域有交集)
+	if panel_right > pet_zone_left and panel_left < pet_zone_right:
+		# 推到空间更大的一侧
+		var space_left = pet_zone_left - 8.0
+		var space_right = vp.x - pet_zone_right - 8.0
+		if space_left >= pw:
+			x = pet_zone_left - pw - 8.0
+		elif space_right >= pw:
+			x = pet_zone_right + 8.0
+		else:
+			# 两侧都放不下，选更大的那边挤进去
+			if space_left > space_right:
+				x = 8.0
+			else:
+				x = vp.x - pw - 8.0
 	game_container.position = Vector2(x, y)
 
 ## 限制面板不超出屏幕
@@ -590,6 +621,10 @@ func _setup_floating_chrome(game_name: String, on_close: Callable, on_restart: C
 		info_btn.pressed.connect(_toggle_tutorial)
 		_help_btn = info_btn
 		_side_container.add_child(info_btn)
+	# 隐藏按钮 (收起面板, 只留全息屏)
+	var hide_btn = _create_chrome_button("▽", false)
+	hide_btn.pressed.connect(func(): set_panel_visible(false))
+	_side_container.add_child(hide_btn)
 	# 关闭按钮
 	_chrome_close_btn = _create_chrome_button("✕", true)
 	_chrome_close_btn.pressed.connect(on_close)
@@ -624,8 +659,14 @@ func _setup_floating_chrome(game_name: String, on_close: Callable, on_restart: C
 	# 先创建全息合成器 (此时各组件位置正确, 包围盒精确)
 	_holo = HoloCompositor.new()
 	_holo.setup(_get_holo_chrome_refs())
-	# 再启动入场动画 (动画会临时修改位置/透明度, 不影响全息布局)
-	_animate_chrome_in()
+	if _panel_hidden:
+		# 面板已隐藏: chrome 直接隐藏, 跳过入场动画
+		for node in [_title_bubble, _side_container, _connector, _speech_bubble]:
+			if is_instance_valid(node):
+				node.visible = false
+	else:
+		# 再启动入场动画 (动画会临时修改位置/透明度, 不影响全息布局)
+		_animate_chrome_in()
 
 ## 创建圆形悬浮按钮
 func _create_chrome_button(text: String, is_close: bool) -> Button:
@@ -747,6 +788,8 @@ func _create_restart_bubble(on_restart: Callable) -> Button:
 
 ## 显示悬浮重开按钮 (game over 后调用, 自动处理屏幕空间不足)
 func _show_restart_bubble() -> void:
+	if _panel_hidden:
+		return
 	if not is_instance_valid(_restart_bubble) or not is_instance_valid(game_container):
 		return
 	_restart_bubble.show()
@@ -1015,6 +1058,8 @@ func _cleanup_chrome() -> void:
 
 ## 返回悬浮组件的屏幕矩形 (供 hit_region_manager 注册)
 func get_chrome_rects() -> Array[Rect2]:
+	if _panel_hidden:
+		return []
 	var rects: Array[Rect2] = []
 	if is_instance_valid(_title_bubble):
 		rects.append(Rect2(_title_bubble.position, _title_bubble.size))
@@ -1027,6 +1072,62 @@ func get_chrome_rects() -> Array[Rect2]:
 		if bubble:
 			rects.append(Rect2(bubble.position, bubble.size))
 	return rects
+
+## 显示/隐藏游戏面板 (隐藏时游戏继续运行, 全息屏不受影响)
+func set_panel_visible(show: bool) -> void:
+	if show == (not _panel_hidden):
+		return  # 状态未变
+	_panel_hidden = not show
+	if show:
+		# 重新定位面板 (避开宠物和全息屏)
+		_position_near_pet()
+		_update_chrome_positions()
+		# 显示面板 + 弹入动画
+		if is_instance_valid(game_container):
+			game_container.modulate.a = 0.0
+			game_container.scale = Vector2(0.85, 0.85)
+			game_container.pivot_offset = game_container.size / 2.0
+			var tw = game_container.create_tween().set_parallel(true)
+			tw.tween_property(game_container, "modulate:a", 1.0, 0.2)
+			tw.tween_property(game_container, "scale", Vector2.ONE, 0.25) \
+				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		var show_nodes: Array = [_title_bubble, _side_container, _connector]
+		if not _auto_play:
+			show_nodes.append(_speech_bubble)
+		for node in show_nodes:
+			if is_instance_valid(node):
+				node.visible = true
+				node.modulate.a = 0.0
+				var tw2 = node.create_tween()
+				tw2.tween_property(node, "modulate:a", 1.0, 0.2)
+		if is_instance_valid(_restart_bubble) and _game_over:
+			_restart_bubble.visible = true
+		if is_instance_valid(_tutorial_panel) and _tutorial_visible:
+			_tutorial_panel.visible = true
+		# 自玩中显示面板时保持半透明
+		if _auto_play and is_instance_valid(game_container):
+			await game_container.get_tree().process_frame
+			_auto_fade(AUTO_PLAY_ALPHA)
+	else:
+		# 隐藏悬浮组件 (带退场动画)
+		var chrome_nodes: Array[Control] = []
+		for node in [_title_bubble, _side_container, _connector, _speech_bubble, _restart_bubble]:
+			if is_instance_valid(node) and node.visible:
+				chrome_nodes.append(node)
+		if is_instance_valid(_tutorial_panel):
+			chrome_nodes.append(_tutorial_panel)
+		# 面板用 modulate.a=0 而不是 visible=false (SubViewport 需要继续渲染)
+		if is_instance_valid(game_container):
+			var tw = game_container.create_tween()
+			tw.tween_property(game_container, "modulate:a", 0.0, 0.15)
+		# chrome 组件直接隐藏
+		for node in chrome_nodes:
+			var tw2 = node.create_tween()
+			tw2.tween_property(node, "modulate:a", 0.0, 0.15)
+			tw2.finished.connect(func():
+				if is_instance_valid(node):
+					node.visible = false
+			)
 
 # ══════════════════════════════════════════════
 # 教程面板 (内部)

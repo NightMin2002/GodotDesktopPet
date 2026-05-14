@@ -132,6 +132,10 @@ func input(event: InputEvent) -> void:
 				pet.get_viewport().set_input_as_handled()
 				# 游戏中: 不进入拖拽，给个专属回应
 				if pet.gaming.active:
+					# 面板隐藏时: 点击宠物 → 展开面板 (不中断自玩)
+					if pet.gaming.game and pet.gaming.game._panel_hidden:
+						pet.gaming.game.set_panel_visible(true)
+						return
 					var lines := [
 						"推演中。请勿干扰处理器。",
 						"...对弈优先级高于触控响应。",
