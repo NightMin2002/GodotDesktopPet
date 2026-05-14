@@ -18,6 +18,15 @@ var _current_tab: int = 0
 var _left_column  # ProfileLeftColumn
 var _is_open: bool = false
 
+var _fx_mode: int = 0
+var _fx_btn: Button
+var _fx_names: Array[String] = ["特效: 故障", "特效: 关闭"]
+var _glitch_mat: ShaderMaterial
+
+var _transition_rect: ColorRect
+var _tab_tween: Tween
+var _tab_btn_tweens: Array[Tween] = []
+
 var _frame_drawer: Control
 var _time_passed: float = 0.0
 
@@ -186,7 +195,20 @@ func _build_ui() -> void:
 	tab_stack.add_child(tab3)
 	_tab_contents.append(tab3)
 
-	_switch_tab(0)
+	# ── 转场特效覆盖层 ──
+	_transition_rect = ColorRect.new()
+	_transition_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_transition_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_transition_rect.visible = false
+	
+	_glitch_mat = ShaderMaterial.new()
+	_glitch_mat.shader = load("res://ui/profile/glitch_transition.gdshader")
+	_glitch_mat.set_shader_parameter("glitch_power", 0.0)
+
+	_transition_rect.material = _glitch_mat
+	tab_stack.add_child(_transition_rect)
+
+	_switch_tab(0, true)
 
 # ═══════════════════════════════════════════════
 #  标题栏
@@ -266,53 +288,157 @@ func _build_tab_bar() -> HBoxContainer:
 	bar.add_theme_constant_override("separation", 4)
 
 	var tabs = ["游戏战绩", "能力数据", "定时提醒", "关于"]
+	
 	for i in range(tabs.size()):
 		var btn = Button.new()
 		btn.text = tabs[i]
 		btn.add_theme_font_size_override("font_size", 18)
 		btn.flat = false
+		
+		# 使用唯一的 StyleBox 以便用 Tween 进行平滑色彩插值
+		var s = StyleBoxFlat.new()
+		s.set_corner_radius_all(0)
+		s.border_width_bottom = 2
+		s.border_color = Color(0, 0, 0, 0)
+		s.content_margin_left = 12; s.content_margin_right = 12
+		s.content_margin_top = 6; s.content_margin_bottom = 6
+		s.bg_color = Color(0.06, 0.08, 0.14, 0.3)
+		
+		btn.add_theme_stylebox_override("normal", s)
+		btn.add_theme_stylebox_override("hover", s)   # 共用实例，废弃引擎自带硬切
+		btn.add_theme_stylebox_override("pressed", s) 
+		btn.add_theme_stylebox_override("focus", s)
+		btn.add_theme_color_override("font_color", Color(0.50, 0.60, 0.70, 0.7))
+		btn.add_theme_color_override("font_hover_color", Color(0.50, 0.60, 0.70, 0.7))
+		btn.add_theme_color_override("font_pressed_color", Color(0.50, 0.60, 0.70, 0.7))
+		
 		var idx = i
 		btn.pressed.connect(func(): _switch_tab(idx))
+		btn.mouse_entered.connect(func(): _animate_tab_btn(idx, true))
+		btn.mouse_exited.connect(func(): _animate_tab_btn(idx, false))
+		
 		_tab_btns.append(btn)
 		bar.add_child(btn)
 
+	var spacer = Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bar.add_child(spacer)
+
+	_fx_btn = Button.new()
+	_fx_btn.text = _fx_names[_fx_mode]
+	_fx_btn.add_theme_font_size_override("font_size", 13)
+	var fs = StyleBoxFlat.new()
+	fs.bg_color = Color(0.1, 0.4, 0.2, 0.4)
+	fs.set_corner_radius_all(3)
+	fs.content_margin_left = 12; fs.content_margin_right = 12
+	fs.border_width_bottom = 2; fs.border_color = Color(0.2, 0.7, 0.4)
+	_fx_btn.add_theme_stylebox_override("normal", fs)
+	_fx_btn.add_theme_stylebox_override("hover", fs)
+	_fx_btn.add_theme_stylebox_override("pressed", fs)
+	_fx_btn.pressed.connect(func():
+		_fx_mode = (_fx_mode + 1) % 2
+		_fx_btn.text = _fx_names[_fx_mode]
+	)
+	bar.add_child(_fx_btn)
+
 	return bar
 
-func _switch_tab(idx: int) -> void:
+func _switch_tab(idx: int, instant: bool = false) -> void:
+	if idx == _current_tab and _tab_contents.size() > 0 and _tab_contents[_current_tab].visible and not instant:
+		return
+
+	if instant or not is_instance_valid(_transition_rect) or not _is_open:
+		_current_tab = idx
+		for i in range(_tab_contents.size()):
+			_tab_contents[i].visible = (i == idx)
+		_refresh_tab_styles()
+		return
+
+	if _tab_tween and _tab_tween.is_valid():
+		_tab_tween.kill()
+
+	# 先更新按钮的高亮状态让点击有即时反馈
 	_current_tab = idx
-	for i in range(_tab_contents.size()):
-		_tab_contents[i].visible = (i == idx)
 	_refresh_tab_styles()
 
+	if _fx_mode == 1:
+		# 兜底：无动效切换
+		if is_instance_valid(_transition_rect):
+			_transition_rect.visible = false
+		for i in range(_tab_contents.size()):
+			_tab_contents[i].visible = (i == idx)
+		return
+
+	_tab_tween = create_tween()
+	_transition_rect.visible = true
+
+	if _fx_mode == 0:
+		_transition_rect.material = _glitch_mat
+		_tab_tween.tween_method(func(v): _transition_rect.material.set_shader_parameter("glitch_power", v), 0.0, 1.0, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		_tab_tween.tween_callback(func():
+			for i in range(_tab_contents.size()):
+				_tab_contents[i].visible = (i == idx)
+		)
+		_tab_tween.tween_method(func(v): _transition_rect.material.set_shader_parameter("glitch_power", v), 1.0, 0.0, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_tab_tween.tween_callback(func():
+			_transition_rect.visible = false
+		)
+
 func _refresh_tab_styles() -> void:
-	var accent = Color.from_hsv(EventBus.ui_hue, 0.5, 0.85)
+	if _tab_btn_tweens.size() < _tab_btns.size():
+		_tab_btn_tweens.resize(_tab_btns.size())
 	for i in range(_tab_btns.size()):
 		var btn = _tab_btns[i]
-		var is_active = (i == _current_tab)
-		if is_active:
-			var s = StyleBoxFlat.new()
-			s.bg_color = Color(accent.r * 0.15, accent.g * 0.15, accent.b * 0.15, 0.6)
-			s.set_corner_radius_all(0)
-			s.border_width_bottom = 2
-			s.border_color = accent
-			s.content_margin_left = 12; s.content_margin_right = 12
-			s.content_margin_top = 6; s.content_margin_bottom = 6
-			btn.add_theme_stylebox_override("normal", s)
-			btn.add_theme_stylebox_override("hover", s)
-			btn.add_theme_stylebox_override("pressed", s)
-			btn.add_theme_color_override("font_color", Color(0.85, 0.92, 1.0, 1.0))
+		# 强制手动触发刷新
+		_animate_tab_btn(i, btn.is_hovered() if btn.has_method("is_hovered") else false)
+
+func _animate_tab_btn(idx: int, is_hovered: bool) -> void:
+	if idx < 0 or idx >= _tab_btns.size(): return
+	var btn = _tab_btns[idx]
+	var is_active = (idx == _current_tab)
+	
+	if _tab_btn_tweens.size() <= idx:
+		_tab_btn_tweens.resize(idx + 1)
+		
+	if _tab_btn_tweens[idx] and _tab_btn_tweens[idx].is_valid():
+		_tab_btn_tweens[idx].kill()
+		
+	var t = create_tween().set_parallel(true)
+	_tab_btn_tweens[idx] = t
+	
+	var s = btn.get_theme_stylebox("normal") as StyleBoxFlat
+	if not s: return
+	
+	var accent = Color.from_hsv(EventBus.ui_hue, 0.5, 0.85)
+	var target_bg: Color
+	var target_border: Color
+	var target_font: Color
+	
+	if is_active:
+		target_bg = Color(accent.r * 0.15, accent.g * 0.15, accent.b * 0.15, 0.6)
+		target_border = accent
+		target_font = Color(0.85, 0.92, 1.0, 1.0)
+	else:
+		if is_hovered:
+			target_bg = Color(0.10, 0.12, 0.20, 0.5)
+			# 悬停时透出幽弱的主题底边
+			target_border = accent * Color(1.0, 1.0, 1.0, 0.3) 
+			target_font = Color(0.60, 0.70, 0.80, 0.9)
 		else:
-			var s = StyleBoxFlat.new()
-			s.bg_color = Color(0.06, 0.08, 0.14, 0.3)
-			s.set_corner_radius_all(0)
-			s.content_margin_left = 12; s.content_margin_right = 12
-			s.content_margin_top = 6; s.content_margin_bottom = 6
-			btn.add_theme_stylebox_override("normal", s)
-			var h = s.duplicate()
-			h.bg_color = Color(0.10, 0.12, 0.20, 0.5)
-			btn.add_theme_stylebox_override("hover", h)
-			btn.add_theme_stylebox_override("pressed", h)
-			btn.add_theme_color_override("font_color", Color(0.50, 0.60, 0.70, 0.7))
+			target_bg = Color(0.06, 0.08, 0.14, 0.3)
+			target_border = Color(0, 0, 0, 0)
+			target_font = Color(0.50, 0.60, 0.70, 0.7)
+			
+	var duration = 0.2
+	t.tween_property(s, "bg_color", target_bg, duration).set_trans(Tween.TRANS_SINE)
+	t.tween_property(s, "border_color", target_border, duration).set_trans(Tween.TRANS_SINE)
+	
+	var current_font = btn.get_theme_color("font_color")
+	t.tween_method(func(c): 
+		btn.add_theme_color_override("font_color", c)
+		btn.add_theme_color_override("font_hover_color", c)
+		btn.add_theme_color_override("font_pressed_color", c)
+	, current_font, target_font, duration).set_trans(Tween.TRANS_SINE)
 
 # ═══════════════════════════════════════════════
 #  面板开关
@@ -365,7 +491,7 @@ func _refresh_data() -> void:
 	for tab in _tab_contents:
 		if is_instance_valid(tab) and tab.has_method("refresh"):
 			tab.refresh()
-	_switch_tab(_current_tab)
+	_switch_tab(_current_tab, true)
 
 # ═══════════════════════════════════════════════
 #  档案围栏 (单向碰撞墙)
