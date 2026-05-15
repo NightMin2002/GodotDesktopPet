@@ -556,55 +556,6 @@ func _on_trigger_window_report() -> void:
 	SettingsManager.save_datalogs(logs)
 	print("[InputMonitor] 手动触发: 窗口活动报告已写入 (%d 个应用)" % app_count)
 
-# 以下 _format_window_report 保留给纯文本降级场景
-func _format_window_report(win_stats: Dictionary) -> String:
-	var lines: PackedStringArray = []
-	lines.append("=== 窗口活动统计 ===")
-	lines.append("")
-
-	if win_stats.is_empty():
-		lines.append("本次会话未检测到窗口活动")
-		return "\n".join(lines)
-
-	# 按前台时长排序
-	var sorted = []
-	for proc_name in win_stats:
-		var info: Dictionary = win_stats[proc_name]
-		sorted.append([proc_name, info])
-	sorted.sort_custom(func(a, b): return a[1].get("focus_sec", 0) > b[1].get("focus_sec", 0))
-
-	for item in sorted:
-		var proc_name: String = item[0]
-		var info: Dictionary = item[1]
-		var focus_sec: int = info.get("focus_sec", 0)
-		var titles: Array = info.get("titles", [])
-		var first_seen: String = info.get("first_seen", "")
-		var last_active: String = info.get("last_active", "")
-
-		# 格式化时长
-		var time_str = ""
-		if focus_sec >= 3600:
-			time_str = "%dh%dm" % [focus_sec / 3600, (focus_sec % 3600) / 60]
-		elif focus_sec >= 60:
-			time_str = "%dm%ds" % [focus_sec / 60, focus_sec % 60]
-		else:
-			time_str = "%ds" % focus_sec
-
-		lines.append("[%s] 前台 %s" % [proc_name, time_str])
-		lines.append("  活跃: %s ~ %s" % [first_seen, last_active])
-		# 显示最多 3 个窗口标题
-		var show_count = mini(3, titles.size())
-		for i in range(show_count):
-			var t = str(titles[i])
-			if t.length() > 50:
-				t = t.substr(0, 50) + "..."
-			lines.append("  // %s" % t)
-		if titles.size() > 3:
-			lines.append("  // ...另外 %d 个窗口" % (titles.size() - 3))
-		lines.append("")
-
-	return "\n".join(lines)
-
 # ── 任务栏样式守护 ──
 
 func _guard_taskbar_style() -> void:

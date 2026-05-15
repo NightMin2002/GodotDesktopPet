@@ -54,6 +54,24 @@ static func _make_app_card(proc_name: String, info: Dictionary) -> PanelContaine
 	cs.content_margin_top = 8; cs.content_margin_bottom = 8
 	card.add_theme_stylebox_override("panel", cs)
 
+	var base_bg = Color.from_hsv(EventBus.ui_hue, 0.20, 0.10, 0.45)
+	var base_bd = Color.from_hsv(EventBus.ui_hue, 0.4, 0.55, 0.4)
+	var hover_bg = Color.from_hsv(EventBus.ui_hue, 0.30, 0.20, 0.65)
+	var hover_bd = Color.from_hsv(EventBus.ui_hue, 0.6, 0.9, 0.8)
+
+	card.mouse_entered.connect(func():
+		var tw = card.create_tween()
+		tw.set_parallel(true)
+		tw.tween_property(cs, "bg_color", hover_bg, 0.15).set_trans(Tween.TRANS_SINE)
+		tw.tween_property(cs, "border_color", hover_bd, 0.15)
+	)
+	card.mouse_exited.connect(func():
+		var tw = card.create_tween()
+		tw.set_parallel(true)
+		tw.tween_property(cs, "bg_color", base_bg, 0.3).set_trans(Tween.TRANS_SINE)
+		tw.tween_property(cs, "border_color", base_bd, 0.3)
+	)
+
 	var vbox = VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 3)
 	card.add_child(vbox)

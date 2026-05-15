@@ -41,19 +41,18 @@ static func update_detail_panel(ctx: Dictionary) -> void:
 
 	if is_window_report:
 		# 窗口报告: 卡片模式
-		ui.content_edit.visible = false
-		if ui.has("window_cards_scroll"):
-			ui.window_cards_scroll.visible = true
-			var cards_container = ui.window_cards_scroll.get_child(0) if ui.window_cards_scroll.get_child_count() > 0 else null
-			if cards_container and ctx.has("render_window_cards"):
-				ctx.render_window_cards.call(cards_container, entry.get("window_data", {}))
+		if ui.has("content_wrapper"): ui.content_wrapper.visible = false
+		if ui.has("window_cards_wrapper"):
+			ui.window_cards_wrapper.visible = true
+			if ui.has("window_cards_inner") and ctx.has("render_window_cards"):
+				ctx.render_window_cards.call(ui.window_cards_inner, entry.get("window_data", {}))
 	else:
 		# 普通模式: TextEdit
-		ui.content_edit.visible = true
+		if ui.has("content_wrapper"): ui.content_wrapper.visible = true
 		ui.content_edit.text = entry.get("content", "")
 		ui.content_edit.editable = not is_pet
-		if ui.has("window_cards_scroll"):
-			ui.window_cards_scroll.visible = false
+		if ui.has("window_cards_wrapper"):
+			ui.window_cards_wrapper.visible = false
 
 	ui.del_btn.visible = true
 	ui.tag_input.visible = true

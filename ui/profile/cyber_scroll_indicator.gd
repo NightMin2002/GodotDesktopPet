@@ -1,7 +1,7 @@
 # cyber_scroll_indicator.gd — 超前设计的独立科幻滚动指示器
 class_name CyberScrollIndicator extends Control
 
-var target_scroll: ScrollContainer
+var target_control: Control
 var _smooth_ratio: float = 0.0
 
 func _init() -> void:
@@ -9,16 +9,53 @@ func _init() -> void:
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-func bind_scroll(sc: ScrollContainer) -> void:
-	target_scroll = sc
-	var bar = target_scroll.get_v_scroll_bar()
-	bar.value_changed.connect(func(_v): queue_redraw())
-	bar.changed.connect(func(): queue_redraw())
+func _get_v_bar() -> VScrollBar:
+	if is_instance_valid(target_control) and target_control.has_method("get_v_scroll_bar"):
+		return target_control.get_v_scroll_bar()
+	return null
+
+func bind_scroll(ctrl: Control) -> void:
+	target_control = ctrl
+	var bar = _get_v_bar()
+	if bar:
+		bar.value_changed.connect(func(_v): queue_redraw())
+		bar.changed.connect(func(): queue_redraw())
 	set_process(true)
 
+## 一行替换原生滚动条: 将目标控件包入 HBox + 科幻指示器
+## 返回包装器 HBoxContainer, 已自动挂到原父级的同一位置
+## 用法: var wrapper = CyberScrollIndicator.wrap(my_scroll_container)
+static func wrap(target: Control) -> HBoxContainer:
+	var wrapper = HBoxContainer.new()
+	wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	wrapper.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+	var parent = target.get_parent()
+	if parent:
+		var idx = target.get_index()
+		parent.remove_child(target)
+		parent.add_child(wrapper)
+		parent.move_child(wrapper, idx)
+
+	wrapper.add_child(target)
+
+	# 隐藏原生滚动条
+	if target is ScrollContainer:
+		target.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	elif target.has_method("get_v_scroll_bar"):
+		target.get_v_scroll_bar().modulate = Color(1, 1, 1, 0)
+
+	# 挂载科幻指示器
+	var indicator = CyberScrollIndicator.new()
+	indicator.bind_scroll(target)
+	wrapper.add_child(indicator)
+
+	return wrapper
+
 func _process(delta: float) -> void:
-	if not is_instance_valid(target_scroll): return
-	var bar = target_scroll.get_v_scroll_bar()
+	var bar = _get_v_bar()
+	if not bar: return
+	
 	var mx = bar.max_value - bar.page
 	var ratio = 0.0
 	if mx > 0.001:
@@ -30,9 +67,8 @@ func _process(delta: float) -> void:
 		queue_redraw()
 
 func _draw() -> void:
-	if not is_instance_valid(target_scroll): return
-	var bar = target_scroll.get_v_scroll_bar()
-	if bar.max_value <= bar.page:
+	var bar = _get_v_bar()
+	if not bar or bar.max_value <= bar.page:
 		return # 内容过少不需要滚动条时直接隐身
 		
 	var w = size.x

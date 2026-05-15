@@ -35,7 +35,9 @@ var _filter_btns: Array[Button] = []
 var _scroll: ScrollContainer
 var _detail_header: Label
 var _detail_empty: VBoxContainer  # 右栏未选中时的引导
-var _window_cards_scroll: ScrollContainer  # 窗口卡片容器
+var _content_wrapper: HBoxContainer # 正文包裹 (CyberScrollIndicator.wrap 生成)
+var _window_cards_wrapper: HBoxContainer  # 窗口包裹 (CyberScrollIndicator.wrap 生成)
+var _window_cards_inner: VBoxContainer    # 卡片挂载点
 var _search_row: HBoxContainer     # 搜索+按钮行 (分类首页时隐藏)
 var _back_btn: Button              # 子列表返回按钮
 var _category_container: VBoxContainer  # 分类卡片容器
@@ -237,10 +239,10 @@ func build() -> void:
 	else:
 		empty_text.text = "机体日志为空\n系统尚未采集到可报告的行为数据"
 
-	# 独立科幻滚动指示器
-	var indicator = preload("res://ui/profile/cyber_scroll_indicator.gd").new()
-	indicator.bind_scroll(_scroll)
-	add_child(indicator)
+	# 科幻滚动指示器 (左栏列表, 与 left 同级)
+	var list_indicator = CyberScrollIndicator.new()
+	list_indicator.bind_scroll(_scroll)
+	add_child(list_indicator)
 
 	# ── 竖分隔线 ──
 	var vsep = VSeparator.new()
@@ -349,19 +351,22 @@ func build() -> void:
 	_content_edit.add_theme_stylebox_override("focus", te_focus)
 	_content_edit.text_changed.connect(_on_content_changed)
 	_detail_panel.add_child(_content_edit)
+	_content_wrapper = CyberScrollIndicator.wrap(_content_edit)
 
 	# 窗口卡片容器 (替代 TextEdit, 当显示 sys:window 条目时)
-	_window_cards_scroll = ScrollContainer.new()
-	_window_cards_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_window_cards_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_window_cards_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_window_cards_scroll.visible = false
-	_detail_panel.add_child(_window_cards_scroll)
+	var win_scroll = ScrollContainer.new()
+	win_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	win_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	win_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_detail_panel.add_child(win_scroll)
 
-	var cards_inner = VBoxContainer.new()
-	cards_inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	cards_inner.add_theme_constant_override("separation", 0)
-	_window_cards_scroll.add_child(cards_inner)
+	_window_cards_inner = VBoxContainer.new()
+	_window_cards_inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_window_cards_inner.add_theme_constant_override("separation", 0)
+	win_scroll.add_child(_window_cards_inner)
+
+	_window_cards_wrapper = CyberScrollIndicator.wrap(win_scroll)
+	_window_cards_wrapper.visible = false
 
 	# 底部信息栏
 	var bottom = HBoxContainer.new()
@@ -432,12 +437,14 @@ func _build_ctx() -> void:
 			"detail_header": _detail_header,
 			"title_edit": _title_edit,
 			"content_edit": _content_edit,
+			"content_wrapper": _content_wrapper,
 			"tags_flow": _tags_flow,
 			"tag_input": _tag_input,
 			"del_btn": _del_btn,
 			"save_badge": _save_badge,
 			"save_timer": _save_timer,
-			"window_cards_scroll": _window_cards_scroll,
+			"window_cards_wrapper": _window_cards_wrapper,
+			"window_cards_inner": _window_cards_inner,
 		},
 		"render_list": _render_list,
 		"apply_filter": _apply_filter,
