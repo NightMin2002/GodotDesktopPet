@@ -1,4 +1,4 @@
-# profile_tab_datalog.gd — 数据日志 Tab (装置终端 Tab 4)
+﻿# profile_tab_datalog.gd — 数据日志 Tab (装置终端 Tab 3)
 # 双分区轻量笔记: 机体记录 (宠物) + 操作员备忘 (用户)
 # 复用 ProfileStyles 样式工厂
 extends HBoxContainer
@@ -17,17 +17,26 @@ var _content_edit: TextEdit
 var _tags_flow: HBoxContainer
 var _tag_input: LineEdit
 var _info_label: Label
-var _empty_label: Label
+var _empty_hint: VBoxContainer
 var _save_badge: Label
 var _new_btn: Button
 var _del_btn: Button
 var _search_edit: LineEdit
 var _filter_btns: Array[Button] = []
 var _scroll: ScrollContainer
+var _detail_header: Label
+var _detail_empty: VBoxContainer  # 右栏未选中时的引导
 
 # ── 防抖 ──
 var _save_timer: Timer
 var _search_timer: Timer
+
+# ── 删除确认 ──
+var _del_pending: bool = false
+var _del_reset_tween: Tween
+
+# ── 动画标记 ──
+var _animate_new_card: bool = false
 
 func _init() -> void:
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -42,13 +51,13 @@ func build() -> void:
 	left.add_theme_constant_override("separation", 8)
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	left.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	left.custom_minimum_size = Vector2(260, 0)
+	left.custom_minimum_size = Vector2(280, 0)
 	left.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(left)
 
 	# 分区切换按钮
 	var filter_row = HBoxContainer.new()
-	filter_row.add_theme_constant_override("separation", 4)
+	filter_row.add_theme_constant_override("separation", 0)
 	left.add_child(filter_row)
 
 	_filter_btns.clear()
@@ -57,43 +66,48 @@ func build() -> void:
 		var btn = Button.new()
 		btn.text = f[0]
 		btn.add_theme_font_size_override("font_size", 13)
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var src = f[1]
 		btn.pressed.connect(func(): _switch_source(src))
 		_style_filter_btn(btn, src == _source_filter)
 		_filter_btns.append(btn)
 		filter_row.add_child(btn)
 
-	# 搜索框
-	_search_edit = _make_line_edit("搜索...", 0)
+	# 搜索框 + 新建按钮
+	var search_row = HBoxContainer.new()
+	search_row.add_theme_constant_override("separation", 6)
+	left.add_child(search_row)
+
+	_search_edit = _make_line_edit("搜索关键词...", 0)
 	_search_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_search_edit.text_changed.connect(func(_t): _on_search_changed())
-	left.add_child(_search_edit)
-
-	# 工具栏
-	var tool_row = HBoxContainer.new()
-	tool_row.add_theme_constant_override("separation", 4)
-	left.add_child(tool_row)
-
-	var count_label = ProfileStyles.label_dim("", 11)
-	count_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_info_label = count_label
-	tool_row.add_child(count_label)
+	search_row.add_child(_search_edit)
 
 	_new_btn = Button.new()
 	_new_btn.text = "+ 新建"
-	_new_btn.add_theme_font_size_override("font_size", 13)
-	_new_btn.add_theme_color_override("font_color", Color(0.7, 0.9, 0.8, 0.9))
-	var nb_s = ProfileStyles.small_btn_normal()
-	nb_s.bg_color = Color.from_hsv(EventBus.ui_hue, 0.35, 0.22, 0.6)
-	nb_s.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.6, 0.5)
+	_new_btn.add_theme_font_size_override("font_size", 12)
+	_new_btn.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.4, 0.95, 0.9))
+	_new_btn.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0, 1.0))
+	var nb_s = StyleBoxFlat.new()
+	nb_s.bg_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.20, 0.6)
+	nb_s.set_border_width_all(1)
+	nb_s.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.55, 0.4)
+	nb_s.set_corner_radius_all(2)
+	nb_s.content_margin_left = 10; nb_s.content_margin_right = 10
+	nb_s.content_margin_top = 4; nb_s.content_margin_bottom = 4
 	_new_btn.add_theme_stylebox_override("normal", nb_s)
 	var nb_h = nb_s.duplicate()
-	nb_h.bg_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.3, 0.8)
+	nb_h.bg_color = Color.from_hsv(EventBus.ui_hue, 0.45, 0.30, 0.8)
 	nb_h.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.7)
 	_new_btn.add_theme_stylebox_override("hover", nb_h)
 	_new_btn.add_theme_stylebox_override("pressed", nb_h)
 	_new_btn.pressed.connect(_on_new_pressed)
-	tool_row.add_child(_new_btn)
+	search_row.add_child(_new_btn)
+
+	# 计数指示
+	_info_label = ProfileStyles.label_dim("", 10)
+	_info_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	left.add_child(_info_label)
 
 	# 列表区
 	_scroll = ScrollContainer.new()
@@ -110,19 +124,41 @@ func build() -> void:
 	_scroll.add_child(scroll_margin)
 
 	_list_vbox = VBoxContainer.new()
-	_list_vbox.add_theme_constant_override("separation", 6)
+	_list_vbox.add_theme_constant_override("separation", 4)
 	_list_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll_margin.add_child(_list_vbox)
 
 	# 空状态提示
-	_empty_label = Label.new()
-	_empty_label.text = "暂无记录"
-	_empty_label.add_theme_font_size_override("font_size", 13)
-	_empty_label.add_theme_color_override("font_color", Color(0.35, 0.4, 0.45, 0.6))
-	_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_empty_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_empty_label.visible = false
-	_list_vbox.add_child(_empty_label)
+	_empty_hint = VBoxContainer.new()
+	_empty_hint.add_theme_constant_override("separation", 8)
+	_empty_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_empty_hint.visible = false
+	_empty_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_list_vbox.add_child(_empty_hint)
+
+	var empty_spacer = Control.new()
+	empty_spacer.custom_minimum_size = Vector2(0, 30)
+	_empty_hint.add_child(empty_spacer)
+
+	var empty_icon = Label.new()
+	empty_icon.text = "[ ]"
+	empty_icon.add_theme_font_size_override("font_size", 28)
+	empty_icon.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.3, 0.4, 0.25))
+	empty_icon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	empty_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_empty_hint.add_child(empty_icon)
+
+	var empty_text = Label.new()
+	empty_text.add_theme_font_size_override("font_size", 12)
+	empty_text.add_theme_color_override("font_color", Color(0.35, 0.4, 0.45, 0.45))
+	empty_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	empty_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_empty_hint.add_child(empty_text)
+	# 文案根据分区区分
+	if _source_filter == "user":
+		empty_text.text = "暂无备忘记录\n点击 [+ 新建] 开始记录"
+	else:
+		empty_text.text = "机体日志为空\n系统尚未采集到可报告的行为数据"
 
 	# 独立科幻滚动指示器
 	var indicator = preload("res://ui/profile/cyber_scroll_indicator.gd").new()
@@ -139,12 +175,49 @@ func build() -> void:
 	add_child(vsep)
 
 	# ── 右栏: 详情编辑 ──
+	var right_wrapper = Control.new()
+	right_wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_wrapper.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right_wrapper.mouse_filter = Control.MOUSE_FILTER_PASS
+	add_child(right_wrapper)
+
+	# 未选中引导
+	_detail_empty = VBoxContainer.new()
+	_detail_empty.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_detail_empty.alignment = BoxContainer.ALIGNMENT_CENTER
+	_detail_empty.add_theme_constant_override("separation", 10)
+	_detail_empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	right_wrapper.add_child(_detail_empty)
+
+	var de_icon = Label.new()
+	de_icon.text = "<>"
+	de_icon.add_theme_font_size_override("font_size", 32)
+	de_icon.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.3, 0.35, 0.2))
+	de_icon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_detail_empty.add_child(de_icon)
+
+	var de_text = Label.new()
+	de_text.text = "选择一条记录查看详情"
+	de_text.add_theme_font_size_override("font_size", 13)
+	de_text.add_theme_color_override("font_color", Color(0.35, 0.4, 0.45, 0.35))
+	de_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_detail_empty.add_child(de_text)
+
+	# 详情面板
 	_detail_panel = VBoxContainer.new()
+	_detail_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_detail_panel.add_theme_constant_override("separation", 8)
-	_detail_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_detail_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_detail_panel.mouse_filter = Control.MOUSE_FILTER_PASS
-	add_child(_detail_panel)
+	_detail_panel.visible = false
+	right_wrapper.add_child(_detail_panel)
+
+	# 前缀标记
+	_detail_header = Label.new()
+	_detail_header.text = "ENTRY // 操作员备忘"
+	_detail_header.add_theme_font_size_override("font_size", 11)
+	_detail_header.add_theme_color_override("font_color", Color(0.35, 0.40, 0.48, 0.45))
+	_detail_header.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_detail_panel.add_child(_detail_header)
 
 	# 标题编辑
 	_title_edit = _make_line_edit("标题", 0)
@@ -155,10 +228,10 @@ func build() -> void:
 
 	# 标签区
 	var tags_row = HBoxContainer.new()
-	tags_row.add_theme_constant_override("separation", 4)
+	tags_row.add_theme_constant_override("separation", 6)
 	_detail_panel.add_child(tags_row)
 
-	var tag_icon = ProfileStyles.label_dim("TAGS //", 11)
+	var tag_icon = ProfileStyles.label_dim("TAGS //", 10)
 	tags_row.add_child(tag_icon)
 
 	_tags_flow = HBoxContainer.new()
@@ -166,9 +239,9 @@ func build() -> void:
 	_tags_flow.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tags_row.add_child(_tags_flow)
 
-	_tag_input = _make_line_edit("+ 新标签", 80)
+	_tag_input = _make_line_edit("新标签 回车确认", 90)
 	_tag_input.add_theme_font_size_override("font_size", 11)
-	_tag_input.custom_minimum_size = Vector2(80, 0)
+	_tag_input.custom_minimum_size = Vector2(90, 0)
 	_tag_input.text_submitted.connect(_on_tag_submitted)
 	tags_row.add_child(_tag_input)
 
@@ -186,12 +259,12 @@ func build() -> void:
 	_content_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
 	_content_edit.add_theme_font_size_override("font_size", 14)
 	_content_edit.add_theme_color_override("font_color", Color(0.80, 0.85, 0.90, 0.95))
-	_content_edit.add_theme_color_override("font_placeholder_color", Color(0.35, 0.40, 0.48, 0.5))
+	_content_edit.add_theme_color_override("font_placeholder_color", Color(0.35, 0.40, 0.48, 0.4))
 	_content_edit.add_theme_color_override("caret_color", Color.from_hsv(EventBus.ui_hue, 0.5, 0.9))
 	var te_bg = StyleBoxFlat.new()
 	te_bg.bg_color = Color(0.03, 0.04, 0.08, 0.4)
 	te_bg.set_corner_radius_all(2)
-	te_bg.set_content_margin_all(10)
+	te_bg.set_content_margin_all(12)
 	_content_edit.add_theme_stylebox_override("normal", te_bg)
 	var te_focus = te_bg.duplicate()
 	te_focus.border_width_bottom = 1
@@ -216,15 +289,15 @@ func build() -> void:
 	bottom.add_child(spacer)
 
 	_del_btn = Button.new()
-	_del_btn.text = "删除"
+	_del_btn.text = "删除记录"
 	_del_btn.add_theme_font_size_override("font_size", 12)
-	_del_btn.add_theme_color_override("font_color", Color(0.7, 0.4, 0.4, 0.7))
+	_del_btn.add_theme_color_override("font_color", Color(0.65, 0.4, 0.4, 0.6))
 	_del_btn.add_theme_color_override("font_hover_color", Color(0.95, 0.4, 0.35, 1.0))
 	var ds = StyleBoxFlat.new()
-	ds.bg_color = Color(0.12, 0.05, 0.05, 0.5)
-	ds.set_corner_radius_all(3)
+	ds.bg_color = Color(0.10, 0.04, 0.04, 0.4)
+	ds.set_corner_radius_all(2)
 	ds.set_border_width_all(1)
-	ds.border_color = Color(0.5, 0.2, 0.2, 0.3)
+	ds.border_color = Color(0.4, 0.18, 0.18, 0.25)
 	ds.content_margin_left = 10; ds.content_margin_right = 10
 	ds.content_margin_top = 3; ds.content_margin_bottom = 3
 	_del_btn.add_theme_stylebox_override("normal", ds)
@@ -258,6 +331,7 @@ func refresh() -> void:
 		child.queue_free()
 	_filter_btns.clear()
 	_selected_idx = -1
+	_del_pending = false
 	build()
 
 # ═══════════════════════════════════════════════
@@ -275,8 +349,19 @@ func _switch_source(src: String) -> void:
 	for i in range(_filter_btns.size()):
 		var is_active = (["user", "pet"][i] == _source_filter)
 		_style_filter_btn(_filter_btns[i], is_active)
+	# 更新空状态文案
+	_update_empty_hint_text()
 	_apply_filter()
 	_update_detail_panel()
+
+func _update_empty_hint_text() -> void:
+	if not _empty_hint: return
+	for child in _empty_hint.get_children():
+		if child is Label and child.get_theme_font_size("font_size") == 12:
+			if _source_filter == "user":
+				child.text = "暂无备忘记录\n点击 [+ 新建] 开始记录"
+			else:
+				child.text = "机体日志为空\n系统尚未采集到可报告的行为数据"
 
 func _on_search_changed() -> void:
 	_search_timer.start()
@@ -286,20 +371,20 @@ func _apply_filter() -> void:
 	var keyword = _search_edit.text.strip_edges().to_lower() if _search_edit else ""
 
 	_filtered.clear()
-	for log in _logs:
-		if log.get("source", "user") != _source_filter:
+	for entry in _logs:
+		if entry.get("source", "user") != _source_filter:
 			continue
 		if keyword != "":
-			var title_match = log.get("title", "").to_lower().find(keyword) >= 0
-			var content_match = log.get("content", "").to_lower().find(keyword) >= 0
+			var title_match = entry.get("title", "").to_lower().find(keyword) >= 0
+			var content_match = entry.get("content", "").to_lower().find(keyword) >= 0
 			var tag_match = false
-			for tag in log.get("tags", []):
+			for tag in entry.get("tags", []):
 				if str(tag).to_lower().find(keyword) >= 0:
 					tag_match = true
 					break
 			if not title_match and not content_match and not tag_match:
 				continue
-		_filtered.append(log)
+		_filtered.append(entry)
 
 	# 按更新时间倒序
 	_filtered.sort_custom(func(a, b): return a.get("updated", "") > b.get("updated", ""))
@@ -309,29 +394,35 @@ func _apply_filter() -> void:
 func _render_list() -> void:
 	if not _list_vbox:
 		return
-	# 清理旧卡片 (保留 empty_label)
+	# 清理旧卡片 (保留 empty_hint)
 	for child in _list_vbox.get_children():
-		if child != _empty_label:
+		if child != _empty_hint:
 			child.queue_free()
 
-	_empty_label.visible = _filtered.is_empty()
+	_empty_hint.visible = _filtered.is_empty()
 	if _info_label:
-		_info_label.text = "%d 条记录" % _filtered.size()
+		_info_label.text = "%d 条记录" % _filtered.size() if _filtered.size() > 0 else ""
 
 	for i in range(_filtered.size()):
-		var log = _filtered[i]
-		var card = _make_log_card(log, i)
+		var entry = _filtered[i]
+		var card = _make_log_card(entry, i)
 		_list_vbox.add_child(card)
+		# 新建条目入场动画
+		if _animate_new_card and i == 0:
+			_animate_new_card = false
+			card.modulate.a = 0.0
+			var tw = create_tween().set_parallel(true)
+			tw.tween_property(card, "modulate:a", 1.0, 0.25)
 
-	# 把 empty_label 移到末尾
-	if _empty_label.get_parent() == _list_vbox:
-		_list_vbox.move_child(_empty_label, _list_vbox.get_child_count() - 1)
+	# 把 empty_hint 移到末尾
+	if _empty_hint.get_parent() == _list_vbox:
+		_list_vbox.move_child(_empty_hint, _list_vbox.get_child_count() - 1)
 
 # ═══════════════════════════════════════════════
 #  日志卡片
 # ═══════════════════════════════════════════════
 
-func _make_log_card(log: Dictionary, idx: int) -> PanelContainer:
+func _make_log_card(entry: Dictionary, idx: int) -> PanelContainer:
 	var card = PanelContainer.new()
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -344,24 +435,26 @@ func _make_log_card(log: Dictionary, idx: int) -> PanelContainer:
 		cs.border_width_left = 3
 		cs.border_color = Color.from_hsv(EventBus.ui_hue, 0.6, 0.85, 0.8)
 	else:
-		cs.bg_color = Color.from_hsv(EventBus.ui_hue, 0.25, 0.12, 0.35)
+		cs.bg_color = Color.from_hsv(EventBus.ui_hue, 0.20, 0.10, 0.3)
 		cs.border_width_left = 2
-		cs.border_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.5, 0.3)
+		cs.border_color = Color.from_hsv(EventBus.ui_hue, 0.3, 0.4, 0.2)
 	cs.set_corner_radius_all(2)
 	cs.content_margin_left = 12; cs.content_margin_right = 10
 	cs.content_margin_top = 8; cs.content_margin_bottom = 8
 	card.add_theme_stylebox_override("panel", cs)
 
 	# hover 效果
-	var hover_bg = Color.from_hsv(EventBus.ui_hue, 0.3, 0.18, 0.6)
+	var hover_bg = Color.from_hsv(EventBus.ui_hue, 0.28, 0.16, 0.55)
 	var normal_bg = cs.bg_color
 	card.mouse_entered.connect(func():
 		if idx != _selected_idx:
 			cs.bg_color = hover_bg
+			cs.border_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.6, 0.4)
 	)
 	card.mouse_exited.connect(func():
 		if idx != _selected_idx:
 			cs.bg_color = normal_bg
+			cs.border_color = Color.from_hsv(EventBus.ui_hue, 0.3, 0.4, 0.2)
 	)
 
 	var vbox = VBoxContainer.new()
@@ -375,50 +468,53 @@ func _make_log_card(log: Dictionary, idx: int) -> PanelContainer:
 	top_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(top_row)
 
-	var tags = log.get("tags", [])
+	var tags = entry.get("tags", [])
+	var tag_count = 0
 	for tag in tags:
-		if tags.find(tag) >= 3:
-			break  # 最多显示 3 个
-		var tl = Label.new()
-		tl.text = str(tag)
-		tl.add_theme_font_size_override("font_size", 10)
-		tl.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.5, 0.75, 0.7))
-		top_row.add_child(tl)
+		if tag_count >= 3:
+			break
+		top_row.add_child(_make_tag_badge(str(tag), false))
+		tag_count += 1
 
 	var time_spacer = Control.new()
 	time_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	time_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	top_row.add_child(time_spacer)
 
-	var time_str = log.get("updated", log.get("created", ""))
+	var time_str = entry.get("updated", entry.get("created", ""))
 	# 显示完整时间戳: "2026-05-15 09:00"
 	if time_str.length() >= 16:
 		time_str = time_str.substr(0, 16)  # "YYYY-MM-DD HH:MM"
 	var time_l = Label.new()
 	time_l.text = time_str
 	time_l.add_theme_font_size_override("font_size", 10)
-	time_l.add_theme_color_override("font_color", Color(0.35, 0.40, 0.45, 0.5))
+	time_l.add_theme_color_override("font_color", Color(0.35, 0.40, 0.45, 0.4))
 	time_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	top_row.add_child(time_l)
 
 	# 标题
+	var title_text = entry.get("title", "").strip_edges()
 	var title_l = Label.new()
-	title_l.text = log.get("title", "无标题")
+	if title_text == "":
+		title_l.text = "无标题"
+		title_l.add_theme_color_override("font_color", Color(0.40, 0.44, 0.50, 0.4))
+	else:
+		title_l.text = title_text
+		title_l.add_theme_color_override("font_color", Color(0.82, 0.87, 0.92, 0.95) if is_sel else Color(0.68, 0.74, 0.80, 0.85))
 	title_l.add_theme_font_size_override("font_size", 14)
-	title_l.add_theme_color_override("font_color", Color(0.82, 0.87, 0.92, 0.95) if is_sel else Color(0.70, 0.76, 0.82, 0.85))
 	title_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	title_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(title_l)
 
 	# 内容预览
-	var preview_text = log.get("content", "").strip_edges()
+	var preview_text = entry.get("content", "").strip_edges()
 	if preview_text.length() > 60:
 		preview_text = preview_text.substr(0, 60) + "..."
 	if preview_text != "":
 		var preview_l = Label.new()
 		preview_l.text = preview_text
 		preview_l.add_theme_font_size_override("font_size", 11)
-		preview_l.add_theme_color_override("font_color", Color(0.40, 0.45, 0.50, 0.5))
+		preview_l.add_theme_color_override("font_color", Color(0.38, 0.42, 0.48, 0.4))
 		preview_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		preview_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		vbox.add_child(preview_l)
@@ -433,74 +529,99 @@ func _make_log_card(log: Dictionary, idx: int) -> PanelContainer:
 	return card
 
 # ═══════════════════════════════════════════════
+#  标签徽章 (胶囊样式)
+# ═══════════════════════════════════════════════
+
+func _make_tag_badge(tag_text: String, with_close: bool) -> Control:
+	var badge = PanelContainer.new()
+	var bs = StyleBoxFlat.new()
+	bs.bg_color = Color.from_hsv(EventBus.ui_hue, 0.40, 0.25, 0.65)
+	bs.set_corner_radius_all(8)
+	bs.set_border_width_all(1)
+	bs.border_color = Color.from_hsv(EventBus.ui_hue, 0.45, 0.6, 0.45)
+	bs.content_margin_left = 7; bs.content_margin_right = 7
+	bs.content_margin_top = 2; bs.content_margin_bottom = 2
+	badge.add_theme_stylebox_override("panel", bs)
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE if not with_close else Control.MOUSE_FILTER_PASS
+
+	var hbox = HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 3)
+	hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.add_child(hbox)
+
+	var lbl = Label.new()
+	lbl.text = tag_text
+	lbl.add_theme_font_size_override("font_size", 10)
+	lbl.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.45, 0.8, 0.75))
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hbox.add_child(lbl)
+
+	if with_close:
+		var x_btn = Button.new()
+		x_btn.text = "x"
+		x_btn.add_theme_font_size_override("font_size", 9)
+		x_btn.add_theme_color_override("font_color", Color(0.5, 0.35, 0.35, 0.4))
+		x_btn.add_theme_color_override("font_hover_color", Color(0.95, 0.4, 0.4, 0.9))
+		var x_s = StyleBoxEmpty.new()
+		x_btn.add_theme_stylebox_override("normal", x_s)
+		x_btn.add_theme_stylebox_override("hover", x_s)
+		x_btn.add_theme_stylebox_override("pressed", x_s)
+		x_btn.custom_minimum_size = Vector2(12, 12)
+		var tag_ref = tag_text
+		x_btn.pressed.connect(func(): _remove_tag(tag_ref))
+		hbox.add_child(x_btn)
+
+	return badge
+
+# ═══════════════════════════════════════════════
 #  选中 & 详情面板
 # ═══════════════════════════════════════════════
 
 func _select_log(idx: int) -> void:
 	_selected_idx = idx
+	_reset_delete_state()
 	_render_list()
 	_update_detail_panel()
 
 func _update_detail_panel() -> void:
 	if _selected_idx < 0 or _selected_idx >= _filtered.size():
-		_title_edit.text = ""
-		_title_edit.editable = false
-		_content_edit.text = ""
-		_content_edit.editable = false
-		_del_btn.visible = false
-		_save_badge.text = ""
-		_tag_input.visible = false
-		_refresh_tags_display([])
+		_detail_panel.visible = false
+		_detail_empty.visible = true
 		return
 
-	var log = _filtered[_selected_idx]
-	var is_pet = (log.get("source", "user") == "pet")
+	_detail_panel.visible = true
+	_detail_empty.visible = false
+	_reset_delete_state()
 
-	_title_edit.text = log.get("title", "")
-	_title_edit.editable = true  # 标题始终可编辑
+	var entry = _filtered[_selected_idx]
+	var is_pet = (entry.get("source", "user") == "pet")
 
-	_content_edit.text = log.get("content", "")
-	_content_edit.editable = not is_pet  # 宠物日志正文不可编辑
+	# 更新头部标记
+	if is_pet:
+		_detail_header.text = "ENTRY // 机体记录"
+	else:
+		_detail_header.text = "ENTRY // 操作员备忘"
+
+	_title_edit.text = entry.get("title", "")
+	_title_edit.editable = true
+
+	_content_edit.text = entry.get("content", "")
+	_content_edit.editable = not is_pet
 
 	_del_btn.visible = true
 	_tag_input.visible = true
 
-	var created = log.get("created", "")
-	var updated = log.get("updated", "")
+	var created = entry.get("created", "")
 	_save_badge.text = "创建于 %s" % created if created != "" else ""
 
-	_refresh_tags_display(log.get("tags", []))
+	_refresh_tags_display(entry.get("tags", []))
 
 func _refresh_tags_display(tags: Array) -> void:
 	for child in _tags_flow.get_children():
 		child.queue_free()
 
 	for tag in tags:
-		var tag_panel = HBoxContainer.new()
-		tag_panel.add_theme_constant_override("separation", 2)
-
-		var tl = Label.new()
-		tl.text = str(tag)
-		tl.add_theme_font_size_override("font_size", 11)
-		tl.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.8))
-		tag_panel.add_child(tl)
-
-		# x 删除按钮
-		var x_btn = Button.new()
-		x_btn.text = "x"
-		x_btn.add_theme_font_size_override("font_size", 9)
-		x_btn.add_theme_color_override("font_color", Color(0.5, 0.35, 0.35, 0.5))
-		x_btn.add_theme_color_override("font_hover_color", Color(0.9, 0.4, 0.4, 0.9))
-		var x_s = StyleBoxEmpty.new()
-		x_btn.add_theme_stylebox_override("normal", x_s)
-		x_btn.add_theme_stylebox_override("hover", x_s)
-		x_btn.add_theme_stylebox_override("pressed", x_s)
-		x_btn.custom_minimum_size = Vector2(14, 14)
-		var tag_ref = str(tag)
-		x_btn.pressed.connect(func(): _remove_tag(tag_ref))
-		tag_panel.add_child(x_btn)
-
-		_tags_flow.add_child(tag_panel)
+		_tags_flow.add_child(_make_tag_badge(str(tag), true))
 
 # ═══════════════════════════════════════════════
 #  CRUD 操作
@@ -525,6 +646,7 @@ func _on_new_pressed() -> void:
 	SettingsManager.save_datalogs(_logs)
 
 	_selected_idx = 0
+	_animate_new_card = true
 	_apply_filter()
 	_update_detail_panel()
 
@@ -536,10 +658,33 @@ func _on_new_pressed() -> void:
 func _on_delete_pressed() -> void:
 	if _selected_idx < 0 or _selected_idx >= _filtered.size():
 		return
-	var log = _filtered[_selected_idx]
-	var target_id = log.get("id", "")
 
-	# 从主列表删除
+	if not _del_pending:
+		# 第一次点击: 进入确认态
+		_del_pending = true
+		_del_btn.text = "确认删除?"
+		_del_btn.add_theme_color_override("font_color", Color(1.0, 0.5, 0.5, 1.0))
+		var crit_s = StyleBoxFlat.new()
+		crit_s.bg_color = Color(0.5, 0.12, 0.12, 0.8)
+		crit_s.set_corner_radius_all(2)
+		crit_s.set_border_width_all(1)
+		crit_s.border_color = Color(0.9, 0.3, 0.3, 0.8)
+		crit_s.content_margin_left = 10; crit_s.content_margin_right = 10
+		crit_s.content_margin_top = 3; crit_s.content_margin_bottom = 3
+		_del_btn.add_theme_stylebox_override("normal", crit_s)
+		_del_btn.add_theme_stylebox_override("hover", crit_s)
+		# 3 秒后自动取消确认态
+		if _del_reset_tween and _del_reset_tween.is_valid():
+			_del_reset_tween.kill()
+		_del_reset_tween = create_tween()
+		_del_reset_tween.tween_interval(3.0)
+		_del_reset_tween.tween_callback(_reset_delete_state)
+		return
+
+	# 第二次点击: 真正删除
+	var entry = _filtered[_selected_idx]
+	var target_id = entry.get("id", "")
+
 	for i in range(_logs.size() - 1, -1, -1):
 		if _logs[i].get("id", "") == target_id:
 			_logs.remove_at(i)
@@ -547,8 +692,29 @@ func _on_delete_pressed() -> void:
 
 	SettingsManager.save_datalogs(_logs)
 	_selected_idx = -1
+	_del_pending = false
 	_apply_filter()
 	_update_detail_panel()
+
+func _reset_delete_state() -> void:
+	_del_pending = false
+	if not is_instance_valid(_del_btn):
+		return
+	_del_btn.text = "删除记录"
+	_del_btn.add_theme_color_override("font_color", Color(0.65, 0.4, 0.4, 0.6))
+	var ds = StyleBoxFlat.new()
+	ds.bg_color = Color(0.10, 0.04, 0.04, 0.4)
+	ds.set_corner_radius_all(2)
+	ds.set_border_width_all(1)
+	ds.border_color = Color(0.4, 0.18, 0.18, 0.25)
+	ds.content_margin_left = 10; ds.content_margin_right = 10
+	ds.content_margin_top = 3; ds.content_margin_bottom = 3
+	_del_btn.add_theme_stylebox_override("normal", ds)
+	var dh = ds.duplicate()
+	dh.bg_color = Color(0.25, 0.08, 0.08, 0.7)
+	dh.border_color = Color(0.8, 0.3, 0.3, 0.5)
+	_del_btn.add_theme_stylebox_override("hover", dh)
+	_del_btn.add_theme_stylebox_override("pressed", dh)
 
 func _on_content_changed() -> void:
 	_save_timer.start()
@@ -556,18 +722,18 @@ func _on_content_changed() -> void:
 func _do_save() -> void:
 	if _selected_idx < 0 or _selected_idx >= _filtered.size():
 		return
-	var log = _filtered[_selected_idx]
-	var target_id = log.get("id", "")
+	var entry = _filtered[_selected_idx]
+	var target_id = entry.get("id", "")
 
 	# 更新数据
-	log["title"] = _title_edit.text
-	log["content"] = _content_edit.text
-	log["updated"] = Time.get_datetime_string_from_system(false, true)
+	entry["title"] = _title_edit.text
+	entry["content"] = _content_edit.text
+	entry["updated"] = Time.get_datetime_string_from_system(false, true)
 
 	# 回写到主列表
 	for i in range(_logs.size()):
 		if _logs[i].get("id", "") == target_id:
-			_logs[i] = log
+			_logs[i] = entry
 			break
 
 	SettingsManager.save_datalogs(_logs)
@@ -578,12 +744,12 @@ func _do_save() -> void:
 	# 显示保存徽章
 	if _save_badge:
 		_save_badge.text = "已保存"
-		_save_badge.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.8))
+		_save_badge.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.5, 0.9, 0.9))
 		var tw = create_tween()
 		tw.tween_interval(1.5)
 		tw.tween_callback(func():
 			if is_instance_valid(_save_badge):
-				var created = log.get("created", "")
+				var created = entry.get("created", "")
 				_save_badge.text = "创建于 %s" % created if created != "" else ""
 				_save_badge.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.4, 0.7, 0.6))
 		)
@@ -592,15 +758,15 @@ func _on_tag_submitted(text: String) -> void:
 	var tag = text.strip_edges()
 	if tag == "" or _selected_idx < 0 or _selected_idx >= _filtered.size():
 		return
-	var log = _filtered[_selected_idx]
-	var tags = log.get("tags", [])
+	var entry = _filtered[_selected_idx]
+	var tags = entry.get("tags", [])
 	if tag in tags:
 		_tag_input.text = ""
 		return
 	tags.append(tag)
-	log["tags"] = tags
-	log["updated"] = Time.get_datetime_string_from_system(false, true)
-	_save_log_to_main(log)
+	entry["tags"] = tags
+	entry["updated"] = Time.get_datetime_string_from_system(false, true)
+	_save_log_to_main(entry)
 	_tag_input.text = ""
 	_refresh_tags_display(tags)
 	_render_list()
@@ -608,20 +774,20 @@ func _on_tag_submitted(text: String) -> void:
 func _remove_tag(tag: String) -> void:
 	if _selected_idx < 0 or _selected_idx >= _filtered.size():
 		return
-	var log = _filtered[_selected_idx]
-	var tags = log.get("tags", [])
+	var entry = _filtered[_selected_idx]
+	var tags = entry.get("tags", [])
 	tags.erase(tag)
-	log["tags"] = tags
-	log["updated"] = Time.get_datetime_string_from_system(false, true)
-	_save_log_to_main(log)
+	entry["tags"] = tags
+	entry["updated"] = Time.get_datetime_string_from_system(false, true)
+	_save_log_to_main(entry)
 	_refresh_tags_display(tags)
 	_render_list()
 
-func _save_log_to_main(log: Dictionary) -> void:
-	var target_id = log.get("id", "")
+func _save_log_to_main(entry: Dictionary) -> void:
+	var target_id = entry.get("id", "")
 	for i in range(_logs.size()):
 		if _logs[i].get("id", "") == target_id:
-			_logs[i] = log
+			_logs[i] = entry
 			break
 	SettingsManager.save_datalogs(_logs)
 
@@ -631,22 +797,24 @@ func _save_log_to_main(log: Dictionary) -> void:
 
 func _style_filter_btn(btn: Button, active: bool) -> void:
 	var s = StyleBoxFlat.new()
-	s.set_corner_radius_all(2)
-	s.content_margin_left = 10; s.content_margin_right = 10
-	s.content_margin_top = 4; s.content_margin_bottom = 4
+	s.set_corner_radius_all(0)
+	s.content_margin_left = 12; s.content_margin_right = 12
+	s.content_margin_top = 5; s.content_margin_bottom = 5
 	if active:
-		s.bg_color = Color.from_hsv(EventBus.ui_hue, 0.35, 0.22, 0.7)
+		s.bg_color = Color.from_hsv(EventBus.ui_hue, 0.30, 0.18, 0.7)
 		s.border_width_bottom = 2
 		s.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.7)
 		btn.add_theme_color_override("font_color", Color(0.85, 0.92, 1.0, 1.0))
+		btn.add_theme_color_override("font_hover_color", Color(0.85, 0.92, 1.0, 1.0))
 	else:
-		s.bg_color = Color(0.06, 0.08, 0.14, 0.3)
+		s.bg_color = Color(0.05, 0.07, 0.12, 0.25)
 		s.border_width_bottom = 1
-		s.border_color = Color(0, 0, 0, 0)
-		btn.add_theme_color_override("font_color", Color(0.50, 0.60, 0.70, 0.7))
+		s.border_color = Color(0.3, 0.35, 0.4, 0.15)
+		btn.add_theme_color_override("font_color", Color(0.45, 0.55, 0.65, 0.6))
+		btn.add_theme_color_override("font_hover_color", Color(0.60, 0.70, 0.80, 0.8))
 	btn.add_theme_stylebox_override("normal", s)
 	var sh = s.duplicate()
-	sh.bg_color = Color.from_hsv(EventBus.ui_hue, 0.3, 0.18, 0.6)
+	sh.bg_color = Color.from_hsv(EventBus.ui_hue, 0.25, 0.15, 0.55)
 	btn.add_theme_stylebox_override("hover", sh)
 	btn.add_theme_stylebox_override("pressed", sh)
 
@@ -657,14 +825,14 @@ func _make_line_edit(placeholder: String, min_width: int) -> LineEdit:
 		input.custom_minimum_size = Vector2(min_width, 0)
 	input.add_theme_font_size_override("font_size", 13)
 	input.add_theme_color_override("font_color", Color(0.80, 0.85, 0.90, 0.9))
-	input.add_theme_color_override("font_placeholder_color", Color(0.35, 0.40, 0.48, 0.4))
+	input.add_theme_color_override("font_placeholder_color", Color(0.35, 0.40, 0.48, 0.35))
 	input.add_theme_color_override("caret_color", Color.from_hsv(EventBus.ui_hue, 0.5, 0.9))
 	var ls = StyleBoxFlat.new()
-	ls.bg_color = Color(0.04, 0.06, 0.10, 0.5)
+	ls.bg_color = Color(0.04, 0.05, 0.09, 0.5)
 	ls.set_corner_radius_all(2)
 	ls.set_content_margin_all(6)
 	ls.border_width_bottom = 1
-	ls.border_color = Color.from_hsv(EventBus.ui_hue, 0.3, 0.4, 0.2)
+	ls.border_color = Color.from_hsv(EventBus.ui_hue, 0.25, 0.35, 0.15)
 	input.add_theme_stylebox_override("normal", ls)
 	var lf = ls.duplicate()
 	lf.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.7, 0.5)
