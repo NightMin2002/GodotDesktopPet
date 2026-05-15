@@ -172,7 +172,7 @@ func _setup_system_tray() -> void:
 		tray.tooltip = "桌面宠物"
 		
 		var tray_menu = PopupMenu.new()
-		tray_menu.add_item("让宠物休息 (告别退出)", 1)
+		tray_menu.add_item("关闭 (告别退出)", 1)
 		tray_menu.add_separator()
 		tray_menu.add_item("强制退出", 2)
 		tray_menu.id_pressed.connect(func(id: int):

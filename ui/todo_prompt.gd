@@ -407,7 +407,7 @@ func _on_force_trigger() -> void:
 			var empty_lines := [
 				"待办队列为空。...要记点什么吗？",
 				"当前无挂起事务。需要新建吗？",
-				"今日无待办。...闲着也是闲着。",
+				"今日无待办。...队列已清空。",
 			]
 			_create_prompt_ui(empty_lines[randi() % empty_lines.size()])
 		return

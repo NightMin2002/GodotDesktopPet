@@ -105,6 +105,6 @@ layout_mode = 2
 theme_override_colors/font_hover_color = Color(1.0, 0.45, 0.35, 1)
 theme_override_colors/font_color = Color(0.65, 0.5, 0.5, 0.85)
 theme_override_font_sizes/font_size = 20
-text = "让宠物休息"
+text = "关闭"
 flat = true
 alignment = 0
