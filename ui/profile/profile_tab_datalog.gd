@@ -20,6 +20,7 @@ var _info_label: Label
 var _empty_hint: VBoxContainer
 var _save_badge: Label
 var _new_btn: Button
+var _report_btn: Button  # 机体记录分区的"生成报告"按钮
 var _del_btn: Button
 var _search_edit: LineEdit
 var _filter_btns: Array[Button] = []
@@ -102,7 +103,40 @@ func build() -> void:
 	_new_btn.add_theme_stylebox_override("hover", nb_h)
 	_new_btn.add_theme_stylebox_override("pressed", nb_h)
 	_new_btn.pressed.connect(_on_new_pressed)
+	_new_btn.visible = (_source_filter == "user")
 	search_row.add_child(_new_btn)
+
+	# 机体记录分区: 手动触发报告按钮
+	_report_btn = Button.new()
+	_report_btn.text = "生成报告"
+	_report_btn.add_theme_font_size_override("font_size", 12)
+	_report_btn.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.5, 0.9, 0.85))
+	_report_btn.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0, 1.0))
+	var rb_s = StyleBoxFlat.new()
+	rb_s.bg_color = Color.from_hsv(EventBus.ui_hue, 0.45, 0.18, 0.6)
+	rb_s.set_border_width_all(1)
+	rb_s.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.55, 0.4)
+	rb_s.set_corner_radius_all(2)
+	rb_s.content_margin_left = 10; rb_s.content_margin_right = 10
+	rb_s.content_margin_top = 4; rb_s.content_margin_bottom = 4
+	_report_btn.add_theme_stylebox_override("normal", rb_s)
+	var rb_h = rb_s.duplicate()
+	rb_h.bg_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.28, 0.8)
+	rb_h.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.7)
+	_report_btn.add_theme_stylebox_override("hover", rb_h)
+	_report_btn.add_theme_stylebox_override("pressed", rb_h)
+	_report_btn.pressed.connect(func():
+		EventBus.trigger_input_report.emit()
+		# 稍后刷新列表
+		var tw = create_tween()
+		tw.tween_interval(0.1)
+		tw.tween_callback(func():
+			if _source_filter == "pet":
+				_apply_filter()
+		)
+	)
+	_report_btn.visible = (_source_filter == "pet")
+	search_row.add_child(_report_btn)
 
 	# 计数指示
 	_info_label = ProfileStyles.label_dim("", 10)
@@ -343,8 +377,9 @@ func _switch_source(src: String) -> void:
 		return
 	_source_filter = src
 	_selected_idx = -1
-	# 用户分区可新建, 宠物分区不可新建
+	# 用户分区可新建, 宠物分区可生成报告
 	_new_btn.visible = (_source_filter == "user")
+	_report_btn.visible = (_source_filter == "pet")
 	# 更新按钮样式
 	for i in range(_filter_btns.size()):
 		var is_active = (["user", "pet"][i] == _source_filter)

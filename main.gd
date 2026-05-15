@@ -13,6 +13,7 @@ var boundary_size: Vector2  # 实际使用的边界尺寸 (视口坐标系)
 
 # -- 双端架构 C# 桥接 --
 var win_manager: Node
+var input_monitor: Node  # InputMonitor (C# 键鼠采集)
 
 # ── 共享状态 (被子管理器读写) ──
 var window_mode: int = 0  # 0=FREE, 1=CONFINED, 2=REPELLED
@@ -100,6 +101,7 @@ func _ready() -> void:
 	
 	_setup_system_tray()
 	_setup_update_checker()
+	_setup_input_monitor()
 
 # ── 子管理器初始化 ──
 
@@ -439,6 +441,87 @@ func _setup_update_checker() -> void:
 		var node = Node.new()
 		node.set_script(script)
 		add_child(node)
+
+# ── 键鼠输入监控 ──
+
+func _setup_input_monitor() -> void:
+	if not ResourceLoader.exists("res://interop/InputMonitor.cs"):
+		print("[InputMonitor] C# 脚本不存在, 跳过")
+		return
+	input_monitor = load("res://interop/InputMonitor.cs").new()
+	add_child(input_monitor)
+	# 默认启动监控 (用户可在设置中关闭, 后期加)
+	if input_monitor.has_method("StartMonitoring"):
+		input_monitor.call("StartMonitoring")
+	# 连接手动触发信号
+	if EventBus.has_signal("trigger_input_report"):
+		EventBus.trigger_input_report.connect(_on_trigger_input_report)
+	print("[InputMonitor] 键鼠采集系统已挂载")
+
+func _on_trigger_input_report() -> void:
+	if not input_monitor or not input_monitor.has_method("GetFullSnapshot"):
+		return
+	var snapshot: Dictionary = input_monitor.call("GetFullSnapshot")
+	# 写入机体记录
+	var now = Time.get_datetime_string_from_system(false, true)
+	var td = Time.get_datetime_dict_from_system()
+	var entry = {
+		"id": "%d_%d" % [Time.get_unix_time_from_system(), randi() % 100000],
+		"title": "输入行为报告 %02d-%02d %02d:%02d" % [td.month, td.day, td.hour, td.minute],
+		"content": _format_input_report(snapshot),
+		"tags": ["sys:input", "auto"],
+		"source": "pet",
+		"created": now,
+		"updated": now,
+	}
+	var logs = SettingsManager.get_datalogs()
+	logs.insert(0, entry)
+	SettingsManager.save_datalogs(logs)
+	print("[InputMonitor] 手动触发: 已写入机体记录")
+
+func _format_input_report(snap: Dictionary) -> String:
+	var lines: PackedStringArray = []
+	lines.append("=== 输入行为统计报告 ===")
+	lines.append("会话时长: %d 秒" % snap.get("session_sec", 0))
+	lines.append("总击键: %d 次" % snap.get("total_keystrokes", 0))
+	lines.append("")
+	
+	# 按键 Top 10
+	var keys: Dictionary = snap.get("keys", {})
+	if keys.size() > 0:
+		lines.append("-- 按键排行 (Top 10) --")
+		var sorted_keys = []
+		for k in keys:
+			sorted_keys.append([k, keys[k]])
+		sorted_keys.sort_custom(func(a, b): return a[1] > b[1])
+		for i in range(mini(10, sorted_keys.size())):
+			lines.append("  %s: %d" % [sorted_keys[i][0], sorted_keys[i][1]])
+		lines.append("")
+	
+	# 组合键
+	var combos: Dictionary = snap.get("combos", {})
+	if combos.size() > 0:
+		lines.append("-- 组合键统计 --")
+		var sorted_combos = []
+		for k in combos:
+			sorted_combos.append([k, combos[k]])
+		sorted_combos.sort_custom(func(a, b): return a[1] > b[1])
+		for item in sorted_combos:
+			lines.append("  %s: %d" % [item[0], item[1]])
+		lines.append("")
+	
+	# 鼠标
+	var mouse: Dictionary = snap.get("mouse", {})
+	if mouse.size() > 0:
+		lines.append("-- 鼠标统计 --")
+		lines.append("  左键: %d 次" % mouse.get("left_clicks", 0))
+		lines.append("  右键: %d 次" % mouse.get("right_clicks", 0))
+		lines.append("  中键: %d 次" % mouse.get("middle_clicks", 0))
+		var dist_px = mouse.get("distance_px", 0)
+		if dist_px > 0:
+			lines.append("  移动: %.1f m (估算)" % (float(dist_px) / 3780.0))  # 96dpi ≈ 3780px/m
+	
+	return "\n".join(lines)
 
 # ── 任务栏样式守护 ──
 
