@@ -189,7 +189,7 @@ func _build_ui() -> void:
 	tab_stack.add_child(tab2)
 	_tab_contents.append(tab2)
 
-	var tab3 = preload("res://ui/profile/profile_tab_datalog.gd").new()
+	var tab3 = preload("res://ui/profile/datalog/datalog_tab.gd").new()
 	tab3.build()
 	tab3.set_anchors_preset(Control.PRESET_FULL_RECT)
 	tab_stack.add_child(tab3)
