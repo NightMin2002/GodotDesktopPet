@@ -4,7 +4,6 @@ extends RefCounted
 var ctx  # ContextMenu 引用
 
 # ── 按钮引用 ──
-var _sysinfo_btn: Button
 var _debug_behavior_btn: Button
 
 func _init(context_menu) -> void:
@@ -16,10 +15,6 @@ func build() -> void:
 	vbox.add_theme_constant_override("separation", 6)
 	panel.add_child(vbox)
 
-	_sysinfo_btn = ctx._make_menu_btn("系统信息", Color(0.8, 0.55, 0.55, 1))
-	_sysinfo_btn.pressed.connect(_on_sysinfo_btn_pressed)
-	vbox.add_child(_sysinfo_btn)
-
 	_debug_behavior_btn = ctx._make_menu_btn("指令序列 [+]", Color(1.0, 0.7, 0.2, 1))
 	vbox.add_child(_debug_behavior_btn)
 	ctx._bind_l3_trigger(_debug_behavior_btn, "debug_behavior", "sec_system")
@@ -28,12 +23,6 @@ func build() -> void:
 	panel.mouse_exited.connect(func(): ctx._submenu.on_panel_exit())
 	ctx.add_child(panel)
 	ctx._submenu.panels["sec_system"] = panel
-
-# ── 系统信息 ──
-
-func _on_sysinfo_btn_pressed() -> void:
-	ctx._close_hud()
-	ctx._sysinfo_bubble.trigger()
 
 # ── 退出 ──
 

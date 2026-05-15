@@ -1,24 +1,13 @@
-# theme_panel.gd — 外观主题面板 (独立窗口模式)
-# 管理: 宠物颜色 + UI 主题色的自定义
-# 包含: 可拖拽标题栏 + 色轮(Canvas绘制) + 目标选择器 + S/V 滑块 + 预设色
-# 宠物附近弹出，打开后可自由拖拽到任意位置
-extends CanvasLayer
+# profile_tab_theme.gd — 外观主题 Tab (装置终端)
+# 从 theme_panel.gd 迁移，嵌入式布局代替独立窗口
+extends HBoxContainer
 
 const _PetColorPalette = preload("res://entities/pet/pet_color_palette.gd")
 
-var panel: PanelContainer
-var _pet: Node2D
-var _guard_frames := 0
-
-# ── 拖拽相关 ──
-var _dragging_panel: bool = false
-var _drag_offset: Vector2 = Vector2.ZERO
-var _title_bar: HBoxContainer  # 标题栏区域 (拖拽句柄)
-
-# ── 当前编辑状态 ──
+# ── 编辑状态 ──
 var _target_index: int = 0   # 0=原体, 1~5=分身, -1=UI主题
 var _current_hue: float = 0.62
-var _current_sat: int = 50   # 0~100 (50=默认1.0x)
+var _current_sat: int = 50
 var _current_val: int = 50
 
 # ── UI 引用 ──
@@ -28,113 +17,53 @@ var _sat_slider: HSlider
 var _val_slider: HSlider
 var _sat_label: Label
 var _val_label: Label
-var _conflict_label: Label       # 撞色提示
-var _title_label: Label          # 标题引用 (用于主题色同步)
+var _conflict_label: Label
 var _dragging_wheel: bool = false
 
 # ── 预设色调 ──
 const PRESETS: Array[float] = [0.62, 0.78, 0.33, 0.0, 0.12, 0.92, 0.537, 0.08]
 const PRESET_NAMES: Array[String] = ["蓝", "紫", "绿", "红", "金", "粉", "青", "橙"]
 
-func _ready() -> void:
-	layer = 102
-	_build_ui()
-	EventBus.show_theme_panel.connect(_toggle_panel)
+func _init() -> void:
+	size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	size_flags_vertical = Control.SIZE_EXPAND_FILL
+	mouse_filter = Control.MOUSE_FILTER_PASS
 
-# ── 主循环 ──
+func build() -> void:
+	var scroll = ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.mouse_filter = Control.MOUSE_FILTER_PASS
+	add_child(scroll)
 
-func _process(_delta: float) -> void:
-	if _guard_frames > 0:
-		_guard_frames -= 1
-
-func _clamp_pos(pos: Vector2) -> Vector2:
-	var vp = get_viewport().get_visible_rect().size
-	pos.x = clampf(pos.x, 8.0, vp.x - panel.size.x - 8.0)
-	pos.y = clampf(pos.y, 8.0, vp.y - panel.size.y - 8.0)
-	return pos
-
-# ── UI 构建 ──
-
-func _build_ui() -> void:
-	panel = PanelContainer.new()
-	panel.visible = false
-	panel.custom_minimum_size = Vector2(280, 0)
-	
-	var style = StyleBoxFlat.new()
-	style.bg_color = Color(0.02, 0.04, 0.10, 0.95)
-	style.border_color = Color.from_hsv(EventBus.ui_hue, 0.7, 1.0, 0.6)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(16)
-	style.shadow_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.1)
-	style.shadow_size = 10
-	panel.add_theme_stylebox_override("panel", style)
-	add_child(panel)
-	
-	var margin = MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 16)
-	margin.add_theme_constant_override("margin_top", 14)
-	margin.add_theme_constant_override("margin_right", 16)
-	margin.add_theme_constant_override("margin_bottom", 14)
-	panel.add_child(margin)
-	
 	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 10)
-	margin.add_child(vbox)
-	
-	# 标题栏 (可拖拽区域 + 关闭按钮)
-	_title_bar = HBoxContainer.new()
-	_title_bar.add_theme_constant_override("separation", 4)
-	_title_bar.mouse_filter = Control.MOUSE_FILTER_STOP
-	_title_bar.gui_input.connect(_on_title_bar_input)
-	_title_bar.mouse_default_cursor_shape = Control.CURSOR_MOVE
-	vbox.add_child(_title_bar)
-	
-	_title_label = Label.new()
-	_title_label.text = "外观主题"
-	_title_label.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.5, 1.0, 0.9))
-	_title_label.add_theme_font_size_override("font_size", 20)
-	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_title_bar.add_child(_title_label)
-	
-	# 关闭按钮 (标题栏右侧)
-	var close_btn = Button.new()
-	close_btn.text = "x"
-	close_btn.add_theme_font_size_override("font_size", 16)
-	close_btn.add_theme_color_override("font_color", Color(0.6, 0.65, 0.75, 0.6))
-	close_btn.add_theme_color_override("font_hover_color", Color(1.0, 0.4, 0.35, 1.0))
-	close_btn.flat = true
-	close_btn.custom_minimum_size = Vector2(28, 28)
-	close_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-	close_btn.mouse_default_cursor_shape = Control.CURSOR_ARROW
-	close_btn.pressed.connect(_close_panel)
-	_title_bar.add_child(close_btn)
-	
-	# 分割线
-	vbox.add_child(_make_sep())
-	
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 12)
+	vbox.mouse_filter = Control.MOUSE_FILTER_PASS
+	scroll.add_child(vbox)
+
 	# 目标选择器
 	_build_target_selector(vbox)
-	
-	# 色轮
+
+	# 色轮 + 撞色提示
 	_build_color_wheel(vbox)
-	
-	# 撞色提示
+
 	_conflict_label = Label.new()
 	_conflict_label.add_theme_font_size_override("font_size", 12)
 	_conflict_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.35, 0.9))
 	_conflict_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_conflict_label.text = ""
+	_conflict_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(_conflict_label)
-	
+
 	# S/V 滑块
 	_build_sliders(vbox)
-	
+
 	# 预设色
 	vbox.add_child(_make_sep())
 	_build_presets(vbox)
-	
+
 	# 重置按钮
 	var reset_btn = Button.new()
 	reset_btn.text = "重置默认"
@@ -142,35 +71,67 @@ func _build_ui() -> void:
 	reset_btn.add_theme_color_override("font_color", Color(0.6, 0.65, 0.75, 0.7))
 	reset_btn.add_theme_color_override("font_hover_color", Color(0.9, 0.4, 0.35, 1))
 	reset_btn.flat = true
-	reset_btn.pressed.connect(_on_reset)
+	reset_btn.mouse_filter = Control.MOUSE_FILTER_PASS
+	reset_btn.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			var pet = _get_pet()
+			if pet and pet.is_mouse_on_pet():
+				return
+			_on_reset()
+	)
 	vbox.add_child(reset_btn)
+
+func refresh() -> void:
+	_target_index = 0
+	_load_target_color()
+	# 重建目标选择器 (分身可能变了)
+	_rebuild_target_selector()
+
+# ═══════════════════════════════════════════════
+#  目标选择器
+# ═══════════════════════════════════════════════
 
 func _build_target_selector(parent: VBoxContainer) -> void:
 	var hbox = HBoxContainer.new()
 	hbox.add_theme_constant_override("separation", 6)
 	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	hbox.mouse_filter = Control.MOUSE_FILTER_PASS
+	hbox.set_meta("is_target_selector", true)
 	parent.add_child(hbox)
-	
+	# build() 时还没进入场景树，延迟到 refresh() 再填充
+
+func _populate_target_btns(hbox: HBoxContainer) -> void:
+	if not is_inside_tree():
+		return
 	_target_btns.clear()
-	# 原体按钮
 	var btn0 = _make_target_btn("原体", 0)
 	hbox.add_child(btn0)
 	_target_btns.append(btn0)
-	
-	# 分身按钮 (动态，根据当前存在的克隆体数量)
+
 	var main_node = get_tree().root.get_node_or_null("Main")
 	if main_node and "pet_instances" in main_node:
 		for i in range(1, main_node.pet_instances.size()):
 			var btn = _make_target_btn("分身" + str(i), i)
 			hbox.add_child(btn)
 			_target_btns.append(btn)
-	
-	# UI 主题按钮
+
 	var ui_btn = _make_target_btn("界面", -1)
 	hbox.add_child(ui_btn)
 	_target_btns.append(ui_btn)
-	
 	_refresh_target_highlight()
+
+func _rebuild_target_selector() -> void:
+	# 找到目标选择器并重建
+	var scroll = get_child(0)
+	if not scroll: return
+	var vbox = scroll.get_child(0)
+	if not vbox: return
+	for child in vbox.get_children():
+		if child.has_meta("is_target_selector"):
+			for c in child.get_children():
+				c.queue_free()
+			_populate_target_btns.call_deferred(child)
+			break
 
 func _make_target_btn(text: String, index: int) -> Button:
 	var btn = Button.new()
@@ -179,26 +140,31 @@ func _make_target_btn(text: String, index: int) -> Button:
 	btn.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9, 0.8))
 	btn.add_theme_color_override("font_hover_color", Color(1, 1, 1, 1))
 	btn.custom_minimum_size = Vector2(48, 28)
-	
+	btn.mouse_filter = Control.MOUSE_FILTER_PASS
+
 	var s = StyleBoxFlat.new()
 	s.bg_color = Color(0.08, 0.12, 0.2, 0.6)
-	s.set_corner_radius_all(14)
+	s.set_corner_radius_all(0)
 	s.set_border_width_all(1)
 	s.border_color = Color(0.2, 0.3, 0.45, 0.4)
-	s.content_margin_left = 8
-	s.content_margin_right = 8
-	s.content_margin_top = 3
-	s.content_margin_bottom = 3
+	s.content_margin_left = 8; s.content_margin_right = 8
+	s.content_margin_top = 3; s.content_margin_bottom = 3
 	btn.add_theme_stylebox_override("normal", s)
-	
+
 	var h = s.duplicate()
 	h.bg_color = Color(0.12, 0.18, 0.3, 0.8)
 	h.border_color = Color(0.3, 0.5, 0.7, 0.6)
 	btn.add_theme_stylebox_override("hover", h)
 	btn.add_theme_stylebox_override("pressed", h)
-	
+
 	var idx = index
-	btn.pressed.connect(func(): _on_target_selected(idx))
+	btn.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			var pet = _get_pet()
+			if pet and pet.is_mouse_on_pet():
+				return
+			_on_target_selected(idx)
+	)
 	return btn
 
 func _refresh_target_highlight() -> void:
@@ -207,13 +173,12 @@ func _refresh_target_highlight() -> void:
 		s.border_color = Color(0.2, 0.3, 0.45, 0.4)
 		s.set_border_width_all(1)
 		btn.add_theme_stylebox_override("normal", s)
-	
-	# 高亮当前选中
+
 	for i in range(_target_btns.size()):
 		var btn = _target_btns[i]
 		var btn_index: int
 		if i == _target_btns.size() - 1:
-			btn_index = -1  # UI 按钮始终是最后一个
+			btn_index = -1
 		else:
 			btn_index = i
 		if btn_index == _target_index:
@@ -222,12 +187,15 @@ func _refresh_target_highlight() -> void:
 			s.set_border_width_all(2)
 			btn.add_theme_stylebox_override("normal", s)
 
-# ── 色轮 ──
+# ═══════════════════════════════════════════════
+#  色轮
+# ═══════════════════════════════════════════════
 
 func _build_color_wheel(parent: VBoxContainer) -> void:
 	var center_box = CenterContainer.new()
+	center_box.mouse_filter = Control.MOUSE_FILTER_PASS
 	parent.add_child(center_box)
-	
+
 	_wheel = Control.new()
 	_wheel.custom_minimum_size = Vector2(180, 180)
 	_wheel.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -236,14 +204,13 @@ func _build_color_wheel(parent: VBoxContainer) -> void:
 	center_box.add_child(_wheel)
 
 func _draw_wheel() -> void:
-	var size = _wheel.size
-	var center = size / 2.0
-	var outer_r = min(size.x, size.y) / 2.0 - 4
+	var wsize = _wheel.size
+	var center = wsize / 2.0
+	var outer_r = min(wsize.x, wsize.y) / 2.0 - 4
 	var ring_w := 18.0
 	var inner_r = outer_r - ring_w
 	var mid_r = (outer_r + inner_r) / 2.0
-	
-	# HSV 色环 (120段)
+
 	var seg := 120
 	for i in range(seg):
 		var a0 = float(i) / seg * TAU
@@ -251,15 +218,13 @@ func _draw_wheel() -> void:
 		var hue = float(i) / seg
 		var c = Color.from_hsv(hue, 0.85, 1.0)
 		_wheel.draw_arc(center, mid_r, a0, a1, 3, c, ring_w, true)
-	
-	# 中心预览圆
+
 	var preview_r = inner_r * 0.55
 	_wheel.draw_circle(center, preview_r + 2, Color(0.15, 0.2, 0.3, 0.8))
 	var preview_s = clampf(0.85 * (float(_current_sat) / 100.0 + 0.5), 0.0, 1.0)
 	var preview_v = clampf(1.0 * (float(_current_val) / 100.0 + 0.5), 0.0, 1.0)
 	_wheel.draw_circle(center, preview_r, Color.from_hsv(_current_hue, preview_s, preview_v))
-	
-	# 选择指示器 (色环上的白色圆点)
+
 	var sel_angle = _current_hue * TAU
 	var sel_pos = center + Vector2(cos(sel_angle), sin(sel_angle)) * mid_r
 	_wheel.draw_circle(sel_pos, 11, Color(0, 0, 0, 0.3))
@@ -278,108 +243,114 @@ func _wheel_input(event: InputEvent) -> void:
 		_try_pick_hue(event.position)
 
 func _try_pick_hue(pos: Vector2) -> void:
-	var size = _wheel.size
-	var center = size / 2.0
-	var outer_r = min(size.x, size.y) / 2.0 - 4
+	var wsize = _wheel.size
+	var center = wsize / 2.0
+	var outer_r = min(wsize.x, wsize.y) / 2.0 - 4
 	var inner_r = outer_r - 18.0
 	var dist = pos.distance_to(center)
-	
-	# 允许比环稍宽的拖拽范围 (更容易操作)
 	if dist >= inner_r - 10 and dist <= outer_r + 10:
 		var angle = atan2(pos.y - center.y, pos.x - center.x)
 		_current_hue = fmod(angle / TAU + 1.0, 1.0)
 		_wheel.queue_redraw()
 		_apply_color()
 
-# ── 滑块 ──
+# ═══════════════════════════════════════════════
+#  滑块
+# ═══════════════════════════════════════════════
 
 func _build_sliders(parent: VBoxContainer) -> void:
-	# 饱和度
 	var sat_row = HBoxContainer.new()
 	sat_row.add_theme_constant_override("separation", 8)
+	sat_row.mouse_filter = Control.MOUSE_FILTER_PASS
 	parent.add_child(sat_row)
-	
+
 	var sat_tag = Label.new()
 	sat_tag.text = "饱和度"
 	sat_tag.add_theme_font_size_override("font_size", 13)
 	sat_tag.add_theme_color_override("font_color", Color(0.5, 0.6, 0.75, 0.7))
 	sat_tag.custom_minimum_size.x = 50
+	sat_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	sat_row.add_child(sat_tag)
-	
+
 	_sat_slider = HSlider.new()
-	_sat_slider.min_value = 0
-	_sat_slider.max_value = 100
-	_sat_slider.value = 50
+	_sat_slider.min_value = 0; _sat_slider.max_value = 100; _sat_slider.value = 50
 	_sat_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_sat_slider.value_changed.connect(func(v): _current_sat = int(v); _sat_label.text = str(int(v)); _wheel.queue_redraw(); _apply_color())
 	sat_row.add_child(_sat_slider)
-	
+
 	_sat_label = Label.new()
 	_sat_label.text = "50"
 	_sat_label.add_theme_font_size_override("font_size", 13)
 	_sat_label.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9, 0.8))
 	_sat_label.custom_minimum_size.x = 28
+	_sat_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	sat_row.add_child(_sat_label)
-	
-	# 明度
+
 	var val_row = HBoxContainer.new()
 	val_row.add_theme_constant_override("separation", 8)
+	val_row.mouse_filter = Control.MOUSE_FILTER_PASS
 	parent.add_child(val_row)
-	
+
 	var val_tag = Label.new()
 	val_tag.text = "明  度"
 	val_tag.add_theme_font_size_override("font_size", 13)
 	val_tag.add_theme_color_override("font_color", Color(0.5, 0.6, 0.75, 0.7))
 	val_tag.custom_minimum_size.x = 50
+	val_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	val_row.add_child(val_tag)
-	
+
 	_val_slider = HSlider.new()
-	_val_slider.min_value = 0
-	_val_slider.max_value = 100
-	_val_slider.value = 50
+	_val_slider.min_value = 0; _val_slider.max_value = 100; _val_slider.value = 50
 	_val_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_val_slider.value_changed.connect(func(v): _current_val = int(v); _val_label.text = str(int(v)); _wheel.queue_redraw(); _apply_color())
 	val_row.add_child(_val_slider)
-	
+
 	_val_label = Label.new()
 	_val_label.text = "50"
 	_val_label.add_theme_font_size_override("font_size", 13)
 	_val_label.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9, 0.8))
 	_val_label.custom_minimum_size.x = 28
+	_val_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	val_row.add_child(_val_label)
 
-# ── 预设色 ──
+# ═══════════════════════════════════════════════
+#  预设色
+# ═══════════════════════════════════════════════
 
 func _build_presets(parent: VBoxContainer) -> void:
 	var hbox = HBoxContainer.new()
 	hbox.add_theme_constant_override("separation", 6)
 	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	hbox.mouse_filter = Control.MOUSE_FILTER_PASS
 	parent.add_child(hbox)
-	
+
 	for i in range(PRESETS.size()):
 		var btn = Button.new()
 		btn.custom_minimum_size = Vector2(26, 26)
 		btn.tooltip_text = PRESET_NAMES[i]
 		btn.flat = false
 		btn.text = ""
-		
+		btn.mouse_filter = Control.MOUSE_FILTER_PASS
+
 		var s = StyleBoxFlat.new()
 		s.bg_color = Color.from_hsv(PRESETS[i], 0.8, 0.9)
-		s.set_corner_radius_all(13)
+		s.set_corner_radius_all(0)
 		s.set_border_width_all(2)
 		s.border_color = Color(0.3, 0.35, 0.4, 0.5)
 		btn.add_theme_stylebox_override("normal", s)
-		
+
 		var h = s.duplicate()
 		h.border_color = Color.WHITE
 		btn.add_theme_stylebox_override("hover", h)
 		btn.add_theme_stylebox_override("pressed", h)
-		
+
 		var preset_hue = PRESETS[i]
 		btn.pressed.connect(func(): _on_preset(preset_hue))
 		hbox.add_child(btn)
 
-# ── 事件处理 ──
+# ═══════════════════════════════════════════════
+#  事件处理
+# ═══════════════════════════════════════════════
 
 func _on_target_selected(index: int) -> void:
 	_target_index = index
@@ -389,7 +360,6 @@ func _on_target_selected(index: int) -> void:
 
 func _load_target_color() -> void:
 	if _target_index == -1:
-		# UI 主题
 		_current_hue = EventBus.ui_hue
 		_current_sat = 50
 		_current_val = 50
@@ -402,33 +372,33 @@ func _load_target_color() -> void:
 				_current_hue = p.palette.hue
 				_current_sat = p.palette.get_sat_percent()
 				_current_val = p.palette.get_val_percent()
-	
-	_sat_slider.set_value_no_signal(_current_sat)
-	_val_slider.set_value_no_signal(_current_val)
-	_sat_label.text = str(_current_sat)
-	_val_label.text = str(_current_val)
+
+	if is_instance_valid(_sat_slider):
+		_sat_slider.set_value_no_signal(_current_sat)
+		_val_slider.set_value_no_signal(_current_val)
+		_sat_label.text = str(_current_sat)
+		_val_label.text = str(_current_val)
+	if is_instance_valid(_wheel):
+		_wheel.queue_redraw()
 
 func _on_preset(hue: float) -> void:
 	_current_hue = hue
-	_current_sat = 50
-	_current_val = 50
-	_sat_slider.set_value_no_signal(50)
-	_val_slider.set_value_no_signal(50)
-	_sat_label.text = "50"
-	_val_label.text = "50"
+	_current_sat = 50; _current_val = 50
+	if is_instance_valid(_sat_slider):
+		_sat_slider.set_value_no_signal(50)
+		_val_slider.set_value_no_signal(50)
+		_sat_label.text = "50"; _val_label.text = "50"
 	_wheel.queue_redraw()
 	_apply_color()
 
 func _on_reset() -> void:
 	if _target_index == -1:
-		_on_preset(0.537)  # UI 默认青色
+		_on_preset(0.537)
 	elif _target_index == 0:
-		_on_preset(_PetColorPalette.DEFAULT_HUE)  # 原体默认蓝色
+		_on_preset(_PetColorPalette.DEFAULT_HUE)
 	else:
-		# 分身：重新随机一个不撞色的色调
 		_on_preset(_generate_distinct_hue())
 
-## 生成与现有宠物色调不撞的随机 hue
 func _generate_distinct_hue() -> float:
 	var existing: Array[float] = []
 	var main_node = get_tree().root.get_node_or_null("Main")
@@ -452,23 +422,17 @@ func _generate_distinct_hue() -> float:
 func _apply_color() -> void:
 	_refresh_target_highlight()
 	if _target_index == -1:
-		# UI 主题色
 		EventBus.ui_hue = _current_hue
 		EventBus.ui_theme_changed.emit(_current_hue)
 		SettingsManager.set_ui_hue(int(_current_hue * 360.0))
-		# 同步面板自身的边框和标题
-		_sync_panel_theme(_current_hue)
 		_conflict_label.text = ""
 	else:
-		# 宠物颜色
 		var sat_scale = clampf(float(_current_sat) / 100.0 + 0.5, 0.5, 1.5)
 		var val_scale = clampf(float(_current_val) / 100.0 + 0.5, 0.5, 1.5)
 		EventBus.pet_color_changed.emit(_target_index, _current_hue, sat_scale, val_scale)
 		SettingsManager.set_pet_color(_target_index, int(_current_hue * 360.0), _current_sat, _current_val)
-		# 撞色检测
 		_check_color_conflict()
 
-## 检测当前选色是否与其他宠物过于接近
 func _check_color_conflict() -> void:
 	var main_node = get_tree().root.get_node_or_null("Main")
 	if not main_node or not "pet_instances" in main_node:
@@ -493,126 +457,15 @@ func _check_color_conflict() -> void:
 	else:
 		_conflict_label.text = ""
 
-## 同步面板自身的边框和标题色 (界面主题变更时)
-func _sync_panel_theme(hue: float) -> void:
-	var style = panel.get_theme_stylebox("panel") as StyleBoxFlat
-	if style:
-		style = style.duplicate()
-		style.border_color = Color.from_hsv(hue, 0.7, 1.0, 0.6)
-		style.shadow_color = Color.from_hsv(hue, 0.5, 0.8, 0.1)
-		panel.add_theme_stylebox_override("panel", style)
-	if _title_label:
-		_title_label.add_theme_color_override("font_color", Color.from_hsv(hue, 0.5, 1.0, 0.9))
+# ═══════════════════════════════════════════════
+#  工具
+# ═══════════════════════════════════════════════
 
-# ── 面板显隐 ──
-
-func _toggle_panel() -> void:
-	if panel.visible:
-		_close_panel()
-	else:
-		_open_panel()
-
-func _open_panel() -> void:
-	_find_pet()
-	_target_index = 0
-	_load_target_color()
-	# 刷新目标选择器 (分身可能变了)
-	var parent_vbox = panel.get_child(0).get_child(0)
-	var old_selector = parent_vbox.get_child(2)  # 目标选择器在 title_bar, sep 之后
-	old_selector.queue_free()
-	await get_tree().process_frame
-	var new_hbox = HBoxContainer.new()
-	new_hbox.add_theme_constant_override("separation", 6)
-	new_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	_target_btns.clear()
-	var btn0 = _make_target_btn("原体", 0)
-	new_hbox.add_child(btn0)
-	_target_btns.append(btn0)
-	var main_node = get_tree().root.get_node_or_null("Main")
-	if main_node and "pet_instances" in main_node:
-		for i in range(1, main_node.pet_instances.size()):
-			var btn = _make_target_btn("分身" + str(i), i)
-			new_hbox.add_child(btn)
-			_target_btns.append(btn)
-	var ui_btn = _make_target_btn("界面", -1)
-	new_hbox.add_child(ui_btn)
-	_target_btns.append(ui_btn)
-	parent_vbox.add_child(new_hbox)
-	parent_vbox.move_child(new_hbox, 2)
-	_refresh_target_highlight()
-	
-	EventBus.context_menu_toggled.emit(true)
-	get_window().grab_focus()
-	# 定位: 在宠物附近弹出
-	var vp = get_viewport().get_visible_rect().size
-	var pet_pos := Vector2(vp.x / 2.0, vp.y / 2.0)  # 默认居中
-	if is_instance_valid(_pet):
-		pet_pos = _pet.get_global_transform_with_canvas().get_origin()
-	var panel_w := panel.size.x if panel.size.x > 0 else 280.0
-	var panel_h := panel.size.y if panel.size.y > 0 else 500.0
-	var gap := 60.0
-	var x: float
-	if pet_pos.x > vp.x * 0.5:
-		x = pet_pos.x - panel_w - gap
-	else:
-		x = pet_pos.x + gap
-	var y = pet_pos.y - panel_h * 0.4
-	panel.position = _clamp_pos(Vector2(x, y))
-	panel.modulate.a = 0.0
-	panel.scale = Vector2(0.6, 0.6)
-	panel.show()
-	await get_tree().process_frame
-	panel.position = _clamp_pos(panel.position)  # 布局后用真实尺寸重新钳制
-	panel.pivot_offset = panel.size / 2.0
-	_guard_frames = 5
-	_wheel.queue_redraw()
-	var tween = create_tween().set_parallel(true)
-	tween.tween_property(panel, "modulate:a", 1.0, 0.2)
-	tween.tween_property(panel, "scale", Vector2.ONE, 0.3) \
-		.set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
-
-func _close_panel() -> void:
-	_dragging_panel = false
-	panel.pivot_offset = panel.size / 2.0
-	var tween = create_tween().set_parallel(true)
-	tween.tween_property(panel, "modulate:a", 0.0, 0.15)
-	tween.tween_property(panel, "scale", Vector2(0.5, 0.5), 0.15)
-	tween.finished.connect(func():
-		panel.hide()
-		EventBus.context_menu_toggled.emit(false)
-	)
-
-func _find_pet() -> void:
-	var main_node = get_tree().root.get_node_or_null("Main")
-	if main_node and "pet_instance" in main_node:
-		_pet = main_node.pet_instance
-
-func _unhandled_input(event: InputEvent) -> void:
-	if not panel.visible or _guard_frames > 0:
-		return
-	if event is InputEventMouseButton and event.pressed:
-		# 拖拽中不处理外部点击关闭
-		if _dragging_panel:
-			return
-		var local_mouse = panel.get_local_mouse_position()
-		var rect = Rect2(Vector2.ZERO, panel.size)
-		if not rect.has_point(local_mouse):
-			_close_panel()
-
-# ── 标题栏拖拽 ──
-
-func _on_title_bar_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if event.pressed:
-			_dragging_panel = true
-			_drag_offset = get_viewport().get_mouse_position() - panel.position
-		else:
-			_dragging_panel = false
-	elif event is InputEventMouseMotion and _dragging_panel:
-		panel.position = get_viewport().get_mouse_position() - _drag_offset
-		panel.position = _clamp_pos(panel.position)
-
-# ── 工具 ──
+func _get_pet() -> Node:
+	var main_n = get_tree().root.get_node_or_null("Main")
+	if main_n and "pet_instances" in main_n and main_n.pet_instances.size() > 0:
+		return main_n.pet_instances[0]
+	return null
 
 func _make_sep() -> HSeparator:
 	var sep = HSeparator.new()

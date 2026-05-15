@@ -83,7 +83,6 @@ func _ready() -> void:
 	_setup_reminder_system()
 	_setup_todo_system()
 	_setup_pet_chatter()
-	_setup_theme_panel()
 	_setup_platform_style_panel()
 	_setup_game_system()
 	_setup_pet_profile_panel()
@@ -379,13 +378,6 @@ func _setup_todo_system() -> void:
 		add_child(prompt_node)
 		if pet_instance and prompt_node.has_method("link_pet"):
 			prompt_node.link_pet(pet_instance)
-
-func _setup_theme_panel() -> void:
-	var theme_script = load("res://ui/theme_panel.gd")
-	if theme_script:
-		var theme_node = CanvasLayer.new()
-		theme_node.set_script(theme_script)
-		add_child(theme_node)
 
 func _setup_platform_style_panel() -> void:
 	var script = load("res://ui/platform_style_panel.gd")

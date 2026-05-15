@@ -48,7 +48,6 @@ signal dismiss_clones  # 一键遣散所有分身
 # ── 颜色系统 ──
 signal pet_color_changed(pet_index: int, hue: float, sat: float, val: float)
 signal ui_theme_changed(hue: float)
-signal show_theme_panel
 signal show_platform_style_panel
 
 # ── 游戏系统 ──

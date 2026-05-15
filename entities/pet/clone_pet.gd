@@ -16,7 +16,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 	# 克隆体不支持的功能: 直接忽略
-	if setting_id in ["hud_clock", "hud_wifi", "hud_pin"]:
+	if setting_id in ["hud_clock", "hud_wifi", "hud_pin", "hud_todo"]:
 		return
 	# 其余全部复用原体逻辑
 	super._on_setting_toggled(setting_id, is_on)

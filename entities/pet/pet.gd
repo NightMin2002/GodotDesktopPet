@@ -188,12 +188,15 @@ func _ready() -> void:
 	if not is_clone:
 		var hud_clock = SettingsManager.get_bool("hud_clock", false)
 		var hud_wifi = SettingsManager.get_bool("hud_wifi", false)
+		var hud_todo = SettingsManager.get_bool("hud_todo", false)
 		var hud_pin_val = SettingsManager.get_bool("hud_pin", false)
 		hud_panel.set_pin(hud_pin_val)
 		if hud_clock:
 			hud_panel.set_clock(true)
 		if hud_wifi:
 			hud_panel.set_wifi(true)
+		if hud_todo:
+			hud_panel.set_todo(true)
 	
 	# 监听运行时设置变更
 	EventBus.setting_toggled.connect(_on_setting_toggled)
@@ -242,6 +245,10 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		if is_clone:
 			return
 		hud_panel.set_pin(is_on)
+	elif setting_id == "hud_todo":
+		if is_clone:
+			return
+		hud_panel.set_todo(is_on)
 
 func _on_behavior_mode_changed(mode: int) -> void:
 	behavior_mode = mode

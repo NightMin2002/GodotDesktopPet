@@ -195,17 +195,29 @@ func _build_ui() -> void:
 	tab_stack.add_child(tab3)
 	_tab_contents.append(tab3)
 
-	var tab4 = preload("res://ui/profile/profile_tab_about.gd").new()
+	var tab4 = preload("res://ui/profile/profile_tab_theme.gd").new()
 	tab4.build()
 	tab4.set_anchors_preset(Control.PRESET_FULL_RECT)
 	tab_stack.add_child(tab4)
 	_tab_contents.append(tab4)
 
-	var tab5 = preload("res://ui/profile/profile_tab_config.gd").new()
+	var tab5 = preload("res://ui/profile/profile_tab_syscheck.gd").new()
 	tab5.build()
 	tab5.set_anchors_preset(Control.PRESET_FULL_RECT)
 	tab_stack.add_child(tab5)
 	_tab_contents.append(tab5)
+
+	var tab6 = preload("res://ui/profile/profile_tab_about.gd").new()
+	tab6.build()
+	tab6.set_anchors_preset(Control.PRESET_FULL_RECT)
+	tab_stack.add_child(tab6)
+	_tab_contents.append(tab6)
+
+	var tab7 = preload("res://ui/profile/profile_tab_config.gd").new()
+	tab7.build()
+	tab7.set_anchors_preset(Control.PRESET_FULL_RECT)
+	tab_stack.add_child(tab7)
+	_tab_contents.append(tab7)
 
 	# ── 转场特效覆盖层 ──
 	_transition_rect = ColorRect.new()
@@ -299,12 +311,12 @@ func _build_tab_bar() -> HBoxContainer:
 	var bar = HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 4)
 
-	var tabs = ["游戏战绩", "能力数据", "定时提醒", "数据日志", "关于", "终端配置"]
+	var tabs = ["游戏战绩", "能力数据", "定时提醒", "数据日志", "外观主题", "机体诊断", "关于", "终端配置"]
 	
 	for i in range(tabs.size()):
 		var btn = Button.new()
 		btn.text = tabs[i]
-		btn.add_theme_font_size_override("font_size", 18)
+		btn.add_theme_font_size_override("font_size", 15)
 		btn.flat = false
 		
 		# 使用唯一的 StyleBox 以便用 Tween 进行平滑色彩插值
@@ -312,7 +324,7 @@ func _build_tab_bar() -> HBoxContainer:
 		s.set_corner_radius_all(0)
 		s.border_width_bottom = 2
 		s.border_color = Color(0, 0, 0, 0)
-		s.content_margin_left = 12; s.content_margin_right = 12
+		s.content_margin_left = 8; s.content_margin_right = 8
 		s.content_margin_top = 6; s.content_margin_bottom = 6
 		s.bg_color = Color(0.06, 0.08, 0.14, 0.3)
 		

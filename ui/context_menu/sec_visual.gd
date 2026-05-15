@@ -8,7 +8,6 @@ var ctx  # ContextMenu 引用
 # ── 按钮引用 ──
 var _effects_btn: Button
 var _elastic_btn: Button
-var _theme_btn: Button
 var _effect_color_btns: Array[Button] = []
 
 func _init(context_menu) -> void:
@@ -27,13 +26,6 @@ func build() -> void:
 	_elastic_btn = ctx._make_menu_btn("弹性 · 关闭 [+]", Color(1.0, 0.85, 0.3, 1))
 	vbox.add_child(_elastic_btn)
 	ctx._bind_l3_trigger(_elastic_btn, "elastic", "sec_visual")
-
-	_theme_btn = ctx._make_menu_btn("外观主题", Color(1.0, 0.85, 0.3, 1))
-	ctx._apply_capsule_style(_theme_btn, Color(0.12, 0.22, 0.42, 0.7), Color(0.4, 0.6, 0.9, 0.5))
-	_theme_btn.pressed.connect(func():
-		ctx._close_and_emit(EventBus.show_theme_panel)
-	)
-	vbox.add_child(_theme_btn)
 
 	panel.mouse_entered.connect(func(): ctx._submenu.on_panel_enter())
 	panel.mouse_exited.connect(func(): ctx._submenu.on_panel_exit())

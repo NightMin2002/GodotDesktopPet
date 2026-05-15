@@ -5,7 +5,6 @@
 extends CanvasLayer
 
 const InfoSidebar = preload("res://ui/context_menu/info_sidebar.gd")
-const SysinfoBubble = preload("res://ui/context_menu/sysinfo_bubble.gd")
 const MenuTooltip = preload("res://ui/context_menu/menu_tooltip.gd")
 const SubmenuSystem = preload("res://ui/context_menu/submenu_system.gd")
 const CyberMenuBtn = preload("res://ui/context_menu/cyber_menu_button.gd")
@@ -30,7 +29,6 @@ const SecSystem = preload("res://ui/context_menu/sec_system.gd")
 # ── 子系统 ──
 var _submenu: SubmenuSystem
 var _sidebar: InfoSidebar
-var _sysinfo_bubble: SysinfoBubble
 var _tooltip: MenuTooltip
 var _fx_preview: EffectPreview
 
@@ -50,7 +48,6 @@ func _ready() -> void:
 
 	_sidebar = InfoSidebar.new(self)
 	_sidebar.build()
-	_sysinfo_bubble = SysinfoBubble.new(self)
 	_tooltip = MenuTooltip.new(self)
 	_tooltip.build()
 	_submenu = SubmenuSystem.new(self)
@@ -128,6 +125,7 @@ func _build_sec_display() -> void:
 		{"id": "hud_pin", "on": "常驻显示 [●]", "off": "常驻显示 [○]", "key": "hud_pin", "default": false},
 		{"id": "hud_clock", "on": "系统时钟 [●]", "off": "系统时钟 [○]", "key": "hud_clock", "default": false},
 		{"id": "hud_wifi", "on": "WiFi 信息 [●]", "off": "WiFi 信息 [○]", "key": "hud_wifi", "default": false},
+		{"id": "hud_todo", "on": "待办计数 [●]", "off": "待办计数 [○]", "key": "hud_todo", "default": false},
 	])
 
 ## 统一入口
@@ -248,6 +246,7 @@ func _refresh_submenu_states() -> void:
 	_submenu.refresh_toggle("hud_pin", SettingsManager.get_bool("hud_pin", false), "常驻显示 [●]", "常驻显示 [○]")
 	_submenu.refresh_toggle("hud_clock", SettingsManager.get_bool("hud_clock", false), "系统时钟 [●]", "系统时钟 [○]")
 	_submenu.refresh_toggle("hud_wifi", SettingsManager.get_bool("hud_wifi", false), "WiFi 信息 [●]", "WiFi 信息 [○]")
+	_submenu.refresh_toggle("hud_todo", SettingsManager.get_bool("hud_todo", false), "待办计数 [●]", "待办计数 [○]")
 	# 弹性形变
 	var elastic_mode = SettingsManager.get_int("elastic_mode", 0)
 	_sec_visual.apply_elastic_mode(elastic_mode, false)
@@ -280,7 +279,6 @@ func _process(delta: float) -> void:
 		# L3 子菜单跟随
 		if _submenu.l3_active != "":
 			_submenu.update_l3_position(_submenu.l3_active)
-	_sysinfo_bubble.process_tick()
 	if _tooltip.panel.visible:
 		_tooltip.update_position()
 	_fx_preview.update_positions()

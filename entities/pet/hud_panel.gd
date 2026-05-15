@@ -1,6 +1,6 @@
 # hud_panel.gd — 统一 HUD 悬浮面板
 # 宠物侧边的紧凑信息卡片，整合所有 HUD 小组件
-# 当前组件: 时钟、WiFi  |  可扩展: CPU、内存、电量等
+# 当前组件: 时钟、WiFi、待办计数  |  可扩展: CPU、内存、电量等
 class_name HudPanel
 extends RefCounted
 
@@ -10,6 +10,7 @@ var panel: PanelContainer
 # ── 组件开关 ──
 var clock_enabled: bool = false
 var wifi_enabled: bool = false
+var todo_enabled: bool = false
 var hud_pin: bool = false  # true=常驻显示, false=鼠标悬浮显示
 
 # ── 时钟组件 ──
@@ -27,6 +28,13 @@ var _wifi_has_pending: bool = false  # 原子标志: 后台线程写入, 主线�
 var _wifi_in_flight: bool = false   # 并发查询保护: 防止多个 PowerShell 进程同时运行
 const WIFI_REFRESH_INTERVAL := 15.0
 
+# ── 待办计数组件 ──
+var _todo_row: HBoxContainer
+var _todo_label: Label
+var _todo_dot: Label
+var _todo_pending: int = 0
+var _todo_total: int = 0
+
 var _menu_hidden: bool = false  # 被右键菜单遮挡时临时隐藏
 
 # ── 悬浮显示状态 ──
@@ -40,6 +48,7 @@ func init(p: RigidBody2D) -> void:
 	_build_panel()
 	EventBus.context_menu_toggled.connect(_on_menu_toggled)
 	EventBus.pet_color_changed.connect(_on_pet_color_changed)
+	EventBus.todo_count_changed.connect(_on_todo_count_changed)
 
 func _on_menu_toggled(is_open: bool) -> void:
 	if not _has_any_component():
@@ -90,6 +99,7 @@ func _build_panel() -> void:
 	
 	_build_clock_row(vbox)
 	_build_wifi_row(vbox)
+	_build_todo_row(vbox)
 	
 	pet.add_child(panel)
 
@@ -192,6 +202,14 @@ func set_wifi(on: bool) -> void:
 		_refresh_wifi_async()
 	_refresh_panel_visibility()
 
+func set_todo(on: bool) -> void:
+	todo_enabled = on
+	if is_instance_valid(_todo_row):
+		_todo_row.visible = on
+	if is_instance_valid(panel):
+		panel.reset_size()
+	_refresh_panel_visibility()
+
 func set_pin(on: bool) -> void:
 	hud_pin = on
 	if on:
@@ -224,7 +242,7 @@ func set_hover(is_hovering: bool) -> void:
 		_hover_fade_timer = HOVER_FADE_DELAY
 
 func _has_any_component() -> bool:
-	return clock_enabled or wifi_enabled
+	return clock_enabled or wifi_enabled or todo_enabled
 
 ## 可见性统一入口: 常驻模式直接显示, 悬浮模式由 hover 状态控制
 func _refresh_panel_visibility() -> void:
@@ -372,6 +390,64 @@ func _wifi_worker() -> void:
 func _on_wifi_row_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		OS.shell_open("ms-settings:network-wifi")
+
+# ── 待办计数 ──
+
+func _build_todo_row(parent: VBoxContainer) -> void:
+	_todo_row = HBoxContainer.new()
+	_todo_row.mouse_filter = Control.MOUSE_FILTER_STOP
+	_todo_row.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_todo_row.tooltip_text = "点击打开待办清单"
+	_todo_row.add_theme_constant_override("separation", 4)
+	_todo_row.visible = false
+	_todo_row.gui_input.connect(_on_todo_row_input)
+	parent.add_child(_todo_row)
+
+	# 标签列
+	var tag_box = HBoxContainer.new()
+	tag_box.custom_minimum_size = Vector2(38, 0)
+	tag_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tag_box.add_theme_constant_override("separation", 2)
+	_todo_row.add_child(tag_box)
+
+	_todo_dot = Label.new()
+	_todo_dot.text = "\u25cf"
+	_todo_dot.add_theme_font_size_override("font_size", 8)
+	_todo_dot.add_theme_color_override("font_color", Color(0.5, 0.6, 0.75, 0.5))
+	_todo_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tag_box.add_child(_todo_dot)
+
+	var todo_tag = Label.new()
+	todo_tag.text = "TODO"
+	todo_tag.add_theme_font_size_override("font_size", 10)
+	todo_tag.add_theme_color_override("font_color", Color(0.5, 0.65, 0.85, 0.6))
+	todo_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tag_box.add_child(todo_tag)
+
+	_todo_label = Label.new()
+	_todo_label.text = "0/0"
+	_todo_label.add_theme_font_size_override("font_size", 17)
+	_todo_label.add_theme_color_override("font_color", Color(0.85, 0.92, 1.0, 0.95))
+	_todo_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_todo_row.add_child(_todo_label)
+
+func _on_todo_count_changed(pending: int, total: int) -> void:
+	_todo_pending = pending
+	_todo_total = total
+	if is_instance_valid(_todo_label):
+		var done = total - pending
+		_todo_label.text = "%d/%d" % [done, total] if total > 0 else "0"
+	if is_instance_valid(_todo_dot):
+		var c: Color
+		if pending > 0:
+			c = Color(0.9, 0.7, 0.2, 0.9)  # 有待办: 金色
+		else:
+			c = Color(0.3, 0.8, 0.4, 0.9)  # 全完成: 绿色
+		_todo_dot.add_theme_color_override("font_color", c)
+
+func _on_todo_row_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		EventBus.show_todo_panel.emit()
 
 # ── 主题色联动 ──
 
