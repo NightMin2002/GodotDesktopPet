@@ -4,10 +4,10 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 /// <summary>
-/// 全局键鼠输入监控器
-/// 键盘: WH_KEYBOARD_LL 低级钩子 (按键频率低, 无性能影响)
-/// 鼠标: 纯轮询 GetAsyncKeyState + GetCursorPos (不使用鼠标钩子, 避免卡鼠标)
-/// 代价: 滚轮无法通过轮询采集, 暂不支持
+/// 全局键鼠输入 + 窗口追踪 监控器
+/// 键盘: WH_KEYBOARD_LL 低级钩子
+/// 鼠标: 纯轮询 GetAsyncKeyState + GetCursorPos
+/// 窗口: 轮询 GetForegroundWindow (每5秒), 按进程名聚合
 /// </summary>
 public partial class InputMonitor : Node
 {
@@ -34,6 +34,23 @@ public partial class InputMonitor : Node
 
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int vKey);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct POINT { public int X, Y; }
@@ -102,6 +119,21 @@ public partial class InputMonitor : Node
     private bool _active = false;
     private DateTime _sessionStart;
 
+    // 窗口追踪
+    private class WindowInfo
+    {
+        public string ProcessName;
+        public HashSet<string> Titles = new();
+        public DateTime FirstSeen;
+        public DateTime LastActive;
+        public double FocusSeconds;  // 累计前台时长
+    }
+    private readonly Dictionary<string, WindowInfo> _windowStats = new();
+    private string _lastFgProcess = "";
+    private DateTime _lastFgTime;
+    private double _windowPollTimer = 0;
+    private const double WINDOW_POLL_INTERVAL = 5.0; // 5秒轮询一次
+
     // ══════════════════════════════════════════════════════════════
     //  生命周期
     // ══════════════════════════════════════════════════════════════
@@ -144,6 +176,14 @@ public partial class InputMonitor : Node
             _lastMousePos = pos;
             _hasLastMousePos = true;
         }
+
+        // ── 前台窗口轮询 (5秒一次) ──
+        _windowPollTimer += MOUSE_POLL_INTERVAL; // 借用鼠标轮询的计时
+        if (_windowPollTimer >= WINDOW_POLL_INTERVAL)
+        {
+            _windowPollTimer = 0;
+            PollForegroundWindow();
+        }
     }
 
     public override void _ExitTree()
@@ -166,7 +206,12 @@ public partial class InputMonitor : Node
         IntPtr hMod = GetModuleHandle(null);
         _kbHook = SetWindowsHookEx(WH_KEYBOARD_LL, _kbProc, hMod, 0);
 
-        GD.Print($"[InputMonitor] 监控已启动 (keyboard_hook={_kbHook != IntPtr.Zero}, mouse=polling)");
+        _lastFgTime = DateTime.Now;
+
+        // 冷启动: 扫描当前所有可见窗口
+        ScanAllVisibleWindows();
+
+        GD.Print($"[InputMonitor] 监控已启动 (keyboard_hook={_kbHook != IntPtr.Zero}, mouse=polling, window=5s, 初始窗口={_windowStats.Count})");
     }
 
     /// <summary>停止监控</summary>
@@ -208,6 +253,28 @@ public partial class InputMonitor : Node
         return dict;
     }
 
+    /// <summary>获取窗口使用统计 (按进程名聚合)</summary>
+    public Godot.Collections.Dictionary GetWindowStats()
+    {
+        // 先结算当前前台窗口的时长
+        FlushCurrentFg();
+        var dict = new Godot.Collections.Dictionary();
+        foreach (var kv in _windowStats)
+        {
+            var info = kv.Value;
+            var entry = new Godot.Collections.Dictionary();
+            entry["process"] = info.ProcessName;
+            var titlesArr = new Godot.Collections.Array();
+            foreach (var t in info.Titles) titlesArr.Add(t);
+            entry["titles"] = titlesArr;
+            entry["focus_sec"] = (long)info.FocusSeconds;
+            entry["first_seen"] = info.FirstSeen.ToString("HH:mm:ss");
+            entry["last_active"] = info.LastActive.ToString("HH:mm:ss");
+            dict[kv.Key] = entry;
+        }
+        return dict;
+    }
+
     /// <summary>获取总击键次数</summary>
     public long GetTotalKeystrokes()
     {
@@ -232,6 +299,7 @@ public partial class InputMonitor : Node
         snap["mouse"] = GetMouseStats();
         snap["total_keystrokes"] = GetTotalKeystrokes();
         snap["session_sec"] = (long)GetSessionDurationSec();
+        snap["windows"] = GetWindowStats();
         snap["timestamp"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
         return snap;
     }
@@ -246,6 +314,9 @@ public partial class InputMonitor : Node
         _middleClicks = 0;
         _mouseDistancePx = 0;
         _hasLastMousePos = false;
+        _windowStats.Clear();
+        _lastFgProcess = "";
+        _windowPollTimer = 0;
         _sessionStart = DateTime.Now;
         GD.Print("[InputMonitor] 统计数据已重置");
     }
@@ -349,5 +420,132 @@ public partial class InputMonitor : Node
             0xDE => "'",
             _ => $"VK_{vk:X2}"
         };
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  前台窗口追踪
+    // ══════════════════════════════════════════════════════════════
+
+    private void PollForegroundWindow()
+    {
+        try
+        {
+            IntPtr hwnd = GetForegroundWindow();
+            if (hwnd == IntPtr.Zero) return;
+            if (!IsWindowVisible(hwnd)) return;
+
+            // 获取进程名
+            GetWindowThreadProcessId(hwnd, out uint pid);
+            string procName;
+            try
+            {
+                var proc = System.Diagnostics.Process.GetProcessById((int)pid);
+                procName = proc.ProcessName;
+            }
+            catch { return; } // 进程可能已退出
+
+            // 获取窗口标题
+            var sb = new System.Text.StringBuilder(512);
+            GetWindowText(hwnd, sb, 512);
+            string title = sb.ToString().Trim();
+            if (string.IsNullOrEmpty(title)) return;
+
+            // 过滤自身和系统任务栏
+            if (procName == "explorer" || procName == "SearchHost" ||
+                procName == "ShellExperienceHost" || procName == "StartMenuExperienceHost")
+                return;
+
+            var now = DateTime.Now;
+
+            // 结算上一个前台窗口的时长
+            FlushCurrentFg();
+
+            // 更新统计
+            if (!_windowStats.TryGetValue(procName, out var info))
+            {
+                info = new WindowInfo
+                {
+                    ProcessName = procName,
+                    FirstSeen = now,
+                };
+                _windowStats[procName] = info;
+            }
+            info.Titles.Add(title); // HashSet 自动去重
+            info.LastActive = now;
+
+            _lastFgProcess = procName;
+            _lastFgTime = now;
+        }
+        catch (Exception e)
+        {
+            GD.PrintErr($"[InputMonitor] 窗口轮询异常: {e.Message}");
+        }
+    }
+
+    /// <summary>结算当前前台窗口的累计时长</summary>
+    private void FlushCurrentFg()
+    {
+        if (string.IsNullOrEmpty(_lastFgProcess)) return;
+        if (_windowStats.TryGetValue(_lastFgProcess, out var info))
+        {
+            double elapsed = (DateTime.Now - _lastFgTime).TotalSeconds;
+            if (elapsed > 0 && elapsed < 60) // 防止异常大值
+            {
+                info.FocusSeconds += elapsed;
+            }
+        }
+        _lastFgTime = DateTime.Now;
+    }
+
+    /// <summary>启动时扫描所有可见窗口, 填入统计表</summary>
+    private void ScanAllVisibleWindows()
+    {
+        var now = DateTime.Now;
+        var skipProcesses = new HashSet<string>
+        {
+            "explorer", "SearchHost", "ShellExperienceHost",
+            "StartMenuExperienceHost", "TextInputHost",
+            "ApplicationFrameHost", "SystemSettings",
+            "svchost", "csrss", "dwm", "winlogon"
+        };
+
+        EnumWindows((hWnd, _) =>
+        {
+            try
+            {
+                if (!IsWindowVisible(hWnd)) return true;
+
+                var sb = new System.Text.StringBuilder(512);
+                GetWindowText(hWnd, sb, 512);
+                string title = sb.ToString().Trim();
+                if (string.IsNullOrEmpty(title)) return true;
+
+                GetWindowThreadProcessId(hWnd, out uint pid);
+                string procName;
+                try
+                {
+                    var proc = System.Diagnostics.Process.GetProcessById((int)pid);
+                    procName = proc.ProcessName;
+                }
+                catch { return true; }
+
+                if (skipProcesses.Contains(procName)) return true;
+
+                if (!_windowStats.TryGetValue(procName, out var info))
+                {
+                    info = new WindowInfo
+                    {
+                        ProcessName = procName,
+                        FirstSeen = now,
+                    };
+                    _windowStats[procName] = info;
+                }
+                info.Titles.Add(title);
+                info.LastActive = now;
+                // 初始扫描不累计前台时长 (FocusSeconds 保持 0)
+            }
+            catch { /* 忽略单个窗口的异常 */ }
+            return true; // 继续枚举
+        }, IntPtr.Zero);
     }
 }

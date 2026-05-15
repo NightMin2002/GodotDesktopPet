@@ -28,6 +28,7 @@ signal show_pet_profile_reminder                      # 打开装置终端 + 切
 signal todo_count_changed(pending: int, total: int)   # 待办数量变化 (供宠物主动行为用)
 signal trigger_todo_prompt                            # 调试: 强制触发待办主动提醒
 signal trigger_input_report                           # 调试: 强制生成键鼠输入报告 (写入机体记录)
+signal trigger_window_report                          # 调试: 强制生成窗口活动报告 (写入机体记录)
 
 # ── 窗口交互模式 ──
 signal window_mode_changed(mode: int)  # 0=FREE, 1=CONFINED, 2=REPELLED

@@ -35,8 +35,25 @@ static func update_detail_panel(ctx: Dictionary) -> void:
 	ui.title_edit.text = entry.get("title", "")
 	ui.title_edit.editable = true
 
-	ui.content_edit.text = entry.get("content", "")
-	ui.content_edit.editable = not is_pet
+	# 检测是否为窗口报告 (有结构化数据)
+	var tags = entry.get("tags", [])
+	var is_window_report = ("sys:window" in tags and entry.has("window_data"))
+
+	if is_window_report:
+		# 窗口报告: 卡片模式
+		ui.content_edit.visible = false
+		if ui.has("window_cards_scroll"):
+			ui.window_cards_scroll.visible = true
+			var cards_container = ui.window_cards_scroll.get_child(0) if ui.window_cards_scroll.get_child_count() > 0 else null
+			if cards_container and ctx.has("render_window_cards"):
+				ctx.render_window_cards.call(cards_container, entry.get("window_data", {}))
+	else:
+		# 普通模式: TextEdit
+		ui.content_edit.visible = true
+		ui.content_edit.text = entry.get("content", "")
+		ui.content_edit.editable = not is_pet
+		if ui.has("window_cards_scroll"):
+			ui.window_cards_scroll.visible = false
 
 	ui.del_btn.visible = true
 	ui.tag_input.visible = true

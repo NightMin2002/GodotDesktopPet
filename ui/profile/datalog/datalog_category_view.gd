@@ -5,7 +5,7 @@ extends RefCounted
 # 分类定义
 const PET_CATEGORIES = [
 	{"tag": "sys:input", "title": "键鼠行为", "desc": "击键统计 / 组合键 / 点击 / 移动距离", "icon": "//"},
-	#{"tag": "sys:window", "title": "窗口程序", "desc": "前台应用使用时长分布", "icon": "[]"},
+	{"tag": "sys:window", "title": "窗口程序", "desc": "前台应用使用时长分布", "icon": "[]"},
 	#{"tag": "sys:session", "title": "会话概要", "desc": "在线时长 / 启动关机 / 深夜检测", "icon": "<>"},
 ]
 

@@ -456,7 +456,9 @@ func _setup_input_monitor() -> void:
 	# 连接手动触发信号
 	if EventBus.has_signal("trigger_input_report"):
 		EventBus.trigger_input_report.connect(_on_trigger_input_report)
-	print("[InputMonitor] 键鼠采集系统已挂载")
+	if EventBus.has_signal("trigger_window_report"):
+		EventBus.trigger_window_report.connect(_on_trigger_window_report)
+	print("[InputMonitor] 键鼠+窗口采集系统已挂载")
 
 func _on_trigger_input_report() -> void:
 	if not input_monitor or not input_monitor.has_method("GetFullSnapshot"):
@@ -520,7 +522,87 @@ func _format_input_report(snap: Dictionary) -> String:
 		var dist_px = mouse.get("distance_px", 0)
 		if dist_px > 0:
 			lines.append("  移动: %.1f m (估算)" % (float(dist_px) / 3780.0))  # 96dpi ≈ 3780px/m
-	
+
+	return "\n".join(lines)
+
+func _on_trigger_window_report() -> void:
+	if not input_monitor or not input_monitor.has_method("GetWindowStats"):
+		return
+	var win_stats: Dictionary = input_monitor.call("GetWindowStats")
+	var now = Time.get_datetime_string_from_system(false, true)
+	var td = Time.get_datetime_dict_from_system()
+
+	# 生成摘要 (用于列表预览) 和 JSON 数据 (用于卡片渲染)
+	var app_count = win_stats.size()
+	var total_sec = 0
+	for proc_name in win_stats:
+		total_sec += int(win_stats[proc_name].get("focus_sec", 0))
+	var summary = "检测到 %d 个应用" % app_count
+	if total_sec >= 60:
+		summary += ", 累计前台 %dm" % (total_sec / 60)
+
+	var entry = {
+		"id": "%d_%d" % [Time.get_unix_time_from_system(), randi() % 100000],
+		"title": "窗口活动报告 %02d-%02d %02d:%02d" % [td.month, td.day, td.hour, td.minute],
+		"content": summary,
+		"window_data": win_stats,  # 结构化数据, 供卡片渲染
+		"tags": ["sys:window", "auto"],
+		"source": "pet",
+		"created": now,
+		"updated": now,
+	}
+	var logs = SettingsManager.get_datalogs()
+	logs.insert(0, entry)
+	SettingsManager.save_datalogs(logs)
+	print("[InputMonitor] 手动触发: 窗口活动报告已写入 (%d 个应用)" % app_count)
+
+# 以下 _format_window_report 保留给纯文本降级场景
+func _format_window_report(win_stats: Dictionary) -> String:
+	var lines: PackedStringArray = []
+	lines.append("=== 窗口活动统计 ===")
+	lines.append("")
+
+	if win_stats.is_empty():
+		lines.append("本次会话未检测到窗口活动")
+		return "\n".join(lines)
+
+	# 按前台时长排序
+	var sorted = []
+	for proc_name in win_stats:
+		var info: Dictionary = win_stats[proc_name]
+		sorted.append([proc_name, info])
+	sorted.sort_custom(func(a, b): return a[1].get("focus_sec", 0) > b[1].get("focus_sec", 0))
+
+	for item in sorted:
+		var proc_name: String = item[0]
+		var info: Dictionary = item[1]
+		var focus_sec: int = info.get("focus_sec", 0)
+		var titles: Array = info.get("titles", [])
+		var first_seen: String = info.get("first_seen", "")
+		var last_active: String = info.get("last_active", "")
+
+		# 格式化时长
+		var time_str = ""
+		if focus_sec >= 3600:
+			time_str = "%dh%dm" % [focus_sec / 3600, (focus_sec % 3600) / 60]
+		elif focus_sec >= 60:
+			time_str = "%dm%ds" % [focus_sec / 60, focus_sec % 60]
+		else:
+			time_str = "%ds" % focus_sec
+
+		lines.append("[%s] 前台 %s" % [proc_name, time_str])
+		lines.append("  活跃: %s ~ %s" % [first_seen, last_active])
+		# 显示最多 3 个窗口标题
+		var show_count = mini(3, titles.size())
+		for i in range(show_count):
+			var t = str(titles[i])
+			if t.length() > 50:
+				t = t.substr(0, 50) + "..."
+			lines.append("  // %s" % t)
+		if titles.size() > 3:
+			lines.append("  // ...另外 %d 个窗口" % (titles.size() - 3))
+		lines.append("")
+
 	return "\n".join(lines)
 
 # ── 任务栏样式守护 ──

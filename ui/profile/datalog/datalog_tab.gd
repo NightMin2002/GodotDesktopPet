@@ -14,6 +14,7 @@ var _selected_idx: int = -1  # 在 _filtered 中的索引
 const DatalogCategoryView = preload("res://ui/profile/datalog/datalog_category_view.gd")
 const DatalogDetailView = preload("res://ui/profile/datalog/datalog_detail_view.gd")
 const DatalogListView = preload("res://ui/profile/datalog/datalog_list_view.gd")
+const DatalogWindowCards = preload("res://ui/profile/datalog/datalog_window_cards.gd")
 var _ctx: Dictionary = {}  # 共享上下文, 传递给子模块
 
 # ── UI 引用 ──
@@ -34,6 +35,7 @@ var _filter_btns: Array[Button] = []
 var _scroll: ScrollContainer
 var _detail_header: Label
 var _detail_empty: VBoxContainer  # 右栏未选中时的引导
+var _window_cards_scroll: ScrollContainer  # 窗口卡片容器
 var _search_row: HBoxContainer     # 搜索+按钮行 (分类首页时隐藏)
 var _back_btn: Button              # 子列表返回按钮
 var _category_container: VBoxContainer  # 分类卡片容器
@@ -157,7 +159,10 @@ func build() -> void:
 	_report_btn.add_theme_stylebox_override("hover", rb_h)
 	_report_btn.add_theme_stylebox_override("pressed", rb_h)
 	_report_btn.pressed.connect(func():
-		EventBus.trigger_input_report.emit()
+		if _pet_category == "sys:input":
+			EventBus.trigger_input_report.emit()
+		elif _pet_category == "sys:window":
+			EventBus.trigger_window_report.emit()
 		# 稍后刷新列表
 		var tw = create_tween()
 		tw.tween_interval(0.1)
@@ -345,6 +350,19 @@ func build() -> void:
 	_content_edit.text_changed.connect(_on_content_changed)
 	_detail_panel.add_child(_content_edit)
 
+	# 窗口卡片容器 (替代 TextEdit, 当显示 sys:window 条目时)
+	_window_cards_scroll = ScrollContainer.new()
+	_window_cards_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_window_cards_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_window_cards_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_window_cards_scroll.visible = false
+	_detail_panel.add_child(_window_cards_scroll)
+
+	var cards_inner = VBoxContainer.new()
+	cards_inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cards_inner.add_theme_constant_override("separation", 0)
+	_window_cards_scroll.add_child(cards_inner)
+
 	# 底部信息栏
 	var bottom = HBoxContainer.new()
 	bottom.add_theme_constant_override("separation", 8)
@@ -419,10 +437,12 @@ func _build_ctx() -> void:
 			"del_btn": _del_btn,
 			"save_badge": _save_badge,
 			"save_timer": _save_timer,
+			"window_cards_scroll": _window_cards_scroll,
 		},
 		"render_list": _render_list,
 		"apply_filter": _apply_filter,
 		"make_tag_badge": _make_tag_badge,
+		"render_window_cards": DatalogWindowCards.render,
 	}
 
 func refresh() -> void:
@@ -481,7 +501,7 @@ func _update_pet_view() -> void:
 		_scroll.visible = true
 		_search_row.visible = true
 		_back_btn.visible = true
-		_report_btn.visible = (_pet_category == "sys:input")
+		_report_btn.visible = (_pet_category in ["sys:input", "sys:window"])
 		_apply_filter()
 
 func _render_pet_categories() -> void:
