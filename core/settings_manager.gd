@@ -116,6 +116,17 @@ func save_todos(list: Array) -> void:
 	_config.set_value("todos", "list", list)
 	_config.save(SETTINGS_PATH)
 
+## 数据日志存取
+## 格式: [{"id": "ts_rand", "title": "标题", "content": "正文", "tags": [], "source": "user"|"pet", "created": "...", "updated": "..."}, ...]
+
+func get_datalogs() -> Array:
+	var data = _config.get_value("datalogs", "entries", [])
+	return data if data is Array else []
+
+func save_datalogs(list: Array) -> void:
+	_config.set_value("datalogs", "entries", list)
+	_config.save(SETTINGS_PATH)
+
 ## ── 颜色系统 ──
 ## pet_index: 0=原体, 1~5=克隆体
 ## 存储格式: [colors] pet_0_hue=223, pet_0_sat=50, pet_0_val=50, ui_hue=190
