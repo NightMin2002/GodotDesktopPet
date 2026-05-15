@@ -228,14 +228,13 @@ func _load_saved_settings() -> void:
 	_submenu.refresh_radio("gait", gm)
 
 	var am = SettingsManager.get_int("auto_activity", 1)
-	_sec_play.update_activity_label(am)
+	_sec_pet.update_activity_label(am)
 	_submenu.refresh_radio("auto_activity", am)
 
 	var chatter_mode = SettingsManager.get_int("pet_chatter_mode", 1)
 	_sec_pet.update_chatter_label(chatter_mode)
 	_submenu.refresh_radio("chatter", chatter_mode)
 
-	_sec_system.schedule_autostart_check()
 
 func _refresh_submenu_states() -> void:
 	_submenu.refresh_toggle("shockwave", SettingsManager.get_bool("shockwave", true), "撞击冲击波 [●]", "撞击冲击波 [○]")
@@ -267,7 +266,6 @@ func _refresh_submenu_states() -> void:
 # ═══════════════════════════════════════════
 
 func _process(delta: float) -> void:
-	_sec_system.check_autostart_deferred(delta)
 	if hud.visible and is_instance_valid(target):
 		var target_pos = _calc_menu_pos(target.get_global_transform_with_canvas().get_origin())
 		hud.position = hud.position.lerp(target_pos, delta * 15.0)

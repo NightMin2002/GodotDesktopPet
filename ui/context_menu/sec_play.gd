@@ -1,15 +1,14 @@
-# sec_play.gd — 玩法分区 (构建 + 回调 + 游戏列表)
+# sec_play.gd — 玩法分区 (构建 + 回调 + 游戏列表 + 自娱指令)
 extends RefCounted
+
+const _CyberMenuBtn = preload("res://ui/context_menu/cyber_menu_button.gd")
 
 var ctx  # ContextMenu 引用
 
 # ── 按钮引用 ──
 var _entertain_btn: Button
-var _activity_btn: Button
+var _auto_play_btn: Button
 var _game_container: VBoxContainer
-
-# ── 常量 ──
-const ACTIVITY_LABELS := ["自主活动 · 已关闭 [+]", "自主活动 · 偶尔 [+]", "自主活动 · 频繁 [+]"]
 
 func _init(context_menu) -> void:
 	ctx = context_menu
@@ -24,9 +23,9 @@ func build() -> void:
 	vbox.add_child(_entertain_btn)
 	ctx._bind_l3_trigger(_entertain_btn, "entertain", "sec_play")
 
-	_activity_btn = ctx._make_menu_btn("自主活动 · 偶尔 [+]", Color(0.3, 1.0, 0.7, 1))
-	vbox.add_child(_activity_btn)
-	ctx._bind_l3_trigger(_activity_btn, "auto_activity", "sec_play")
+	_auto_play_btn = ctx._make_menu_btn("自娱指令 [+]", Color(0.3, 1.0, 0.7, 1))
+	vbox.add_child(_auto_play_btn)
+	ctx._bind_l3_trigger(_auto_play_btn, "auto_play", "sec_play")
 
 	# 小游戏入口容器 (菜单打开时动态填充)
 	_game_container = VBoxContainer.new()
@@ -44,24 +43,55 @@ func build() -> void:
 	], 3)
 	ctx._submenu._l3_parent_map["entertain"] = "sec_play"
 
-	# L3: 自主活动单选
-	ctx._submenu.create_radio("auto_activity", [
-		{"value": 0, "label": "关闭", "desc": "不会自己玩游戏或跳跃"},
-		{"value": 1, "label": "偶尔", "desc": "隔很久才自己动一下"},
-		{"value": 2, "label": "频繁", "desc": "经常自己找事做"},
-	], _on_radio_auto_activity, 3)
-	ctx._submenu._l3_parent_map["auto_activity"] = "sec_play"
+	# L3: 自娱指令
+	_build_auto_play_submenu()
 
-# ── 自主活动 ──
+# ── 自娱指令 ──
 
-func _on_radio_auto_activity(value: int) -> void:
-	update_activity_label(value)
-	SettingsManager.set_int("auto_activity", value)
-	EventBus.setting_toggled.emit("auto_activity", value > 0)
-	ctx._submenu.refresh_radio("auto_activity", value)
+func _build_auto_play_submenu() -> void:
+	var panel = ctx._submenu._make_panel()
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+	panel.add_child(vbox)
 
-func update_activity_label(mode: int) -> void:
-	_activity_btn.text = ACTIVITY_LABELS[mode]
+	var auto_items := [
+		{"label": "自动对弈", "game_id": "2048", "desc": "让宠物自己玩一局 2048"},
+		{"label": "自动扫雷", "game_id": "minesweeper", "desc": "让宠物自己玩一局扫雷"},
+		{"label": "自动导航", "game_id": "snake", "desc": "让宠物自己玩一局贪吃蛇"},
+		{"label": "自动堆叠", "game_id": "tetris", "desc": "让宠物自己玩一局俄罗斯方块"},
+	]
+
+	for item in auto_items:
+		var btn = _CyberMenuBtn.new()
+		btn.flat = true
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.add_theme_font_size_override("font_size", 19)
+		btn.add_theme_color_override("font_color", Color(0.8, 0.9, 1, 1))
+		btn.add_theme_color_override("font_hover_color", Color(0.3, 1.0, 0.7, 1))
+		btn.text = item.label
+		var gid = item.game_id
+		btn.pressed.connect(func(): _on_auto_play_pressed(gid))
+		if item.has("desc"):
+			var desc_text = item.desc
+			var b = btn
+			btn.mouse_entered.connect(func(): ctx._tooltip.show_for(b, desc_text, true))
+			btn.mouse_exited.connect(func(): ctx._tooltip.show_for(b, desc_text, false))
+		vbox.add_child(btn)
+
+	panel.mouse_entered.connect(func(): ctx._submenu.on_l3_panel_enter())
+	panel.mouse_exited.connect(func(): ctx._submenu.on_l3_panel_exit())
+	ctx.add_child(panel)
+	ctx._submenu.l3_panels["auto_play"] = panel
+	ctx._submenu._l3_parent_map["auto_play"] = "sec_play"
+
+func _on_auto_play_pressed(game_id: String) -> void:
+	ctx._tooltip.panel.hide()
+	ctx._submenu.hide_all_instant()
+	ctx.hud.hide()
+	ctx._sidebar.panel.hide()
+	ctx.target = null
+	EventBus.context_menu_toggled.emit(false)
+	EventBus.launch_game_auto.emit(game_id)
 
 # ── 游戏列表 ──
 
@@ -109,3 +139,4 @@ func update_game_list() -> void:
 			btn.mouse_entered.connect(func(): ctx._tooltip.show_for(b, desc_text, true))
 			btn.mouse_exited.connect(func(): ctx._tooltip.show_for(b, desc_text, false))
 		_game_container.add_child(btn)
+

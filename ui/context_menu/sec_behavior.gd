@@ -156,10 +156,6 @@ func _build_debug_behavior_submenu() -> void:
 		{"label": "碎碎念", "behavior": "_chatter", "desc": "立即触发一次碎碎念气泡"},
 		{"label": "待办提醒", "behavior": "_todo_prompt", "desc": "强制触发一次待办主动提醒"},
 		{"label": "空间跳跃", "behavior": "_free_roam", "desc": "触发一次空间跳跃踏板序列"},
-		{"label": "自动对弈", "behavior": "_auto_game_2048", "desc": "宠物自己玩一局 2048"},
-		{"label": "自动扫雷", "behavior": "_auto_game_mine", "desc": "宠物自己玩一局扫雷"},
-		{"label": "自动导航", "behavior": "_auto_game_snake", "desc": "宠物自己玩一局贪吃蛇"},
-		{"label": "自动堆叠", "behavior": "_auto_game_tetris", "desc": "宠物自己玩一局俄罗斯方块"},
 	]
 
 	for item in debug_items:
@@ -206,13 +202,5 @@ func _on_debug_behavior_pressed(behavior: String) -> void:
 		EventBus.trigger_free_roam.emit()
 	elif behavior == "_todo_prompt":
 		EventBus.trigger_todo_prompt.emit()
-	elif behavior == "_auto_game_2048":
-		EventBus.launch_game_auto.emit("2048")
-	elif behavior == "_auto_game_mine":
-		EventBus.launch_game_auto.emit("minesweeper")
-	elif behavior == "_auto_game_snake":
-		EventBus.launch_game_auto.emit("snake")
-	elif behavior == "_auto_game_tetris":
-		EventBus.launch_game_auto.emit("tetris")
 	else:
 		EventBus.trigger_idle_behavior.emit(behavior)

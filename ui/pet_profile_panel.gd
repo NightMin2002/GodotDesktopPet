@@ -201,6 +201,12 @@ func _build_ui() -> void:
 	tab_stack.add_child(tab4)
 	_tab_contents.append(tab4)
 
+	var tab5 = preload("res://ui/profile/profile_tab_config.gd").new()
+	tab5.build()
+	tab5.set_anchors_preset(Control.PRESET_FULL_RECT)
+	tab_stack.add_child(tab5)
+	_tab_contents.append(tab5)
+
 	# ── 转场特效覆盖层 ──
 	_transition_rect = ColorRect.new()
 	_transition_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -293,7 +299,7 @@ func _build_tab_bar() -> HBoxContainer:
 	var bar = HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 4)
 
-	var tabs = ["游戏战绩", "能力数据", "定时提醒", "数据日志", "关于"]
+	var tabs = ["游戏战绩", "能力数据", "定时提醒", "数据日志", "关于", "终端配置"]
 	
 	for i in range(tabs.size()):
 		var btn = Button.new()

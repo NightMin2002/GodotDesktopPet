@@ -7,6 +7,7 @@ var ctx  # ContextMenu 引用
 
 # ── 按钮引用 ──
 var _chatter_btn: Button
+var _activity_btn: Button
 var _clone_btn: Button
 var _todo_btn: Button
 var _deploy_clone_btn: Button
@@ -14,6 +15,9 @@ var _dismiss_btn: Button
 
 # ── 碎碎念 ──
 const CHATTER_MODE_LABELS := ["碎碎念 · 已关闭 [+]", "碎碎念 · 每30分钟 [+]", "碎碎念 · 每60分钟 [+]"]
+
+# ── 运行功耗 ──
+const ACTIVITY_LABELS := ["运行功耗 · 待机 [+]", "运行功耗 · 节能 [+]", "运行功耗 · 性能 [+]"]
 
 func _init(context_menu) -> void:
 	ctx = context_menu
@@ -39,6 +43,10 @@ func build() -> void:
 	)
 	vbox.add_child(_todo_btn)
 
+	_activity_btn = ctx._make_menu_btn("运行功耗 · 节能 [+]", Color(0.2, 0.85, 1.0, 1))
+	vbox.add_child(_activity_btn)
+	ctx._bind_l3_trigger(_activity_btn, "auto_activity", "sec_pet")
+
 	var terminal_btn = ctx._make_menu_btn("个人终端 [+]", Color(0.2, 0.85, 1.0, 1))
 	vbox.add_child(terminal_btn)
 	ctx._bind_l3_trigger(terminal_btn, "holo_terminal", "sec_pet")
@@ -56,6 +64,14 @@ func build() -> void:
 	], _on_radio_chatter_mode, 3)
 	ctx._submenu._l3_parent_map["chatter"] = "sec_pet"
 
+	# L3: 运行功耗单选
+	ctx._submenu.create_radio("auto_activity", [
+		{"value": 0, "label": "待机", "desc": "不会自发执行任何活动"},
+		{"value": 1, "label": "节能", "desc": "偶尔自发活动，间隔较长"},
+		{"value": 2, "label": "性能", "desc": "频繁自发活动，保持活跃"},
+	], _on_radio_auto_activity, 3)
+	ctx._submenu._l3_parent_map["auto_activity"] = "sec_pet"
+
 	# L3: 分身操作面板
 	_build_clone_l3_panel()
 	# L3: 个人终端
@@ -71,6 +87,17 @@ func _on_radio_chatter_mode(value: int) -> void:
 
 func update_chatter_label(mode: int) -> void:
 	_chatter_btn.text = CHATTER_MODE_LABELS[mode]
+
+# ── 运行功耗 ──
+
+func _on_radio_auto_activity(value: int) -> void:
+	update_activity_label(value)
+	SettingsManager.set_int("auto_activity", value)
+	EventBus.setting_toggled.emit("auto_activity", value > 0)
+	ctx._submenu.refresh_radio("auto_activity", value)
+
+func update_activity_label(mode: int) -> void:
+	_activity_btn.text = ACTIVITY_LABELS[mode]
 
 # ── 分身 ──
 

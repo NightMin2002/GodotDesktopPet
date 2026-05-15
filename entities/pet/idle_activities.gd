@@ -1,6 +1,6 @@
-# idle_activities.gd — 自主活动调度器
-# 管理 idle 状态下的定时自主活动: 空间跳跃 / 自己玩游戏 / 未来扩展...
-# 定时器驱动，到时间从池子里随机抽一个执行
+# idle_activities.gd — 自主活动调度器 (菜单名: 运行功耗)
+# 管理 idle 状态下的定时自主活动: 空间跳跃 / 浏览全息屏 / 自玩游戏
+# 定时器驱动，到时间从池子里随机抽一个执行。三档: 待机(关闭) / 节能(偶尔) / 性能(频繁)
 class_name IdleActivities
 extends RefCounted
 
@@ -131,4 +131,17 @@ func _do_holo_browse() -> void:
 		screen_side = 1.0
 	# 显示 15~25 秒
 	var duration = randf_range(15.0, 25.0)
-	pet.holo_screen.show_idle(screen_side, duration)
+	# 从适合自发触发的终端模式中随机抽一个
+	# 排除: DONE(需配合操作) / ERROR(无故报错不合理) / WARNING(同上) / ALARM(有特定触发场景)
+	var mode_pool: Array[Callable] = [
+		func(): pet.holo_screen.show_idle(screen_side, duration),
+		func(): pet.holo_screen.show_loading("SYS.CHECK", screen_side, duration),
+		func(): pet.holo_screen.show_battery(screen_side, duration),
+		func(): pet.holo_screen.show_mail(screen_side, duration),
+		func(): pet.holo_screen.show_query(screen_side, duration),
+		func(): pet.holo_screen.show_cleanup(screen_side, duration),
+		func(): pet.holo_screen.show_globe(screen_side, duration),
+		func(): pet.holo_screen.show_sync(screen_side, duration),
+		func(): pet.holo_screen.show_lock(screen_side, duration),
+	]
+	mode_pool[randi() % mode_pool.size()].call()
