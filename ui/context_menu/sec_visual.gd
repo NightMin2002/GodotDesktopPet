@@ -1,6 +1,8 @@
 # sec_visual.gd — 视觉分区 (构建 + 回调 + 特效配色 + 弹性形变)
 extends RefCounted
 
+const _CyberMenuBtn = preload("res://ui/context_menu/cyber_menu_button.gd")
+
 var ctx  # ContextMenu 引用
 
 # ── 按钮引用 ──
@@ -83,7 +85,8 @@ func _append_effect_color_radio() -> void:
 	var labels = ["虹彩模式", "跟随体色"]
 	_effect_color_btns.clear()
 	for i in range(2):
-		var btn = Button.new()
+		var btn = _CyberMenuBtn.new()
+
 		btn.flat = true
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.add_theme_font_size_override("font_size", 19)

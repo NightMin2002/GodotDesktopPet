@@ -25,7 +25,7 @@ func build() -> void:
 	style.bg_color = Color(0.035, 0.05, 0.1, 0.92)
 	style.border_color = Color.from_hsv(EventBus.ui_hue, 0.8, 1.0, 0.5)
 	style.set_border_width_all(1)
-	style.set_corner_radius_all(12)
+	style.set_corner_radius_all(0)
 	panel.add_theme_stylebox_override("panel", style)
 	_menu.add_child(panel)
 	var margin = MarginContainer.new()

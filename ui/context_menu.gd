@@ -8,6 +8,7 @@ const InfoSidebar = preload("res://ui/context_menu/info_sidebar.gd")
 const SysinfoBubble = preload("res://ui/context_menu/sysinfo_bubble.gd")
 const MenuTooltip = preload("res://ui/context_menu/menu_tooltip.gd")
 const SubmenuSystem = preload("res://ui/context_menu/submenu_system.gd")
+const CyberMenuBtn = preload("res://ui/context_menu/cyber_menu_button.gd")
 const EffectPreview = preload("res://ui/context_menu/effect_preview.gd")
 const SecPet = preload("res://ui/context_menu/sec_pet.gd")
 const SecBehavior = preload("res://ui/context_menu/sec_behavior.gd")
@@ -156,6 +157,8 @@ func _style_section_buttons() -> void:
 	]
 	for def in section_defs:
 		var btn: Button = def[0]
+		btn.set_script(CyberMenuBtn)
+		btn._ready()
 		var color: Color = def[1]
 		var style = StyleBoxFlat.new()
 		style.bg_color = Color(color.r * 0.15, color.g * 0.15, color.b * 0.15, 0.4)
@@ -164,8 +167,8 @@ func _style_section_buttons() -> void:
 		style.border_width_top = 0
 		style.border_width_right = 0
 		style.border_width_bottom = 0
-		style.corner_radius_top_right = 4
-		style.corner_radius_bottom_right = 4
+		style.corner_radius_top_right = 0
+		style.corner_radius_bottom_right = 0
 		style.corner_radius_top_left = 0
 		style.corner_radius_bottom_left = 0
 		style.content_margin_left = 10
@@ -186,7 +189,7 @@ func _style_section_buttons() -> void:
 # ═══════════════════════════════════════════
 
 func _make_menu_btn(text: String, hover_color: Color) -> Button:
-	var btn = Button.new()
+	var btn = CyberMenuBtn.new()
 	btn.flat = true
 	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	btn.add_theme_font_size_override("font_size", 20)
@@ -392,6 +395,7 @@ func _apply_ui_theme(hue: float) -> void:
 	if style:
 		style = style.duplicate()
 		style.border_color = Color.from_hsv(hue, 0.8, 1.0, 0.8)
+		style.set_corner_radius_all(0)
 		hud.add_theme_stylebox_override("panel", style)
 	if _submenu and _submenu.has_method("apply_ui_theme"):
 		_submenu.apply_ui_theme(hue)
@@ -403,11 +407,13 @@ func _apply_ui_theme(hue: float) -> void:
 # ═══════════════════════════════════════════
 
 func _apply_capsule_style(btn: Button, bg_color: Color, border_color: Color) -> void:
+	btn.set_script(CyberMenuBtn)
+	btn._ready()
 	var style_normal = StyleBoxFlat.new()
 	style_normal.bg_color = bg_color
 	style_normal.border_color = border_color
 	style_normal.set_border_width_all(1)
-	style_normal.set_corner_radius_all(8)
+	style_normal.set_corner_radius_all(0)
 	style_normal.content_margin_left = 12
 	style_normal.content_margin_right = 12
 	style_normal.content_margin_top = 4

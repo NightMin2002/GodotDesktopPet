@@ -3,6 +3,8 @@
 # 从 context_menu.gd 拆分，由主控制器持有引用并在 _process 中调度
 extends RefCounted
 
+const _CyberMenuBtn = preload("res://ui/context_menu/cyber_menu_button.gd")
+
 var _menu  # context_menu 引用 (CanvasLayer)
 var _bubble: PanelContainer = null
 var _label: RichTextLabel = null
@@ -59,7 +61,7 @@ func _build() -> void:
 	style.bg_color = Color(0.04, 0.08, 0.16, 0.95)
 	style.border_color = Color.from_hsv(EventBus.ui_hue, 0.8, 1.0, 0.7)
 	style.set_border_width_all(2)
-	style.set_corner_radius_all(14)
+	style.set_corner_radius_all(0)
 	style.set_content_margin_all(16)
 	_bubble.add_theme_stylebox_override("panel", style)
 	_menu.add_child(_bubble)
@@ -74,7 +76,7 @@ func _build() -> void:
 	_label.add_theme_font_size_override("normal_font_size", 14)
 	_label.add_theme_color_override("default_color", Color(0.78, 0.88, 1.0, 0.95))
 	vbox.add_child(_label)
-	_confirm_btn = Button.new()
+	_confirm_btn = _CyberMenuBtn.new()
 	_confirm_btn.text = "确认"
 	_confirm_btn.add_theme_font_size_override("font_size", 14)
 	_confirm_btn.flat = true

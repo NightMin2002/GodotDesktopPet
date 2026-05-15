@@ -21,7 +21,7 @@ func build() -> void:
 	style.bg_color = Color(0.04, 0.08, 0.16, 0.92)
 	style.border_color = Color(0.1, 0.8, 1.0, 0.6)
 	style.set_border_width_all(1)
-	style.set_corner_radius_all(10)
+	style.set_corner_radius_all(0)
 	style.content_margin_left = 16
 	style.content_margin_right = 16
 	style.content_margin_top = 10

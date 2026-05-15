@@ -4,6 +4,8 @@
 # 从 context_menu.gd 拆分
 extends RefCounted
 
+const _CyberMenuBtn = preload("res://ui/context_menu/cyber_menu_button.gd")
+
 var _menu  # context_menu 引用
 
 # ── L2: 分区子菜单 (主菜单按钮 → 分区面板) ──
@@ -53,7 +55,7 @@ func create_toggle(menu_id: String, toggle_items: Array, level: int = 2) -> void
 	panel.add_child(vbox)
 	var target_items = items if level == 2 else l3_items
 	for item in toggle_items:
-		var btn = Button.new()
+		var btn = _CyberMenuBtn.new()
 		btn.flat = true
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.add_theme_font_size_override("font_size", 19)
@@ -85,7 +87,7 @@ func create_radio(menu_id: String, radio_items: Array, callback: Callable, level
 	var target_radio = _radio_buttons if level == 2 else _l3_radio_buttons
 	var target_callbacks = _radio_callbacks if level == 2 else _l3_radio_callbacks
 	for item in radio_items:
-		var btn = Button.new()
+		var btn = _CyberMenuBtn.new()
 		btn.flat = true
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.add_theme_font_size_override("font_size", 19)
@@ -442,7 +444,7 @@ func _make_panel() -> PanelContainer:
 	style.bg_color = Color(0.04, 0.08, 0.16, 0.92)
 	style.border_color = Color.from_hsv(EventBus.ui_hue, 0.8, 1.0, 0.8)
 	style.set_border_width_all(2)
-	style.set_corner_radius_all(12)
+	style.set_corner_radius_all(0)
 	style.content_margin_left = 14
 	style.content_margin_right = 14
 	style.content_margin_top = 10
@@ -490,3 +492,5 @@ func get_all_visible_panels() -> Array:
 		if panel.visible:
 			result.append(panel)
 	return result
+
+

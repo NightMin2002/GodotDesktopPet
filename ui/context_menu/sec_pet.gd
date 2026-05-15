@@ -1,6 +1,8 @@
 # sec_pet.gd — 宠物分区 (构建 + 回调 + 分身 + profile + terminal)
 extends RefCounted
 
+const _CyberMenuBtn = preload("res://ui/context_menu/cyber_menu_button.gd")
+
 var ctx  # ContextMenu 引用
 
 # ── 按钮引用 ──
@@ -150,7 +152,8 @@ func _build_terminal_l3_panel() -> void:
 	]
 
 	for item in items:
-		var btn = Button.new()
+		var btn = _CyberMenuBtn.new()
+
 		btn.flat = true
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.add_theme_font_size_override("font_size", 19)

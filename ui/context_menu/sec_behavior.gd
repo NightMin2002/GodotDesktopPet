@@ -1,6 +1,8 @@
 # sec_behavior.gd — 行为分区 (构建 + 回调 + debug 子菜单)
 extends RefCounted
 
+const _CyberMenuBtn = preload("res://ui/context_menu/cyber_menu_button.gd")
+
 var ctx  # ContextMenu 引用
 
 # ── 按钮引用 ──
@@ -130,7 +132,7 @@ func _append_platform_style_capsule() -> void:
 	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(sep)
 
-	var btn = Button.new()
+	var btn = _CyberMenuBtn.new()
 	btn.text = "踏板外观"
 	btn.add_theme_font_size_override("font_size", 17)
 	ctx._apply_capsule_style(btn,
@@ -161,7 +163,7 @@ func _build_debug_behavior_submenu() -> void:
 	]
 
 	for item in debug_items:
-		var btn = Button.new()
+		var btn = _CyberMenuBtn.new()
 		btn.flat = true
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.add_theme_font_size_override("font_size", 19)

@@ -86,7 +86,7 @@ func _make_panel(ctrl: Control, desc_text: String, ctrl_size: Vector2) -> PanelC
 	style.bg_color = Color(0.02, 0.04, 0.1, 0.95)
 	style.border_color = Color.from_hsv(EventBus.ui_hue, 0.7, 1.0, 0.6)
 	style.set_border_width_all(1)
-	style.set_corner_radius_all(10)
+	style.set_corner_radius_all(0)
 	style.content_margin_left = 10
 	style.content_margin_right = 10
 	style.content_margin_top = 8
