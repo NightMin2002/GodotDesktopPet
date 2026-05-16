@@ -54,6 +54,7 @@ signal show_platform_style_panel
 signal launch_game(game_id: String)  # 请求启动指定游戏
 signal launch_game_auto(game_id: String)  # 宠物自己玩 (自动操作模式)
 signal game_panel_requested  # 请求显示游戏列表/面板
+signal show_game_terminal  # 打开/关闭游戏终端面板
 signal pet_gaming_changed(active: bool, game: RefCounted)  # 游戏启停时通知宠物
 signal close_game_requested  # 游戏面板请求关闭 (由 GameManager 监听)
 

@@ -86,6 +86,7 @@ func _ready() -> void:
 	_setup_platform_style_panel()
 	_setup_game_system()
 	_setup_pet_profile_panel()
+	_setup_game_terminal()
 	
 	# 触发首次启用日期记录 (首次运行时自动写入)
 	SettingsManager.get_first_launch_date()
@@ -421,6 +422,15 @@ func _setup_game_system() -> void:
 
 func _setup_pet_profile_panel() -> void:
 	var script = load("res://ui/pet_profile_panel.gd")
+	if script:
+		var node = CanvasLayer.new()
+		node.set_script(script)
+		add_child(node)
+
+# ── 游戏终端面板 ──
+
+func _setup_game_terminal() -> void:
+	var script = load("res://ui/game_terminal/game_terminal.gd")
 	if script:
 		var node = CanvasLayer.new()
 		node.set_script(script)
