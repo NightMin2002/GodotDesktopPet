@@ -412,20 +412,14 @@ func is_mouse_in_area() -> bool:
 	return false
 
 func is_mouse_in_l3_area() -> bool:
-	# 检查 L3 触发按钮 (在 L2 面板内)
-	for btn in _l3_trigger_map.values():
+	if l3_active != "":
+		var btn = _l3_trigger_map.get(l3_active)
 		if is_instance_valid(btn):
 			var local = btn.get_local_mouse_position()
 			if Rect2(Vector2.ZERO, btn.size).has_point(local):
 				return true
 	# 检查 L3 面板
 	for panel in l3_panels.values():
-		if panel.visible:
-			var local = panel.get_local_mouse_position()
-			if Rect2(Vector2.ZERO, panel.size).has_point(local):
-				return true
-	# 也检查 L2 面板 (鼠标在 L2 面板上时不应关闭 L3)
-	for panel in panels.values():
 		if panel.visible:
 			var local = panel.get_local_mouse_position()
 			if Rect2(Vector2.ZERO, panel.size).has_point(local):
