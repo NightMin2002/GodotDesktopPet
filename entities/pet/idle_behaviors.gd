@@ -61,6 +61,9 @@ func _init() -> void:
 # ── 主循环 ──
 
 func update(delta: float) -> void:
+	# ── 系统恢复检测: delta 异常大说明刚从系统休眠恢复，立即触发时段检查 ──
+	if delta > 5.0 and not pet.is_clone:
+		_nighttime_check_timer = NIGHTTIME_CHECK_INTERVAL  # 下一帧立即检查
 	# ── 游戏中: 跳过所有微行为 (深夜休眠/白天待机/自检) ──
 	# 深夜时钟检测保留运转，游戏结束后能立即感知深夜模式
 	if pet.gaming.active:
@@ -78,6 +81,15 @@ func update(delta: float) -> void:
 	
 	# ── 深夜休眠中: 持续更新 (原体和克隆体都需要) ──
 	if pet.nighttime_mode and active_behavior == "hibernate":
+		# 原体负责深夜时段检测 (不能跳过，否则电脑从系统休眠恢复后无法退出深夜模式)
+		if not pet.is_clone:
+			_nighttime_check_timer += delta
+			if _nighttime_check_timer >= NIGHTTIME_CHECK_INTERVAL:
+				_nighttime_check_timer = 0.0
+				_check_nighttime()
+				# _check_nighttime 可能已触发 _exit_nighttime → 取消了休眠
+				if not pet.nighttime_mode:
+					return
 		_behavior_timer += delta
 		_hibernate_anim_time += delta
 		_update_hibernate(delta)
