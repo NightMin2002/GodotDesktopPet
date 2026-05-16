@@ -319,6 +319,18 @@ func _build_lobby_placeholder() -> Control:
 	var ttt_card = _build_game_card("策略矩阵", "3x3 决策推演", func(): _launch_terminal_game("ttt"))
 	vbox.add_child(ttt_card)
 
+	# ── 游戏卡片: 威胁评估 (扫雷) ──
+	var mine_card = _build_game_card("威胁评估", "9x9 雷区扫描", func(): _launch_terminal_game("minesweeper"))
+	vbox.add_child(mine_card)
+
+	# ── 游戏卡片: 矩阵叠加 (2048) ──
+	var t48_card = _build_game_card("矩阵叠加", "4x4 数值融合", func(): _launch_terminal_game("2048"))
+	vbox.add_child(t48_card)
+
+	# ── 游戏卡片: 路径规划 (贪吃蛇) ──
+	var snake_card = _build_game_card("路径规划", "15x15 线性延伸", func(): _launch_terminal_game("snake"))
+	vbox.add_child(snake_card)
+
 	# 状态提示
 	var hint = Label.new()
 	hint.text = "选择目标开始推演"
@@ -423,6 +435,11 @@ func _open_panel() -> void:
 	_is_open = true
 	_state = TerminalState.LOBBY
 	_update_status_display()
+	# 保底恢复大厅 (上次直接断开可能残留隐藏状态)
+	if is_instance_valid(_lobby_placeholder):
+		_lobby_placeholder.visible = true
+	_title_label.text = "游戏终端"
+	_update_footer_for_lobby()
 	var vp = get_viewport().get_visible_rect().size
 	panel.position = _clamp_pos(Vector2(
 		(vp.x - _panel_w) * 0.5,
@@ -640,6 +657,9 @@ func _on_frame_draw() -> void:
 # ═══════════════════════════════════════════════
 
 const _TerminalTTT = preload("res://ui/game_terminal/terminal_ttt.gd")
+const _TerminalMinesweeper = preload("res://ui/game_terminal/terminal_minesweeper.gd")
+const _Terminal2048 = preload("res://ui/game_terminal/terminal_2048.gd")
+const _TerminalSnake = preload("res://ui/game_terminal/terminal_snake.gd")
 
 ## 启动终端内置游戏
 func _launch_terminal_game(game_id: String) -> void:
@@ -656,6 +676,24 @@ func _launch_terminal_game(game_id: String) -> void:
 			ttt.game_over.connect(_on_game_over)
 			game = ttt
 			game_name = "策略矩阵"
+		"minesweeper":
+			var ms = _TerminalMinesweeper.new()
+			ms.build()
+			ms.game_over.connect(_on_game_over)
+			game = ms
+			game_name = "威胁评估"
+		"2048":
+			var t48 = _Terminal2048.new()
+			t48.build()
+			t48.game_over.connect(_on_game_over)
+			game = t48
+			game_name = "矩阵叠加"
+		"snake":
+			var sn = _TerminalSnake.new()
+			sn.build()
+			sn.game_over.connect(_on_game_over)
+			game = sn
+			game_name = "路径规划"
 		_:
 			return
 
