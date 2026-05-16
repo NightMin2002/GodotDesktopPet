@@ -11,6 +11,7 @@ var _activity_btn: Button
 var _clone_btn: Button
 var _deploy_clone_btn: Button
 var _dismiss_btn: Button
+var _debug_behavior_btn: Button
 
 # ── 碎碎念 ──
 const CHATTER_MODE_LABELS := ["碎碎念 · 已关闭 [+]", "碎碎念 · 每30分钟 [+]", "碎碎念 · 每60分钟 [+]"]
@@ -43,6 +44,10 @@ func build() -> void:
 	vbox.add_child(terminal_btn)
 	ctx._bind_l3_trigger(terminal_btn, "holo_terminal", "sec_pet")
 
+	_debug_behavior_btn = ctx._make_menu_btn("指令序列 [+]", Color(0.2, 0.85, 1.0, 1))
+	vbox.add_child(_debug_behavior_btn)
+	ctx._bind_l3_trigger(_debug_behavior_btn, "debug_behavior", "sec_pet")
+
 	panel.mouse_entered.connect(func(): ctx._submenu.on_panel_enter())
 	panel.mouse_exited.connect(func(): ctx._submenu.on_panel_exit())
 	ctx.add_child(panel)
@@ -68,6 +73,8 @@ func build() -> void:
 	_build_clone_l3_panel()
 	# L3: 个人终端
 	_build_terminal_l3_panel()
+	# L3: 指令序列
+	_build_debug_behavior_submenu()
 
 # ── 碎碎念回调 ──
 
@@ -239,3 +246,65 @@ func _dispatch_terminal(pet, behavior: String, s: float) -> void:
 		pet.holo_screen.call(method, cfg["arg"], s, dur)
 	else:
 		pet.holo_screen.call(method, s, dur)
+
+# ── 指令序列 ──
+
+func _build_debug_behavior_submenu() -> void:
+	var panel = ctx._submenu._make_panel()
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+	panel.add_child(vbox)
+
+	var debug_items := [
+		{"label": "眼睑下垂", "behavior": "drowsy", "desc": "模拟困倦半闭眼效果"},
+		{"label": "碎碎念", "behavior": "_chatter", "desc": "立即触发一次碎碎念气泡"},
+		{"label": "待办提醒", "behavior": "_todo_prompt", "desc": "强制触发一次待办主动提醒"},
+		{"label": "空间跳跃", "behavior": "_free_roam", "desc": "触发一次空间跳跃踏板序列"},
+	]
+
+	for item in debug_items:
+		var btn = _CyberMenuBtn.new()
+		btn.flat = true
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.add_theme_font_size_override("font_size", 19)
+		btn.add_theme_color_override("font_color", Color(0.8, 0.9, 1, 1))
+		btn.add_theme_color_override("font_hover_color", Color(0.2, 0.85, 1.0, 1))
+		btn.text = item.label
+		var behavior = item.behavior
+		btn.pressed.connect(func(): _on_debug_behavior_pressed(behavior))
+		if item.has("desc"):
+			var desc_text = item.desc
+			var b = btn
+			btn.mouse_entered.connect(func(): ctx._tooltip.show_for(b, desc_text, true))
+			btn.mouse_exited.connect(func(): ctx._tooltip.show_for(b, desc_text, false))
+		vbox.add_child(btn)
+
+	panel.mouse_entered.connect(func(): ctx._submenu.on_l3_panel_enter())
+	panel.mouse_exited.connect(func(): ctx._submenu.on_l3_panel_exit())
+	ctx.add_child(panel)
+	ctx._submenu.l3_panels["debug_behavior"] = panel
+	ctx._submenu._l3_parent_map["debug_behavior"] = "sec_pet"
+
+func _on_debug_behavior_pressed(behavior: String) -> void:
+	ctx._tooltip.panel.hide()
+	ctx._submenu.hide_all_instant()
+	ctx.hud.hide()
+	ctx._sidebar.panel.hide()
+	ctx.target = null
+	EventBus.context_menu_toggled.emit(false)
+
+	var main_node = ctx.get_tree().root.get_node_or_null("Main")
+
+	if behavior == "_chatter":
+		if main_node:
+			for child in main_node.get_children():
+				if child.has_method("_trigger_chatter"):
+					child._trigger_chatter()
+					return
+		EventBus.show_reminder_bubble.emit("碎碎念系统未就绪。")
+	elif behavior == "_free_roam":
+		EventBus.trigger_free_roam.emit()
+	elif behavior == "_todo_prompt":
+		EventBus.trigger_todo_prompt.emit()
+	else:
+		EventBus.trigger_idle_behavior.emit(behavior)

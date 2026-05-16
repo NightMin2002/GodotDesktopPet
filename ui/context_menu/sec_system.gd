@@ -4,7 +4,6 @@ extends RefCounted
 var ctx  # ContextMenu 引用
 
 # ── 按钮引用 ──
-var _debug_behavior_btn: Button
 
 func _init(context_menu) -> void:
 	ctx = context_menu
@@ -15,9 +14,20 @@ func build() -> void:
 	vbox.add_theme_constant_override("separation", 6)
 	panel.add_child(vbox)
 
-	_debug_behavior_btn = ctx._make_menu_btn("指令序列 [+]", Color(1.0, 0.7, 0.2, 1))
-	vbox.add_child(_debug_behavior_btn)
-	ctx._bind_l3_trigger(_debug_behavior_btn, "debug_behavior", "sec_system")
+	var placeholder = Label.new()
+	placeholder.text = "SYS_PARTITION_EMPTY\n[ 扩展系统功能预留区域 ]\n\n>> 敬请期待机体后续更新 <<"
+	placeholder.add_theme_font_size_override("font_size", 14)
+	placeholder.add_theme_color_override("font_color", Color(0.8, 0.55, 0.55, 0.5))
+	placeholder.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	
+	var margin = MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_top", 16)
+	margin.add_theme_constant_override("margin_bottom", 16)
+	margin.add_child(placeholder)
+	
+	vbox.add_child(margin)
 
 	panel.mouse_entered.connect(func(): ctx._submenu.on_panel_enter())
 	panel.mouse_exited.connect(func(): ctx._submenu.on_panel_exit())

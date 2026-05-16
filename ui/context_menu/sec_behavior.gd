@@ -77,9 +77,6 @@ func build() -> void:
 	# 模式子菜单追加踏板外观胶囊
 	_append_platform_style_capsule()
 
-	# L3: 指令序列
-	_build_debug_behavior_submenu()
-
 # ── 窗口模式 ──
 
 func _on_radio_window_mode(value: int) -> void:
@@ -143,64 +140,4 @@ func _append_platform_style_capsule() -> void:
 	)
 	vbox.add_child(btn)
 
-# ── 指令序列 (行为子菜单) ──
 
-func _build_debug_behavior_submenu() -> void:
-	var panel = ctx._submenu._make_panel()
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 4)
-	panel.add_child(vbox)
-
-	var debug_items := [
-		{"label": "眼睑下垂", "behavior": "drowsy", "desc": "模拟困倦半闭眼效果"},
-		{"label": "碎碎念", "behavior": "_chatter", "desc": "立即触发一次碎碎念气泡"},
-		{"label": "待办提醒", "behavior": "_todo_prompt", "desc": "强制触发一次待办主动提醒"},
-		{"label": "空间跳跃", "behavior": "_free_roam", "desc": "触发一次空间跳跃踏板序列"},
-	]
-
-	for item in debug_items:
-		var btn = _CyberMenuBtn.new()
-		btn.flat = true
-		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		btn.add_theme_font_size_override("font_size", 19)
-		btn.add_theme_color_override("font_color", Color(0.8, 0.9, 1, 1))
-		btn.add_theme_color_override("font_hover_color", Color(1.0, 0.7, 0.2, 1))
-		btn.text = item.label
-		var behavior = item.behavior
-		btn.pressed.connect(func(): _on_debug_behavior_pressed(behavior))
-		if item.has("desc"):
-			var desc_text = item.desc
-			var b = btn
-			btn.mouse_entered.connect(func(): ctx._tooltip.show_for(b, desc_text, true))
-			btn.mouse_exited.connect(func(): ctx._tooltip.show_for(b, desc_text, false))
-		vbox.add_child(btn)
-
-	panel.mouse_entered.connect(func(): ctx._submenu.on_l3_panel_enter())
-	panel.mouse_exited.connect(func(): ctx._submenu.on_l3_panel_exit())
-	ctx.add_child(panel)
-	ctx._submenu.l3_panels["debug_behavior"] = panel
-	ctx._submenu._l3_parent_map["debug_behavior"] = "sec_system"
-
-func _on_debug_behavior_pressed(behavior: String) -> void:
-	ctx._tooltip.panel.hide()
-	ctx._submenu.hide_all_instant()
-	ctx.hud.hide()
-	ctx._sidebar.panel.hide()
-	ctx.target = null
-	EventBus.context_menu_toggled.emit(false)
-
-	var main_node = ctx.get_tree().root.get_node_or_null("Main")
-
-	if behavior == "_chatter":
-		if main_node:
-			for child in main_node.get_children():
-				if child.has_method("_trigger_chatter"):
-					child._trigger_chatter()
-					return
-		EventBus.show_reminder_bubble.emit("碎碎念系统未就绪。")
-	elif behavior == "_free_roam":
-		EventBus.trigger_free_roam.emit()
-	elif behavior == "_todo_prompt":
-		EventBus.trigger_todo_prompt.emit()
-	else:
-		EventBus.trigger_idle_behavior.emit(behavior)
