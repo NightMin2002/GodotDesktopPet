@@ -29,6 +29,7 @@ var card_hover_bd:= Color.GREEN
 
 var accent       := Color.GREEN
 var accent_soft  := Color.GREEN
+var tx_on_accent := Color.WHITE
 var danger       := Color.RED
 
 var bg_control       := Color.LIGHT_GRAY
@@ -107,6 +108,7 @@ func _from_seeds(p_base: Color, p_text: Color, p_accent: Color, p_danger: Color,
 	# ── 强调 ──
 	accent       = p_accent
 	accent_soft  = Color(p_accent, 0.7)
+	tx_on_accent = Color(0.1, 0.1, 0.1) if p_accent.get_luminance() > 0.6 else Color.WHITE
 	danger       = p_danger
 
 	# ── 控件 ──
@@ -324,7 +326,7 @@ func make_checkbox(is_done: bool) -> Button:
 	if is_done:
 		btn.text = "\u2713"
 		btn.add_theme_font_size_override("font_size", 16)
-		btn.add_theme_color_override("font_color", Color.WHITE)
+		btn.add_theme_color_override("font_color", tx_on_accent)
 		s.bg_color = accent; s.border_color = accent.darkened(0.2)
 	else:
 		btn.text = ""
@@ -390,7 +392,7 @@ func apply_save_badge_style(badge: PanelContainer, label: Label) -> void:
 	s.content_margin_top = 2; s.content_margin_bottom = 2
 	badge.add_theme_stylebox_override("panel", s)
 	label.add_theme_font_size_override("font_size", badge_font_size)
-	label.add_theme_color_override("font_color", Color.WHITE)
+	label.add_theme_color_override("font_color", tx_on_accent)
 
 func apply_vsep_style(vsep: VSeparator) -> StyleBoxFlat:
 	vsep.add_theme_constant_override("separation", vsep_width)

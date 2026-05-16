@@ -286,7 +286,7 @@ func apply_card_title_style(label: Label, is_done: bool, is_selected: bool) -> v
 		label.add_theme_color_override("font_color", tx_primary)
 
 func apply_title_label_style(l: Label) -> void:
-	l.add_theme_color_override("font_color", tx_primary)
+	l.add_theme_color_override("font_color", bg_main)
 	l.add_theme_font_size_override("font_size", title_font_size + 2)
 
 # ==========================================
