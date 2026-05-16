@@ -459,6 +459,8 @@ func _process(delta: float) -> void:
 		eye_behavior.forced_look_dir = Vector2(visual_side, 0.15)
 	elif holo_screen.visible and holo_screen.is_terminal_mode:
 		eye_behavior.forced_look_dir = Vector2(visual_side, 0.15)
+	elif holo_screen.visible and holo_screen._game_locked:
+		eye_behavior.forced_look_dir = Vector2(visual_side, 0.15)
 	elif movement.is_active:
 		eye_behavior.forced_look_dir = movement.direction
 	else:

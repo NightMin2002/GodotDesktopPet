@@ -24,6 +24,8 @@ var _footer_hbox: HBoxContainer     # 底栏内容
 var _lobby_placeholder: Control     # 大厅占位视觉
 var _active_game: Control = null    # 当前活跃游戏控件
 var _active_game_name: String = "" # 当前游戏名称
+var _game_viewport: SubViewport = null             # 游戏渲染视口 (纹理捕获源)
+var _game_vp_container: SubViewportContainer = null # 视口容器 (终端内显示)
 
 var _dragging: bool = false
 var _drag_offset: Vector2 = Vector2.ZERO
@@ -267,6 +269,22 @@ func _build_content_area() -> PanelContainer:
 	# ── 大厅 ──
 	_lobby_placeholder = _build_lobby_placeholder()
 	_content_stack.add_child(_lobby_placeholder)
+
+	# ── 预创建 SubViewport (游戏启动时复用，减少首帧渲染管线冷启动卡顿) ──
+	_game_vp_container = SubViewportContainer.new()
+	_game_vp_container.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_game_vp_container.stretch = true
+	_game_vp_container.mouse_filter = Control.MOUSE_FILTER_PASS
+	_game_vp_container.visible = false  # 大厅时隐藏
+
+	_game_viewport = SubViewport.new()
+	_game_viewport.transparent_bg = false
+	_game_viewport.handle_input_locally = true
+	_game_viewport.gui_disable_input = false
+	_game_viewport.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
+
+	_game_vp_container.add_child(_game_viewport)
+	_content_stack.add_child(_game_vp_container)
 
 	return area
 
@@ -643,9 +661,10 @@ func _launch_terminal_game(game_id: String) -> void:
 	_active_game = game
 	_active_game_name = game_name
 
-	# 隐藏大厅，显示游戏
+	# 隐藏大厅，显示预创建的 SubViewport
 	_lobby_placeholder.visible = false
-	_content_stack.add_child(_active_game)
+	_game_viewport.add_child(_active_game)
+	_game_vp_container.visible = true
 
 	# 更新终端显示
 	_state = TerminalState.PLAYING
@@ -653,15 +672,23 @@ func _launch_terminal_game(game_id: String) -> void:
 	_update_status_display()
 	_update_footer_for_game()
 
+	# 激活全息投影
+	_activate_holo_preview()
+
 func _on_game_over(result: int) -> void:
 	_state = TerminalState.RESULT
 	_update_status_display()
 
 func _cleanup_active_game() -> void:
+	# 断开全息投影
+	_deactivate_holo_preview()
 	if _active_game and is_instance_valid(_active_game):
 		_active_game.queue_free()
 	_active_game = null
 	_active_game_name = ""
+	# 隐藏视口容器 (不销毁，下次复用)
+	if is_instance_valid(_game_vp_container):
+		_game_vp_container.visible = false
 
 func _return_to_lobby() -> void:
 	_cleanup_active_game()
@@ -670,6 +697,41 @@ func _return_to_lobby() -> void:
 	_title_label.text = "游戏终端"
 	_update_status_display()
 	_update_footer_for_lobby()
+
+# ═══════════════════════════════════════════════
+#  全息投影联动
+# ═══════════════════════════════════════════════
+
+## 返回游戏 SubViewport 纹理 (供全息屏 texture_provider 回调)
+func get_game_texture() -> Texture2D:
+	if is_instance_valid(_game_viewport):
+		return _game_viewport.get_texture()
+	return null
+
+## 激活全息屏投影 (GAME 模式)
+func _activate_holo_preview() -> void:
+	var pet = _get_pet()
+	if not pet or not ("holo_screen" in pet):
+		return
+	var holo = pet.holo_screen
+	if not holo:
+		return
+	# 根据宠物位置决定全息屏方向
+	var vp_w = get_viewport().get_visible_rect().size.x
+	var screen_side = -1.0 if pet.global_position.x > vp_w * 0.5 else 1.0
+	holo.show_game(get_game_texture, screen_side, true)  # lock=true: 锁定宠物+踏板
+
+## 断开全息屏投影
+func _deactivate_holo_preview() -> void:
+	var pet = _get_pet()
+	if not pet or not ("holo_screen" in pet):
+		return
+	var holo = pet.holo_screen
+	if not holo:
+		return
+	# 只在当前是 GAME 模式时才关闭 (避免干扰其他模式)
+	if holo.mode == 1:  # Mode.GAME = 1
+		holo.hide()
 
 ## 更新底栏: 游戏中
 func _update_footer_for_game() -> void:

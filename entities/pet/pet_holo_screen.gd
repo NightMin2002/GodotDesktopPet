@@ -34,6 +34,7 @@ const GAP_LERP_SPEED := 5.0  # 平滑过渡速度
 
 # ── 纹理源 (游戏模式通过回调获取) ──
 var _texture_provider: Callable = Callable()  # 返回 Texture2D 的回调
+var _game_locked: bool = false                # GAME 模式是否锁定宠物 (游戏终端使用)
 
 # ── 模块化渲染器 (字典注册 + 懒加载) ──
 # 新增模式只需: 1) enum 加值  2) 注册表加一行  3) 写渲染器文件
@@ -80,18 +81,27 @@ const CLOSE_LINES := [
 # ══════════════════════════════════════
 
 ## 显示全息屏 (游戏模式: 接收纹理回调)
-func show_game(texture_provider: Callable, screen_side: float) -> void:
+## lock: 是否锁定宠物+踏板 (游戏终端模式使用)
+func show_game(texture_provider: Callable, screen_side: float, lock: bool = false) -> void:
 	# 如果当前在待机/加载/电池模式, 先清理干净
 	if is_terminal_mode:
 		_cleanup_active_mode()
 	side = screen_side
 	_texture_provider = texture_provider
 	mode = Mode.GAME
-	# 游戏模式直接显示 (无展开动画, 和 phase 1 行为一致)
+	_game_locked = lock
 	visible = true
-	_deploy_progress = 1.0
-	_deploying = false
-	_retracting = false
+	if lock:
+		# 锁定模式: 展开动画 + 锁定宠物 + 踏板
+		_deploying = true
+		_retracting = false
+		_lock_pet()
+		_create_close_btn("游戏终端")
+	else:
+		# 自由模式: 直接显示 (和 phase 1 行为一致)
+		_deploy_progress = 1.0
+		_deploying = false
+		_retracting = false
 
 ## 显示全息屏 (待机屏保模式)
 ## duration: 屏保时长 (秒), 0=不自动隐藏
@@ -113,13 +123,22 @@ func show_idle(screen_side: float, duration: float = 0.0) -> void:
 ## 隐藏全息屏 (带收起动画)
 func hide() -> void:
 	if mode == Mode.GAME:
-		# 游戏模式直接隐藏 (和 phase 1 行为一致)
-		visible = false
-		mode = Mode.OFF
-		_deploy_progress = 0.0
-		_texture_provider = Callable()
-		_deploying = false
-		_retracting = false
+		if _game_locked:
+			# 锁定模式: 收起动画 + 解锁宠物
+			_retracting = true
+			_deploying = false
+			_texture_provider = Callable()
+			_game_locked = false
+			_unlock_pet()
+			_remove_close_btn()
+		else:
+			# 自由模式: 直接隐藏
+			visible = false
+			mode = Mode.OFF
+			_deploy_progress = 0.0
+			_texture_provider = Callable()
+			_deploying = false
+			_retracting = false
 		return
 	# 非游戏模式: 收起动画
 	_retracting = true
@@ -246,6 +265,14 @@ func update(delta: float) -> void:
 		if _idle_duration > 0.0 and _idle_elapsed >= _idle_duration and not _retracting:
 			hide()
 		# 踏板升降驱动 + 位置锁定
+		_plat.update(pet, delta)
+		if not _plat.is_active:
+			pet.linear_velocity = Vector2.ZERO
+		_update_close_btn_hover()
+		_update_close_btn_position()
+		pet.queue_redraw()
+	# GAME 锁定模式: 驱动踏板 + 关闭按钮
+	elif mode == Mode.GAME and _game_locked and visible:
 		_plat.update(pet, delta)
 		if not _plat.is_active:
 			pet.linear_velocity = Vector2.ZERO
