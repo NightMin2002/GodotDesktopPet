@@ -15,7 +15,7 @@ const DatalogCategoryView = preload("res://ui/profile/datalog/datalog_category_v
 const DatalogDetailView = preload("res://ui/profile/datalog/datalog_detail_view.gd")
 const DatalogListView = preload("res://ui/profile/datalog/datalog_list_view.gd")
 const DatalogWindowCards = preload("res://ui/profile/datalog/datalog_window_cards.gd")
-const InputHeatmapWindow = preload("res://ui/profile/datalog/input_heatmap_window.gd")
+const InputHeatmapWindow = preload("res://ui/profile/datalog/input_heatmap/input_heatmap_window.gd")
 var _ctx: Dictionary = {}  # 共享上下文, 传递给子模块
 
 # ── UI 引用 ──
