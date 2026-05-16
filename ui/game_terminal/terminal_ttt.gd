@@ -204,45 +204,10 @@ func _find_win_line(winner: int) -> void:
 # ══════════════════════════════════════════════
 
 func _build_result_overlay() -> void:
-	_result_overlay = PanelContainer.new()
-	_result_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_result_overlay.visible = false
-	var s = StyleBoxFlat.new()
-	s.bg_color = Color(0.02, 0.03, 0.06, 0.75)
-	s.set_corner_radius_all(0)
-	_result_overlay.add_theme_stylebox_override("panel", s)
-	_result_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-
-	var center = CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_PASS
-	_result_overlay.add_child(center)
-
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 20)
-	vbox.mouse_filter = Control.MOUSE_FILTER_PASS
-	center.add_child(vbox)
-
-	_result_label = Label.new()
-	_result_label.add_theme_font_size_override("font_size", 24)
-	_result_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_result_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(_result_label)
-
-	_restart_btn = Button.new()
-	_restart_btn.text = "再来一局"
-	_restart_btn.add_theme_font_size_override("font_size", 16)
-	var bs = GameTerminalStyles.small_btn_normal()
-	bs.content_margin_left = 24; bs.content_margin_right = 24
-	bs.content_margin_top = 8; bs.content_margin_bottom = 8
-	_restart_btn.add_theme_stylebox_override("normal", bs)
-	_restart_btn.add_theme_stylebox_override("hover", GameTerminalStyles.small_btn_hover())
-	_restart_btn.add_theme_stylebox_override("pressed", GameTerminalStyles.small_btn_hover())
-	_restart_btn.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9, 0.9))
-	_restart_btn.add_theme_color_override("font_hover_color", GameTerminalStyles.accent())
-	_restart_btn.pressed.connect(start_game)
-	vbox.add_child(_restart_btn)
-
+	var d = GameTerminalStyles.create_result_overlay("再来一局", start_game)
+	_result_overlay = d.overlay
+	_result_label = d.label
+	_restart_btn = d.btn
 	add_child(_result_overlay)
 
 var _result_lines_win := ["...算你赢。", "结果在预测范围内。", "数据偏差已记录。"]
@@ -264,9 +229,7 @@ func _show_result() -> void:
 		2:
 			lines = _result_lines_draw
 			color = GameTerminalStyles.dim()
-	_result_label.text = lines[randi() % lines.size()]
-	_result_label.add_theme_color_override("font_color", color)
-	_result_overlay.visible = true
+	GameTerminalStyles.show_result_overlay(_result_overlay, _result_label, lines[randi() % lines.size()], color)
 
 # ══════════════════════════════════════════════
 #  渲染

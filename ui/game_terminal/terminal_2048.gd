@@ -223,41 +223,10 @@ func _check_state() -> void:
 # ══════════════════════════════════════════════
 
 func _build_result_overlay() -> void:
-	_result_overlay = PanelContainer.new()
-	_result_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_result_overlay.visible = false
-	var s = StyleBoxFlat.new()
-	s.bg_color = Color(0.02, 0.03, 0.06, 0.75)
-	s.set_corner_radius_all(0)
-	s.set_content_margin_all(20)
-	_result_overlay.add_theme_stylebox_override("panel", s)
-	_result_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-
-	var center = CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_result_overlay.add_child(center)
-
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 16)
-	center.add_child(vbox)
-
-	_result_label = Label.new()
-	_result_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_result_label.add_theme_font_size_override("font_size", 14)
-	vbox.add_child(_result_label)
-
-	_restart_btn = Button.new()
-	_restart_btn.text = "[ 重新叠加 ]"
-	_restart_btn.add_theme_font_size_override("font_size", 13)
-	_restart_btn.add_theme_stylebox_override("normal", GameTerminalStyles.small_btn_normal())
-	_restart_btn.add_theme_stylebox_override("hover", GameTerminalStyles.small_btn_hover())
-	_restart_btn.add_theme_stylebox_override("pressed", GameTerminalStyles.small_btn_hover())
-	_restart_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	_restart_btn.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9, 0.9))
-	_restart_btn.add_theme_color_override("font_hover_color", GameTerminalStyles.accent())
-	_restart_btn.pressed.connect(start_game)
-	vbox.add_child(_restart_btn)
-
+	var d = GameTerminalStyles.create_result_overlay("[ 重新叠加 ]", start_game)
+	_result_overlay = d.overlay
+	_result_label = d.label
+	_restart_btn = d.btn
 	add_child(_result_overlay)
 
 var _result_lines_win := ["矩阵峰值已达。", "数据叠加极限。", "2048...目标达成。"]
@@ -269,10 +238,8 @@ func _show_result() -> void:
 	var lines = _result_lines_win if _result == 0 else _result_lines_lose
 	var text = lines[randi() % lines.size()]
 	text += "\n得分: %d / 最大值: %d" % [_score, _max_tile()]
-	_result_label.text = text
 	var c = GameTerminalStyles.status_active() if _result == 0 else Color(0.9, 0.35, 0.3, 0.9)
-	_result_label.add_theme_color_override("font_color", c)
-	_result_overlay.visible = true
+	GameTerminalStyles.show_result_overlay(_result_overlay, _result_label, text, c)
 
 # ══════════════════════════════════════════════
 #  渲染

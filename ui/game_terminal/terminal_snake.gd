@@ -137,41 +137,10 @@ func _calc_layout() -> void:
 # ══════════════════════════════════════════════
 
 func _build_result_overlay() -> void:
-	_result_overlay = PanelContainer.new()
-	_result_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_result_overlay.visible = false
-	var s = StyleBoxFlat.new()
-	s.bg_color = Color(0.02, 0.03, 0.06, 0.75)
-	s.set_corner_radius_all(0)
-	s.set_content_margin_all(20)
-	_result_overlay.add_theme_stylebox_override("panel", s)
-	_result_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-
-	var center = CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_result_overlay.add_child(center)
-
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 16)
-	center.add_child(vbox)
-
-	_result_label = Label.new()
-	_result_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_result_label.add_theme_font_size_override("font_size", 14)
-	vbox.add_child(_result_label)
-
-	_restart_btn = Button.new()
-	_restart_btn.text = "[ 重新规划 ]"
-	_restart_btn.add_theme_font_size_override("font_size", 13)
-	_restart_btn.add_theme_stylebox_override("normal", GameTerminalStyles.small_btn_normal())
-	_restart_btn.add_theme_stylebox_override("hover", GameTerminalStyles.small_btn_hover())
-	_restart_btn.add_theme_stylebox_override("pressed", GameTerminalStyles.small_btn_hover())
-	_restart_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	_restart_btn.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9, 0.9))
-	_restart_btn.add_theme_color_override("font_hover_color", GameTerminalStyles.accent())
-	_restart_btn.pressed.connect(start_game)
-	vbox.add_child(_restart_btn)
-
+	var d = GameTerminalStyles.create_result_overlay("[ 重新规划 ]", start_game)
+	_result_overlay = d.overlay
+	_result_label = d.label
+	_restart_btn = d.btn
 	add_child(_result_overlay)
 
 var _result_lines := ["路径中断。", "规划失败。碰撞已记录。", "...信号丢失。"]
@@ -181,9 +150,7 @@ func _show_result() -> void:
 		return
 	var text = _result_lines[randi() % _result_lines.size()]
 	text += "\n路径长度: %d / 速度: %d%%" % [_score + 3, int(TICK_BASE / _tick_interval * 100)]
-	_result_label.text = text
-	_result_label.add_theme_color_override("font_color", Color(0.9, 0.35, 0.3, 0.9))
-	_result_overlay.visible = true
+	GameTerminalStyles.show_result_overlay(_result_overlay, _result_label, text, Color(0.9, 0.35, 0.3, 0.9))
 
 # ══════════════════════════════════════════════
 #  渲染

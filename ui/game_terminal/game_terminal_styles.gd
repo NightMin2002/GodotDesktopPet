@@ -134,3 +134,53 @@ static func add_tech_brackets(control: Control, bracket_len: float = 8.0, inset:
 		]), c, lw)
 	)
 	EventBus.ui_theme_changed.connect(func(_h): if is_instance_valid(control): control.queue_redraw())
+
+# ══════════════════════════════════════════════
+#  结算覆盖层工厂
+# ══════════════════════════════════════════════
+
+## 创建标准结算覆盖层 (overlay + label + btn)
+## 返回字典: { overlay: PanelContainer, label: Label, btn: Button }
+static func create_result_overlay(btn_text: String, restart_cb: Callable) -> Dictionary:
+	var overlay = PanelContainer.new()
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.visible = false
+	var s = StyleBoxFlat.new()
+	s.bg_color = Color(0.02, 0.03, 0.06, 0.75)
+	s.set_corner_radius_all(0)
+	s.set_content_margin_all(20)
+	overlay.add_theme_stylebox_override("panel", s)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+
+	var center = CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(center)
+
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 16)
+	center.add_child(vbox)
+
+	var lbl = Label.new()
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.add_theme_font_size_override("font_size", 14)
+	vbox.add_child(lbl)
+
+	var btn = Button.new()
+	btn.text = btn_text
+	btn.add_theme_font_size_override("font_size", 13)
+	btn.add_theme_stylebox_override("normal", small_btn_normal())
+	btn.add_theme_stylebox_override("hover", small_btn_hover())
+	btn.add_theme_stylebox_override("pressed", small_btn_hover())
+	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	btn.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9, 0.9))
+	btn.add_theme_color_override("font_hover_color", accent())
+	btn.pressed.connect(restart_cb)
+	vbox.add_child(btn)
+
+	return { "overlay": overlay, "label": lbl, "btn": btn }
+
+## 显示结算覆盖层 (通用)
+static func show_result_overlay(overlay: PanelContainer, label: Label, text: String, color: Color) -> void:
+	label.text = text
+	label.add_theme_color_override("font_color", color)
+	overlay.visible = true

@@ -53,7 +53,7 @@ func update(delta: float) -> void:
 	# 前置条件: 自由行动 + 非深夜 + 非游戏中 + 非空间跳跃中
 	if pet.behavior_mode != 0 or pet.nighttime_mode:
 		return
-	if pet.gaming.active or pet._roam_active:
+	if pet.gaming.active or pet._roam_active or pet.holo_screen._game_locked:
 		return
 	# 微行为活跃时不触发 (休眠/自检中)
 	if pet.idle_behaviors.is_active():
@@ -90,9 +90,9 @@ func _can_run(id: String) -> bool:
 		"free_roam":
 			return pet.free_roam_enabled and not pet._roam_active
 		"auto_game":
-			return not pet.gaming.active
+			return not pet.gaming.active and not pet.holo_screen._game_locked
 		"holo_browse":
-			return not pet.gaming.active and not pet.holo_screen.visible
+			return not pet.gaming.active and not pet.holo_screen._game_locked and not pet.holo_screen.visible
 	return true
 
 ## 按权重随机抽取 (只从满足前置条件的活动中选)
