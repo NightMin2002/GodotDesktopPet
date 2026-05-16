@@ -96,20 +96,28 @@ static func _format_input_bbcode(entry: Dictionary) -> String:
 		lines.append("总击键: %d 次" % total_keys)
 	lines.append("")
 
-	# 按键 Top 10
+	# 按键 (全部)
 	var keys: Dictionary = data.get("keys", {})
+	var keys_delta: Dictionary = delta.get("keys", {})
 	if keys.size() > 0:
-		lines.append("-- 按键排行 (Top 10) --")
+		lines.append("-- 按键统计 (全量) --")
 		var sorted_keys = []
 		for k in keys:
 			sorted_keys.append([k, keys[k]])
 		sorted_keys.sort_custom(func(a, b): return a[1] > b[1])
-		for i in range(mini(10, sorted_keys.size())):
-			lines.append("  %s: %d" % [sorted_keys[i][0], sorted_keys[i][1]])
+		for i in range(sorted_keys.size()):
+			var k_name = sorted_keys[i][0]
+			var k_val = sorted_keys[i][1]
+			var dk_i = int(keys_delta.get(k_name, 0))
+			if has_delta and dk_i > 0:
+				lines.append("  %s: %d 次[color=#%s]+%d次[/color]" % [k_name, k_val, green, dk_i])
+			else:
+				lines.append("  %s: %d 次" % [k_name, k_val])
 		lines.append("")
 
 	# 组合键
 	var combos: Dictionary = data.get("combos", {})
+	var combos_delta: Dictionary = delta.get("combos", {})
 	if combos.size() > 0:
 		lines.append("-- 组合键统计 --")
 		var sorted_combos = []
@@ -117,7 +125,13 @@ static func _format_input_bbcode(entry: Dictionary) -> String:
 			sorted_combos.append([k, combos[k]])
 		sorted_combos.sort_custom(func(a, b): return a[1] > b[1])
 		for item in sorted_combos:
-			lines.append("  %s: %d" % [item[0], item[1]])
+			var c_name = item[0]
+			var c_val = item[1]
+			var dc = int(combos_delta.get(c_name, 0))
+			if has_delta and dc > 0:
+				lines.append("  %s: %d 次[color=#%s]+%d次[/color]" % [c_name, c_val, green, dc])
+			else:
+				lines.append("  %s: %d 次" % [c_name, c_val])
 		lines.append("")
 
 	# 鼠标 (逐项标注增量)

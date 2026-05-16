@@ -593,6 +593,25 @@ func _merge_dict_values(old_dict: Dictionary, new_dict: Dictionary, last_dict: D
 func _diff_input(old: Dictionary, merged: Dictionary) -> Dictionary:
 	var delta: Dictionary = {}
 	delta["keystrokes"] = int(merged.get("total_keystrokes", 0)) - int(old.get("total_keystrokes", 0))
+	
+	var old_keys: Dictionary = old.get("keys", {})
+	var new_keys: Dictionary = merged.get("keys", {})
+	var keys_delta: Dictionary = {}
+	for k in new_keys:
+		var d = int(new_keys[k]) - int(old_keys.get(k, 0))
+		if d > 0:
+			keys_delta[k] = d
+	delta["keys"] = keys_delta
+	
+	var old_combos: Dictionary = old.get("combos", {})
+	var new_combos: Dictionary = merged.get("combos", {})
+	var combos_delta: Dictionary = {}
+	for k in new_combos:
+		var d = int(new_combos[k]) - int(old_combos.get(k, 0))
+		if d > 0:
+			combos_delta[k] = d
+	delta["combos"] = combos_delta
+	
 	var old_m: Dictionary = old.get("mouse", {})
 	var new_m: Dictionary = merged.get("mouse", {})
 	delta["left_clicks"] = int(new_m.get("left_clicks", 0)) - int(old_m.get("left_clicks", 0))
@@ -607,15 +626,15 @@ func _format_input_report(snap: Dictionary) -> String:
 	lines.append("总击键: %d 次" % snap.get("total_keystrokes", 0))
 	lines.append("")
 	
-	# 按键 Top 10
+	# 按键 (全部)
 	var keys: Dictionary = snap.get("keys", {})
 	if keys.size() > 0:
-		lines.append("-- 按键排行 (Top 10) --")
+		lines.append("-- 按键统计 (全量) --")
 		var sorted_keys = []
 		for k in keys:
 			sorted_keys.append([k, keys[k]])
 		sorted_keys.sort_custom(func(a, b): return a[1] > b[1])
-		for i in range(mini(10, sorted_keys.size())):
+		for i in range(sorted_keys.size()):
 			lines.append("  %s: %d" % [sorted_keys[i][0], sorted_keys[i][1]])
 		lines.append("")
 	
