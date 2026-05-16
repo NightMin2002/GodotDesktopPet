@@ -12,7 +12,9 @@ var _panel_w: float = 700
 var _panel_h: float = 520
 
 # ── 引用 ──
-var panel: PanelContainer
+var panel: SubViewportContainer        # 外层容器 (拖拽/动画/围栏的目标)
+var _panel_viewport: SubViewport       # 面板渲染视口 (纹理捕获源 → 全息屏)
+var _panel_inner: PanelContainer       # 内层面板 (实际 UI 内容)
 var _title_bar: Control
 var _title_label: Label
 var _status_label: Label
@@ -24,9 +26,6 @@ var _footer_hbox: HBoxContainer     # 底栏内容
 var _lobby_placeholder: Control     # 大厅占位视觉
 var _active_game: Control = null    # 当前活跃游戏控件
 var _active_game_name: String = "" # 当前游戏名称
-var _game_viewport: SubViewport = null             # 游戏渲染视口 (纹理捕获源)
-var _game_vp_container: SubViewportContainer = null # 视口容器 (终端内显示)
-
 var _dragging: bool = false
 var _drag_offset: Vector2 = Vector2.ZERO
 var _is_open: bool = false
@@ -81,21 +80,39 @@ func _process(delta: float) -> void:
 func _build_ui() -> void:
 	layer = -1
 
-	# ── 面板容器 ──
-	panel = PanelContainer.new()
+	# ── 外层: SubViewportContainer (拖拽/动画/围栏的目标) ──
+	panel = SubViewportContainer.new()
 	panel.visible = false
 	panel.custom_minimum_size = Vector2(_panel_w, _panel_h)
-	var ps = StyleBoxEmpty.new()
-	panel.add_theme_stylebox_override("panel", ps)
+	panel.size = Vector2(_panel_w, _panel_h)
+	panel.stretch = true
 	panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(panel)
+
+	# ── 渲染视口 (全局纹理捕获源 → 全息屏) ──
+	_panel_viewport = SubViewport.new()
+	_panel_viewport.size = Vector2i(int(_panel_w), int(_panel_h))
+	_panel_viewport.transparent_bg = true
+	_panel_viewport.handle_input_locally = true
+	_panel_viewport.gui_disable_input = false
+	_panel_viewport.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
+	panel.add_child(_panel_viewport)
+
+	# ── 内层: PanelContainer (实际 UI 内容) ──
+	_panel_inner = PanelContainer.new()
+	_panel_inner.custom_minimum_size = Vector2(_panel_w, _panel_h)
+	_panel_inner.size = Vector2(_panel_w, _panel_h)
+	var ps = StyleBoxEmpty.new()
+	_panel_inner.add_theme_stylebox_override("panel", ps)
+	_panel_inner.mouse_filter = Control.MOUSE_FILTER_PASS
+	_panel_viewport.add_child(_panel_inner)
 
 	# ── 自定义边框绘制层 ──
 	_frame_drawer = Control.new()
 	_frame_drawer.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_frame_drawer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_frame_drawer.draw.connect(_on_frame_draw)
-	panel.add_child(_frame_drawer)
+	_panel_inner.add_child(_frame_drawer)
 
 	# ── 外边距容器 ──
 	var margin = MarginContainer.new()
@@ -106,7 +123,7 @@ func _build_ui() -> void:
 	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	margin.mouse_filter = Control.MOUSE_FILTER_PASS
-	panel.add_child(margin)
+	_panel_inner.add_child(margin)
 
 	# ── 主布局 ──
 	var outer = VBoxContainer.new()
@@ -269,22 +286,6 @@ func _build_content_area() -> PanelContainer:
 	# ── 大厅 ──
 	_lobby_placeholder = _build_lobby_placeholder()
 	_content_stack.add_child(_lobby_placeholder)
-
-	# ── 预创建 SubViewport (游戏启动时复用，减少首帧渲染管线冷启动卡顿) ──
-	_game_vp_container = SubViewportContainer.new()
-	_game_vp_container.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_game_vp_container.stretch = true
-	_game_vp_container.mouse_filter = Control.MOUSE_FILTER_PASS
-	_game_vp_container.visible = false  # 大厅时隐藏
-
-	_game_viewport = SubViewport.new()
-	_game_viewport.transparent_bg = false
-	_game_viewport.handle_input_locally = true
-	_game_viewport.gui_disable_input = false
-	_game_viewport.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
-
-	_game_vp_container.add_child(_game_viewport)
-	_content_stack.add_child(_game_vp_container)
 
 	return area
 
@@ -661,10 +662,9 @@ func _launch_terminal_game(game_id: String) -> void:
 	_active_game = game
 	_active_game_name = game_name
 
-	# 隐藏大厅，显示预创建的 SubViewport
+	# 隐藏大厅，显示游戏 (直接挂内容区，由面板级 SubViewport 统一捕获)
 	_lobby_placeholder.visible = false
-	_game_viewport.add_child(_active_game)
-	_game_vp_container.visible = true
+	_content_stack.add_child(_active_game)
 
 	# 更新终端显示
 	_state = TerminalState.PLAYING
@@ -686,9 +686,6 @@ func _cleanup_active_game() -> void:
 		_active_game.queue_free()
 	_active_game = null
 	_active_game_name = ""
-	# 隐藏视口容器 (不销毁，下次复用)
-	if is_instance_valid(_game_vp_container):
-		_game_vp_container.visible = false
 
 func _return_to_lobby() -> void:
 	_cleanup_active_game()
@@ -702,10 +699,10 @@ func _return_to_lobby() -> void:
 #  全息投影联动
 # ═══════════════════════════════════════════════
 
-## 返回游戏 SubViewport 纹理 (供全息屏 texture_provider 回调)
+## 返回全终端面板纹理 (供全息屏 texture_provider 回调)
 func get_game_texture() -> Texture2D:
-	if is_instance_valid(_game_viewport):
-		return _game_viewport.get_texture()
+	if is_instance_valid(_panel_viewport):
+		return _panel_viewport.get_texture()
 	return null
 
 ## 激活全息屏投影 (GAME 模式)
