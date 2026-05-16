@@ -23,6 +23,7 @@ const SecSystem = preload("res://ui/context_menu/sec_system.gd")
 @onready var sec_visual_btn: Button = $HUDPanel/Margin/VBox/SecVisualBtn
 @onready var sec_play_btn: Button = $HUDPanel/Margin/VBox/SecPlayBtn
 @onready var sec_system_btn: Button = $HUDPanel/Margin/VBox/SecSystemBtn
+@onready var todo_btn: Button = $HUDPanel/Margin/VBox/TodoBtn
 @onready var profile_btn: Button = $HUDPanel/Margin/VBox/ProfileBtn
 @onready var quit_btn: Button = $HUDPanel/Margin/VBox/QuitBtn
 
@@ -64,6 +65,9 @@ func _ready() -> void:
 	_build_all_sections()
 
 	# 胶囊按钮样式
+	_apply_capsule_style(todo_btn, Color(0.12, 0.22, 0.42, 0.65), Color(0.4, 0.6, 0.9, 0.5))
+	todo_btn.pressed.connect(func(): _close_and_emit(EventBus.show_todo_panel))
+
 	_apply_capsule_style(profile_btn, Color(0.08, 0.15, 0.28, 0.65), Color(0.2, 0.6, 0.85, 0.5))
 	profile_btn.pressed.connect(func(): _close_and_emit(EventBus.show_pet_profile))
 	_apply_capsule_style(quit_btn, Color(0.35, 0.1, 0.1, 0.65), Color(0.8, 0.3, 0.3, 0.5))

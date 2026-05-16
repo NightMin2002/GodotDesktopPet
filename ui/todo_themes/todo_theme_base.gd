@@ -286,7 +286,12 @@ func make_add_button(text: String) -> Button:
 func make_close_button(text: String) -> Button:
 	var btn = _make_btn(text, bg_control, bd_control, danger, btn_close_hover, 13)
 	btn.mouse_default_cursor_shape = Control.CURSOR_ARROW
-	btn.custom_minimum_size.y = 28
+	btn.custom_minimum_size.y = 26
+	for state in ["normal", "hover", "pressed"]:
+		var s = btn.get_theme_stylebox(state) as StyleBoxFlat
+		if s:
+			s.content_margin_top = 3
+			s.content_margin_bottom = 3
 	return btn
 
 func make_delete_button(text: String) -> Button:
