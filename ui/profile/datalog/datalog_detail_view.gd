@@ -35,24 +35,33 @@ static func update_detail_panel(ctx: Dictionary) -> void:
 	ui.title_edit.text = entry.get("title", "")
 	ui.title_edit.editable = true
 
-	# 检测是否为窗口报告 (有结构化数据)
+	# 检测条目类型
 	var tags = entry.get("tags", [])
 	var is_window_report = ("sys:window" in tags and entry.has("window_data"))
+	var is_input_report = ("sys:input" in tags and is_pet)
+
+	# 三种显示模式: 窗口卡片 / 机体记录 BBCode / 普通 TextEdit
+	if ui.has("content_wrapper"): ui.content_wrapper.visible = false
+	if ui.has("pet_content_wrapper"): ui.pet_content_wrapper.visible = false
+	if ui.has("window_cards_wrapper"): ui.window_cards_wrapper.visible = false
 
 	if is_window_report:
-		# 窗口报告: 卡片模式
-		if ui.has("content_wrapper"): ui.content_wrapper.visible = false
 		if ui.has("window_cards_wrapper"):
 			ui.window_cards_wrapper.visible = true
 			if ui.has("window_cards_inner") and ctx.has("render_window_cards"):
-				ctx.render_window_cards.call(ui.window_cards_inner, entry.get("window_data", {}))
+				ctx.render_window_cards.call(ui.window_cards_inner, entry.get("window_data", {}), entry.get("window_delta", {}))
+	elif is_input_report:
+		# 输入报告: 用 RichTextLabel 显示带增量绿字的内容
+		if ui.has("pet_content_wrapper") and ui.has("pet_content_rtl"):
+			ui.pet_content_wrapper.visible = true
+			var bbcode = _format_input_bbcode(entry)
+			ui.pet_content_rtl.text = ""
+			ui.pet_content_rtl.parse_bbcode(bbcode)
 	else:
 		# 普通模式: TextEdit
 		if ui.has("content_wrapper"): ui.content_wrapper.visible = true
 		ui.content_edit.text = entry.get("content", "")
 		ui.content_edit.editable = not is_pet
-		if ui.has("window_cards_wrapper"):
-			ui.window_cards_wrapper.visible = false
 
 	ui.del_btn.visible = true
 	ui.tag_input.visible = true
@@ -61,6 +70,72 @@ static func update_detail_panel(ctx: Dictionary) -> void:
 	ui.save_badge.text = "创建于 %s" % created if created != "" else ""
 
 	_refresh_tags_display(ctx, entry.get("tags", []))
+
+## 生成输入报告的 BBCode (内联绿字增量)
+static func _format_input_bbcode(entry: Dictionary) -> String:
+	var data: Dictionary = entry.get("input_data", {})
+	var delta: Dictionary = entry.get("input_delta", {})
+	var has_delta = not delta.is_empty()
+	var green = "4cf06a"  # 增量绿色
+
+	var lines: PackedStringArray = []
+	lines.append("=== 输入行为统计报告 ===")
+	var sess = int(data.get("session_sec", 0))
+	lines.append("会话时长: %d 秒" % sess)
+	var total_keys = int(data.get("total_keystrokes", 0))
+	var dk = int(delta.get("keystrokes", 0))
+	if has_delta and dk > 0:
+		lines.append("总击键: %d 次[color=#%s]+%d次[/color]" % [total_keys, green, dk])
+	else:
+		lines.append("总击键: %d 次" % total_keys)
+	lines.append("")
+
+	# 按键 Top 10
+	var keys: Dictionary = data.get("keys", {})
+	if keys.size() > 0:
+		lines.append("-- 按键排行 (Top 10) --")
+		var sorted_keys = []
+		for k in keys:
+			sorted_keys.append([k, keys[k]])
+		sorted_keys.sort_custom(func(a, b): return a[1] > b[1])
+		for i in range(mini(10, sorted_keys.size())):
+			lines.append("  %s: %d" % [sorted_keys[i][0], sorted_keys[i][1]])
+		lines.append("")
+
+	# 组合键
+	var combos: Dictionary = data.get("combos", {})
+	if combos.size() > 0:
+		lines.append("-- 组合键统计 --")
+		var sorted_combos = []
+		for k in combos:
+			sorted_combos.append([k, combos[k]])
+		sorted_combos.sort_custom(func(a, b): return a[1] > b[1])
+		for item in sorted_combos:
+			lines.append("  %s: %d" % [item[0], item[1]])
+		lines.append("")
+
+	# 鼠标 (逐项标注增量)
+	var mouse: Dictionary = data.get("mouse", {})
+	if mouse.size() > 0:
+		lines.append("-- 鼠标统计 --")
+		var lc = int(mouse.get("left_clicks", 0))
+		var d_lc = int(delta.get("left_clicks", 0))
+		if has_delta and d_lc > 0:
+			lines.append("  左键: %d 次[color=#%s]+%d次[/color]" % [lc, green, d_lc])
+		else:
+			lines.append("  左键: %d 次" % lc)
+		var rc = int(mouse.get("right_clicks", 0))
+		var d_rc = int(delta.get("right_clicks", 0))
+		if has_delta and d_rc > 0:
+			lines.append("  右键: %d 次[color=#%s]+%d次[/color]" % [rc, green, d_rc])
+		else:
+			lines.append("  右键: %d 次" % rc)
+		lines.append("  中键: %d 次" % int(mouse.get("middle_clicks", 0)))
+		var dist_px = int(mouse.get("distance_px", 0))
+		if dist_px > 0:
+			lines.append("  移动: %.1f m (估算)" % (float(dist_px) / 3780.0))
+
+	return "\n".join(lines)
 
 ## 刷新标签徽章列表
 static func _refresh_tags_display(ctx: Dictionary, tags: Array) -> void:

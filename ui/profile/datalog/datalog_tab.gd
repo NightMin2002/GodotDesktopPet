@@ -36,6 +36,8 @@ var _scroll: ScrollContainer
 var _detail_header: Label
 var _detail_empty: VBoxContainer  # 右栏未选中时的引导
 var _content_wrapper: HBoxContainer # 正文包裹 (CyberScrollIndicator.wrap 生成)
+var _pet_content_rtl: RichTextLabel  # 机体记录只读展示 (支持 BBCode 绿字增量)
+var _pet_content_wrapper: HBoxContainer  # 机体记录包裹
 var _window_cards_wrapper: HBoxContainer  # 窗口包裹 (CyberScrollIndicator.wrap 生成)
 var _window_cards_inner: VBoxContainer    # 卡片挂载点
 var _search_row: HBoxContainer     # 搜索+按钮行 (分类首页时隐藏)
@@ -165,12 +167,14 @@ func build() -> void:
 			EventBus.trigger_input_report.emit()
 		elif _pet_category == "sys:window":
 			EventBus.trigger_window_report.emit()
-		# 稍后刷新列表
+		# 刷新列表并自动选中更新的报告
 		var tw = create_tween()
-		tw.tween_interval(0.1)
+		tw.tween_interval(0.15)
 		tw.tween_callback(func():
 			if _source_filter == "pet" and _pet_category != "":
 				_apply_filter()
+				if not _filtered.is_empty():
+					_select_log(0)
 		)
 	)
 	_report_btn.visible = false  # 只在子列表时显示
@@ -353,6 +357,29 @@ func build() -> void:
 	_detail_panel.add_child(_content_edit)
 	_content_wrapper = CyberScrollIndicator.wrap(_content_edit)
 
+	# 机体记录只读展示 (RichTextLabel, 支持 BBCode 绿字)
+	var pet_scroll = ScrollContainer.new()
+	pet_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pet_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	pet_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_detail_panel.add_child(pet_scroll)
+
+	_pet_content_rtl = RichTextLabel.new()
+	_pet_content_rtl.bbcode_enabled = true
+	_pet_content_rtl.fit_content = true
+	_pet_content_rtl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_pet_content_rtl.add_theme_font_size_override("normal_font_size", 14)
+	_pet_content_rtl.add_theme_color_override("default_color", Color(0.80, 0.85, 0.90, 0.95))
+	var rtl_bg = StyleBoxFlat.new()
+	rtl_bg.bg_color = Color(0.03, 0.04, 0.08, 0.4)
+	rtl_bg.set_corner_radius_all(2)
+	rtl_bg.set_content_margin_all(12)
+	_pet_content_rtl.add_theme_stylebox_override("normal", rtl_bg)
+	pet_scroll.add_child(_pet_content_rtl)
+
+	_pet_content_wrapper = CyberScrollIndicator.wrap(pet_scroll)
+	_pet_content_wrapper.visible = false
+
 	# 窗口卡片容器 (替代 TextEdit, 当显示 sys:window 条目时)
 	var win_scroll = ScrollContainer.new()
 	win_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -438,6 +465,8 @@ func _build_ctx() -> void:
 			"title_edit": _title_edit,
 			"content_edit": _content_edit,
 			"content_wrapper": _content_wrapper,
+			"pet_content_rtl": _pet_content_rtl,
+			"pet_content_wrapper": _pet_content_wrapper,
 			"tags_flow": _tags_flow,
 			"tag_input": _tag_input,
 			"del_btn": _del_btn,

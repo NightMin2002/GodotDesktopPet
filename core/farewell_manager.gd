@@ -93,6 +93,10 @@ func quit_with_farewell() -> void:
 		return
 	_is_quitting = true
 	
+	# 退出前保存数据报告 (叠加到今天)
+	if _main.has_method("save_exit_reports"):
+		_main.save_exit_reports()
+	
 	for p in _main.pet_instances:
 		if is_instance_valid(p):
 			p.set_process_unhandled_input(false)

@@ -3,7 +3,7 @@
 extends RefCounted
 
 ## 渲染窗口卡片到 container
-static func render(container: Control, window_data: Dictionary) -> void:
+static func render(container: Control, window_data: Dictionary, window_delta: Dictionary = {}) -> void:
 	for child in container.get_children():
 		child.queue_free()
 
@@ -34,10 +34,11 @@ static func render(container: Control, window_data: Dictionary) -> void:
 	for item in sorted:
 		var proc_name: String = item[0]
 		var info: Dictionary = item[1]
-		var card = _make_app_card(proc_name, info)
+		var delta_info: Dictionary = window_delta.get(proc_name, {})
+		var card = _make_app_card(proc_name, info, delta_info)
 		grid.add_child(card)
 
-static func _make_app_card(proc_name: String, info: Dictionary) -> Control:
+static func _make_app_card(proc_name: String, info: Dictionary, delta_info: Dictionary = {}) -> Control:
 	var card = AppCard.new()
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	
@@ -46,14 +47,33 @@ static func _make_app_card(proc_name: String, info: Dictionary) -> Control:
 	card.add_child(vbox)
 
 	# 进程名 (标题行)
+	var name_row = HBoxContainer.new()
+	name_row.add_theme_constant_override("separation", 6)
+	name_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(name_row)
+
 	var name_lbl = Label.new()
 	name_lbl.text = proc_name
 	name_lbl.add_theme_font_size_override("font_size", 15)
 	name_lbl.add_theme_color_override("font_color", Color(0.95, 0.98, 1.0, 1.0))
 	name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	vbox.add_child(name_lbl)
+	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_row.add_child(name_lbl)
 
-	# 前台时长
+	# 新增进程标记
+	if delta_info.get("is_new", false):
+		var new_badge = Label.new()
+		new_badge.text = "NEW"
+		new_badge.add_theme_font_size_override("font_size", 9)
+		new_badge.add_theme_color_override("font_color", Color(0.3, 0.95, 0.5, 0.9))
+		name_row.add_child(new_badge)
+
+	# 前台时长 + 增量
+	var time_row = HBoxContainer.new()
+	time_row.add_theme_constant_override("separation", 6)
+	time_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(time_row)
+
 	var focus_sec: int = info.get("focus_sec", 0)
 	var time_str = _format_duration(focus_sec)
 	var time_lbl = Label.new()
@@ -63,7 +83,16 @@ static func _make_app_card(proc_name: String, info: Dictionary) -> Control:
 		time_lbl.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.4, 0.95, 0.9))
 	else:
 		time_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7, 0.6))
-	vbox.add_child(time_lbl)
+	time_row.add_child(time_lbl)
+
+	# 增量绿字 (+XXm)
+	var delta_sec: int = delta_info.get("focus_sec_delta", 0)
+	if delta_sec > 0:
+		var delta_lbl = Label.new()
+		delta_lbl.text = "+%s" % _format_delta_duration(delta_sec)
+		delta_lbl.add_theme_font_size_override("font_size", 11)
+		delta_lbl.add_theme_color_override("font_color", Color(0.3, 0.95, 0.5, 0.85))
+		time_row.add_child(delta_lbl)
 
 	# 窗口标题 (最多显示 2 条)
 	var titles: Array = info.get("titles", [])
@@ -106,6 +135,15 @@ static func _format_duration(sec: int) -> String:
 		return "前台 %ds" % sec
 	else:
 		return "仅检测到"
+
+## 增量时长格式化 (用于绿字 +XX 显示)
+static func _format_delta_duration(sec: int) -> String:
+	if sec >= 3600:
+		return "%dh%dm" % [sec / 3600, (sec % 3600) / 60]
+	elif sec >= 60:
+		return "%dm%ds" % [sec / 60, sec % 60]
+	else:
+		return "%ds" % sec
 
 # 自定义卡片渲染器: 实现防伪跟随光标 + 机械装甲锁定效果
 class AppCard extends MarginContainer:

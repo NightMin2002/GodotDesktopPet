@@ -178,6 +178,7 @@ func _setup_system_tray() -> void:
 			if id == 1:
 				quit_with_farewell()
 			elif id == 2:
+				save_exit_reports()
 				get_tree().quit()
 		)
 		add_child(tray_menu)
@@ -456,22 +457,138 @@ func _on_trigger_input_report() -> void:
 	if not input_monitor or not input_monitor.has_method("GetFullSnapshot"):
 		return
 	var snapshot: Dictionary = input_monitor.call("GetFullSnapshot")
-	# 写入机体记录
+	_save_input_report(snapshot)
+
+func _on_trigger_window_report() -> void:
+	if not input_monitor or not input_monitor.has_method("GetWindowStats"):
+		return
+	var win_stats: Dictionary = input_monitor.call("GetWindowStats")
+	_save_window_report(win_stats)
+
+## 退出时自动保存报告 (供 farewell_manager 调用)
+func save_exit_reports() -> void:
+	if not input_monitor:
+		return
+	if input_monitor.has_method("GetFullSnapshot"):
+		var snapshot: Dictionary = input_monitor.call("GetFullSnapshot")
+		_save_input_report(snapshot)
+	if input_monitor.has_method("GetWindowStats"):
+		var win_stats: Dictionary = input_monitor.call("GetWindowStats")
+		_save_window_report(win_stats)
+	print("[InputMonitor] 退出保存: 报告已归档")
+
+# ═══════════════════════════════════════════════
+#  报告生成 (当天叠加模式)
+# ═══════════════════════════════════════════════
+
+## 获取今天的日期字符串 (MM-DD)
+func _today_date_key() -> String:
+	var td = Time.get_datetime_dict_from_system()
+	return "%02d-%02d" % [td.month, td.day]
+
+## 查找今天已有的同类型报告 (返回在 logs 中的索引, -1 表示没有)
+func _find_today_report(logs: Array, tag: String) -> int:
+	var today = _today_date_key()
+	for i in range(logs.size()):
+		var entry: Dictionary = logs[i]
+		if entry.get("source", "") != "pet":
+			continue
+		var tags: Array = entry.get("tags", [])
+		if tag not in tags:
+			continue
+		# 检查创建日期是否为今天 (格式: 2026-05-15 23:08:36 → 取 MM-DD)
+		var created: String = entry.get("created", "")
+		if created.length() >= 10:
+			var parts = created.split("-")
+			if parts.size() >= 3:
+				var entry_date = "%s-%s" % [parts[1], parts[2].substr(0, 2)]
+				if entry_date == today:
+					return i
+	return -1
+
+# ── 输入报告 ──
+
+func _save_input_report(snapshot: Dictionary) -> void:
 	var now = Time.get_datetime_string_from_system(false, true)
 	var td = Time.get_datetime_dict_from_system()
-	var entry = {
-		"id": "%d_%d" % [Time.get_unix_time_from_system(), randi() % 100000],
-		"title": "输入行为报告 %02d-%02d %02d:%02d" % [td.month, td.day, td.hour, td.minute],
-		"content": _format_input_report(snapshot),
-		"tags": ["sys:input", "auto"],
-		"source": "pet",
-		"created": now,
-		"updated": now,
-	}
 	var logs = SettingsManager.get_datalogs()
-	logs.insert(0, entry)
-	SettingsManager.save_datalogs(logs)
-	print("[InputMonitor] 手动触发: 已写入机体记录")
+
+	var existing_idx = _find_today_report(logs, "sys:input")
+	if existing_idx >= 0:
+		var existing: Dictionary = logs[existing_idx]
+		var old_data: Dictionary = existing.get("input_data", {})
+		var last_raw: Dictionary = existing.get("input_data_raw", old_data)
+		var merged = _merge_input_data(old_data, snapshot, last_raw)
+		var delta = _diff_input(old_data, merged)
+		existing["input_data"] = merged
+		existing["input_data_raw"] = snapshot.duplicate(true)
+		existing["input_delta"] = delta
+		existing["content"] = _format_input_report(merged)
+		existing["updated"] = now
+		existing["title"] = "输入行为报告 %02d-%02d (累计)" % [td.month, td.day]
+		existing["merge_count"] = existing.get("merge_count", 1) + 1
+		logs[existing_idx] = existing
+		SettingsManager.save_datalogs(logs)
+		print("[InputMonitor] 叠加: +%d 击键 (第 %d 次)" % [delta.get("keystrokes", 0), existing.get("merge_count", 2)])
+	else:
+		var entry = {
+			"id": "%d_%d" % [Time.get_unix_time_from_system(), randi() % 100000],
+			"title": "输入行为报告 %02d-%02d %02d:%02d" % [td.month, td.day, td.hour, td.minute],
+			"content": _format_input_report(snapshot),
+			"input_data": snapshot.duplicate(true),
+			"input_data_raw": snapshot.duplicate(true),
+			"tags": ["sys:input", "auto"],
+			"source": "pet",
+			"created": now,
+			"updated": now,
+			"merge_count": 1,
+		}
+		logs.insert(0, entry)
+		SettingsManager.save_datalogs(logs)
+		print("[InputMonitor] 新建: 输入报告已写入")
+
+## 合并输入数据 (跨会话安全累积)
+func _merge_input_data(old: Dictionary, new_snap: Dictionary, last_raw: Dictionary) -> Dictionary:
+	var merged: Dictionary = {}
+	merged["session_sec"] = int(old.get("session_sec", 0)) + _raw_delta(last_raw, new_snap, "session_sec")
+	merged["total_keystrokes"] = int(old.get("total_keystrokes", 0)) + _raw_delta(last_raw, new_snap, "total_keystrokes")
+	merged["keys"] = _merge_dict_values(old.get("keys", {}), new_snap.get("keys", {}), last_raw.get("keys", {}))
+	merged["combos"] = _merge_dict_values(old.get("combos", {}), new_snap.get("combos", {}), last_raw.get("combos", {}))
+	var old_m: Dictionary = old.get("mouse", {})
+	var new_m: Dictionary = new_snap.get("mouse", {})
+	var last_m: Dictionary = last_raw.get("mouse", {})
+	merged["mouse"] = {}
+	for key in ["left_clicks", "right_clicks", "middle_clicks", "distance_px"]:
+		merged["mouse"][key] = int(old_m.get(key, 0)) + _raw_delta(last_m, new_m, key)
+	merged["timestamp"] = new_snap.get("timestamp", "")
+	return merged
+
+## C# 原始增量: 新值 < 旧原始值 → C# 重启了, 新值本身就是增量
+func _raw_delta(last_raw: Dictionary, new_snap: Dictionary, key: String) -> int:
+	var new_v = int(new_snap.get(key, 0))
+	var last_v = int(last_raw.get(key, 0))
+	return new_v if new_v < last_v else (new_v - last_v)
+
+## 逐 key 累加增量 (按键/组合键字典)
+func _merge_dict_values(old_dict: Dictionary, new_dict: Dictionary, last_dict: Dictionary) -> Dictionary:
+	var result = old_dict.duplicate(true)
+	for k in new_dict:
+		var new_v = int(new_dict[k])
+		var last_v = int(last_dict.get(k, 0))
+		var d = new_v if new_v < last_v else (new_v - last_v)
+		result[k] = int(result.get(k, 0)) + d
+	return result
+
+## 两份累积数据的差值 (用于 UI 绿字)
+func _diff_input(old: Dictionary, merged: Dictionary) -> Dictionary:
+	var delta: Dictionary = {}
+	delta["keystrokes"] = int(merged.get("total_keystrokes", 0)) - int(old.get("total_keystrokes", 0))
+	var old_m: Dictionary = old.get("mouse", {})
+	var new_m: Dictionary = merged.get("mouse", {})
+	delta["left_clicks"] = int(new_m.get("left_clicks", 0)) - int(old_m.get("left_clicks", 0))
+	delta["right_clicks"] = int(new_m.get("right_clicks", 0)) - int(old_m.get("right_clicks", 0))
+	delta["distance_px"] = int(new_m.get("distance_px", 0)) - int(old_m.get("distance_px", 0))
+	return delta
 
 func _format_input_report(snap: Dictionary) -> String:
 	var lines: PackedStringArray = []
@@ -517,36 +634,96 @@ func _format_input_report(snap: Dictionary) -> String:
 
 	return "\n".join(lines)
 
-func _on_trigger_window_report() -> void:
-	if not input_monitor or not input_monitor.has_method("GetWindowStats"):
-		return
-	var win_stats: Dictionary = input_monitor.call("GetWindowStats")
+# ── 窗口报告 ──
+
+func _save_window_report(win_stats: Dictionary) -> void:
 	var now = Time.get_datetime_string_from_system(false, true)
 	var td = Time.get_datetime_dict_from_system()
-
-	# 生成摘要 (用于列表预览) 和 JSON 数据 (用于卡片渲染)
-	var app_count = win_stats.size()
-	var total_sec = 0
-	for proc_name in win_stats:
-		total_sec += int(win_stats[proc_name].get("focus_sec", 0))
-	var summary = "检测到 %d 个应用" % app_count
-	if total_sec >= 60:
-		summary += ", 累计前台 %dm" % (total_sec / 60)
-
-	var entry = {
-		"id": "%d_%d" % [Time.get_unix_time_from_system(), randi() % 100000],
-		"title": "窗口活动报告 %02d-%02d %02d:%02d" % [td.month, td.day, td.hour, td.minute],
-		"content": summary,
-		"window_data": win_stats,  # 结构化数据, 供卡片渲染
-		"tags": ["sys:window", "auto"],
-		"source": "pet",
-		"created": now,
-		"updated": now,
-	}
 	var logs = SettingsManager.get_datalogs()
-	logs.insert(0, entry)
-	SettingsManager.save_datalogs(logs)
-	print("[InputMonitor] 手动触发: 窗口活动报告已写入 (%d 个应用)" % app_count)
+
+	var existing_idx = _find_today_report(logs, "sys:window")
+	if existing_idx >= 0:
+		var existing: Dictionary = logs[existing_idx]
+		var old_data: Dictionary = existing.get("window_data", {})
+		var last_raw: Dictionary = existing.get("window_data_raw", old_data)
+		var merged = _merge_window_data(old_data, win_stats, last_raw)
+		var delta = _diff_window(old_data, merged)
+		existing["window_data"] = merged
+		existing["window_data_raw"] = win_stats.duplicate(true)
+		existing["window_delta"] = delta
+		existing["updated"] = now
+		existing["title"] = "窗口活动报告 %02d-%02d (累计)" % [td.month, td.day]
+		var app_count = merged.size()
+		var total_sec = 0
+		for proc_name in merged:
+			total_sec += int(merged[proc_name].get("focus_sec", 0))
+		var summary = "检测到 %d 个应用" % app_count
+		if total_sec >= 60:
+			summary += ", 累计前台 %dm" % (total_sec / 60)
+		existing["content"] = summary
+		existing["merge_count"] = existing.get("merge_count", 1) + 1
+		logs[existing_idx] = existing
+		SettingsManager.save_datalogs(logs)
+		print("[InputMonitor] 叠加: 窗口报告合并 (第 %d 次)" % existing.get("merge_count", 2))
+	else:
+		var app_count = win_stats.size()
+		var total_sec = 0
+		for proc_name in win_stats:
+			total_sec += int(win_stats[proc_name].get("focus_sec", 0))
+		var summary = "检测到 %d 个应用" % app_count
+		if total_sec >= 60:
+			summary += ", 累计前台 %dm" % (total_sec / 60)
+		var entry = {
+			"id": "%d_%d" % [Time.get_unix_time_from_system(), randi() % 100000],
+			"title": "窗口活动报告 %02d-%02d %02d:%02d" % [td.month, td.day, td.hour, td.minute],
+			"content": summary,
+			"window_data": win_stats.duplicate(true),
+			"window_data_raw": win_stats.duplicate(true),
+			"tags": ["sys:window", "auto"],
+			"source": "pet",
+			"created": now,
+			"updated": now,
+			"merge_count": 1,
+		}
+		logs.insert(0, entry)
+		SettingsManager.save_datalogs(logs)
+		print("[InputMonitor] 新建: 窗口报告 (%d 个应用)" % app_count)
+
+## 合并窗口数据 (跨会话安全累积)
+func _merge_window_data(old_data: Dictionary, new_data: Dictionary, last_raw: Dictionary) -> Dictionary:
+	var merged = old_data.duplicate(true)
+	for proc_name in new_data:
+		var new_info: Dictionary = new_data[proc_name]
+		var new_sec = int(new_info.get("focus_sec", 0))
+		if merged.has(proc_name):
+			var existing_info: Dictionary = merged[proc_name]
+			var old_sec = int(existing_info.get("focus_sec", 0))
+			var last_sec = int(last_raw.get(proc_name, {}).get("focus_sec", 0))
+			var d = new_sec if new_sec < last_sec else (new_sec - last_sec)
+			existing_info["focus_sec"] = old_sec + d
+			var old_titles: Array = existing_info.get("titles", [])
+			for t in new_info.get("titles", []):
+				if t not in old_titles:
+					old_titles.append(t)
+			existing_info["titles"] = old_titles
+			existing_info["last_active"] = new_info.get("last_active", existing_info.get("last_active", ""))
+			merged[proc_name] = existing_info
+		else:
+			merged[proc_name] = new_info.duplicate(true) if new_info is Dictionary else new_info
+	return merged
+
+## 窗口增量 (merged - old, 用于 UI 绿字)
+func _diff_window(old_data: Dictionary, merged: Dictionary) -> Dictionary:
+	var delta: Dictionary = {}
+	for proc_name in merged:
+		var merged_sec = int(merged[proc_name].get("focus_sec", 0))
+		var old_sec = int(old_data.get(proc_name, {}).get("focus_sec", 0))
+		var diff = merged_sec - old_sec
+		if diff > 0:
+			delta[proc_name] = {"focus_sec_delta": diff}
+		if not old_data.has(proc_name):
+			delta[proc_name] = {"focus_sec_delta": merged_sec, "is_new": true}
+	return delta
 
 # ── 任务栏样式守护 ──
 

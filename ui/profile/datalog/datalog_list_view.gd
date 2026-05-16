@@ -87,18 +87,20 @@ static func make_log_card(entry: Dictionary, idx: int, selected_idx: int,
 	title_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(title_l)
 
-	# 内容预览
-	var preview_text = entry.get("content", "").strip_edges()
-	if preview_text.length() > 60:
-		preview_text = preview_text.substr(0, 60) + "..."
-	if preview_text != "":
-		var preview_l = Label.new()
-		preview_l.text = preview_text
-		preview_l.add_theme_font_size_override("font_size", 11)
-		preview_l.add_theme_color_override("font_color", Color(0.38, 0.42, 0.48, 0.4))
-		preview_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		preview_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		vbox.add_child(preview_l)
+	# 内容预览 (仅操作员备忘显示, 机体记录只显示标题)
+	var is_pet_entry = (entry.get("source", "user") == "pet")
+	if not is_pet_entry:
+		var preview_text = entry.get("content", "").strip_edges()
+		if preview_text.length() > 60:
+			preview_text = preview_text.substr(0, 60) + "..."
+		if preview_text != "":
+			var preview_l = Label.new()
+			preview_l.text = preview_text
+			preview_l.add_theme_font_size_override("font_size", 11)
+			preview_l.add_theme_color_override("font_color", Color(0.38, 0.42, 0.48, 0.4))
+			preview_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			preview_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			vbox.add_child(preview_l)
 
 	# 点击选中
 	var i_copy = idx
