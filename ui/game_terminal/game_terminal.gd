@@ -91,6 +91,9 @@ func _process(delta: float) -> void:
 		# HUD 数据轮询 (PLAYING 状态下每帧从游戏拉取)
 		if _state == TerminalState.PLAYING and _active_game:
 			_update_hud()
+	else:
+		# ── 兜底自检: 面板已关闭但残留未清理 ──
+		_sanity_check()
 
 # ═══════════════════════════════════════════════
 #  UI 构建
@@ -806,11 +809,7 @@ func _close_panel() -> void:
 	_is_open = false
 	_state = TerminalState.CLOSED
 	_dragging = false
-	_cleanup_active_game()
-	_destroy_confine_walls()
-	var pet = _get_pet()
-	if pet:
-		pet.overlay_rect = Rect2()
+	_force_full_cleanup()
 	panel.pivot_offset = panel.size / 2.0
 	var tween = create_tween().set_parallel(true)
 	tween.tween_property(panel, "modulate:a", 0.0, 0.1)
@@ -1102,13 +1101,7 @@ func _cleanup_active_game() -> void:
 	_active_game_id = ""
 
 func _return_to_lobby() -> void:
-	# 自玩清理
-	if _auto_play:
-		_auto_play = false
-		_auto_visible = false
-		_auto_stop_timer()
-	_hide_auto_blocker()
-	_cleanup_active_game()
+	_force_full_cleanup()
 	_clear_hud_slots()
 	_lobby_placeholder.visible = true
 	_state = TerminalState.LOBBY
@@ -1334,13 +1327,61 @@ func _auto_finish_and_close() -> void:
 
 ## 自玩清理: 关闭游戏 + 隐藏终端
 func _auto_cleanup() -> void:
-	_auto_play = false
-	_auto_visible = false
-	_auto_stop_timer()
-	_cleanup_active_game()
+	_force_full_cleanup()
 	if is_instance_valid(panel):
 		panel.visible = false
 		panel.modulate.a = 1.0  # 恢复透明度
 	_is_open = false
 	_state = TerminalState.CLOSED
 	print("[GameTerminal] 自玩结束")
+
+# ═══════════════════════════════════════════════
+#  统一清理 + 兜底自检
+# ═══════════════════════════════════════════════
+
+## 统一清理入口: 所有退出路径都走这里
+## 以后新增需要清理的产物, 只需在此处添加
+func _force_full_cleanup() -> void:
+	# 自玩状态
+	if _auto_play:
+		_auto_play = false
+		_auto_visible = false
+	_auto_stop_timer()
+	_hide_auto_blocker()
+	# 游戏 + 全息投影
+	_cleanup_active_game()
+	# 围栏墙
+	_destroy_confine_walls()
+	# DWM 穿透矩形
+	var pet = _get_pet()
+	if pet:
+		pet.overlay_rect = Rect2()
+	# 拖拽
+	_dragging = false
+
+## 兜底自检: 面板已关闭时检测残留产物, 自动修复 + 打日志
+## 由 _process 在 _is_open==false 时调用
+func _sanity_check() -> void:
+	var issues: PackedStringArray = []
+	if is_instance_valid(_auto_timer):
+		_auto_stop_timer()
+		issues.append("auto_timer")
+	if is_instance_valid(_auto_blocker):
+		_hide_auto_blocker()
+		issues.append("auto_blocker")
+	if _confine_walls.size() > 0:
+		_destroy_confine_walls()
+		issues.append("confine_walls")
+	if _active_game and is_instance_valid(_active_game):
+		_cleanup_active_game()
+		issues.append("active_game")
+	if _auto_play:
+		_auto_play = false
+		_auto_visible = false
+		issues.append("auto_play_flag")
+	var pet = _get_pet()
+	if pet and pet.overlay_rect.size != Vector2.ZERO:
+		pet.overlay_rect = Rect2()
+		issues.append("overlay_rect")
+	if not issues.is_empty():
+		print("[GameTerminal] 兜底自检修复: ", ", ".join(issues))
