@@ -114,6 +114,14 @@ func _collect_hit_regions() -> void:
 				rects.append(btn_r.position.y)
 				rects.append(btn_r.size.x)
 				rects.append(btn_r.size.y)
+		# 游戏态关闭按钮: 矩形
+		if p.gaming:
+			var gbtn_r = p.gaming.get_close_btn_rect()
+			if gbtn_r.size != Vector2.ZERO:
+				rects.append(gbtn_r.position.x)
+				rects.append(gbtn_r.position.y)
+				rects.append(gbtn_r.size.x)
+				rects.append(gbtn_r.size.y)
 		# 待办提醒按钮: 矩形
 		if p.has_meta("prompt_btn_rect"):
 			var pr: Rect2 = p.get_meta("prompt_btn_rect")
@@ -259,6 +267,14 @@ func _update_hit_regions_fallback() -> void:
 				rects.append(_q(btn_r.position.y))
 				rects.append(_q(btn_r.size.x))
 				rects.append(_q(btn_r.size.y))
+		# 游戏态关闭按钮
+		if p.gaming:
+			var gbtn_r = p.gaming.get_close_btn_rect()
+			if gbtn_r.size != Vector2.ZERO:
+				rects.append(_q(gbtn_r.position.x))
+				rects.append(_q(gbtn_r.position.y))
+				rects.append(_q(gbtn_r.size.x))
+				rects.append(_q(gbtn_r.size.y))
 		# 待办提醒按钮
 		if p.has_meta("prompt_btn_rect"):
 			var pr: Rect2 = p.get_meta("prompt_btn_rect")
