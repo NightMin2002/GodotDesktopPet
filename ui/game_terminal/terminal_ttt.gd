@@ -59,6 +59,33 @@ func get_hud_data() -> Dictionary:
 		"moves": { "label": "落子", "value": "%d/9" % placed, "color": GameTerminalStyles.dim() },
 	}
 
+## 自玩 AI: 每步操作 (终端骨架通过 Timer 调用)
+func auto_play_step() -> void:
+	if not _game_active or not _player_turn:
+		return
+	# 用 minimax 为“玩家”找最佳位置 (AI 代玩玩家)
+	var best = _minimax_best_for_player()
+	if best >= 0 and _board[best] == 0:
+		_place(best, 1)
+		_check_end()
+		if _game_active:
+			_player_turn = false
+			get_tree().create_timer(0.35).timeout.connect(_ai_move)
+
+## 为玩家方找最佳棋位 (纯 minimax, 玩家希望最小化 AI 得分)
+func _minimax_best_for_player() -> int:
+	var best_score = 999
+	var best_move = -1
+	for i in range(9):
+		if _board[i] == 0:
+			_board[i] = 1
+			var score = _minimax(true, 0)
+			_board[i] = 0
+			if score < best_score:
+				best_score = score
+				best_move = i
+	return best_move
+
 func _process(delta: float) -> void:
 	_time += delta
 	# 胜负线动画 或 hover 时持续重绘

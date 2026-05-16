@@ -119,8 +119,8 @@ func _do_free_roam() -> void:
 	pet._start_free_roam()
 
 func _do_auto_game() -> void:
-	var games = ["2048", "minesweeper", "snake", "tetris"]
-	EventBus.launch_game_auto.emit(games[randi() % games.size()])
+	var games = ["ttt", "minesweeper", "2048", "snake"]
+	EventBus.terminal_auto_game.emit(games[randi() % games.size()])
 
 func _do_holo_browse() -> void:
 	# 决定屏幕方向 (和游戏态一样的逻辑)

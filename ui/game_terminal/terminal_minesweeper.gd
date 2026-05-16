@@ -56,6 +56,57 @@ func get_hud_data() -> Dictionary:
 		"time": { "label": "TIME", "value": time_str, "color": GameTerminalStyles.dim() },
 	}
 
+## 自玩 AI: 每步操作
+func auto_play_step() -> void:
+	if not _game_active:
+		return
+	# 首次点击: 随机选一个格子
+	if _first_click:
+		var cell = randi() % (COLS * ROWS)
+		_on_reveal(cell)
+		return
+	# 策略: 找已揭开数字格周围的确定安全格
+	var safe_cells: Array[int] = []
+	var flaggable: Array[int] = []
+	for i in range(COLS * ROWS):
+		if not _revealed[i] or _mines[i] or _adjacent[i] <= 0:
+			continue
+		# 数周围未揭开/未插旗的格子
+		var hidden: Array[int] = []
+		var flags := 0
+		for n in _neighbors(i):
+			if _flagged[n]:
+				flags += 1
+			elif not _revealed[n]:
+				hidden.append(n)
+		if hidden.is_empty():
+			continue
+		# 旗帜数 == 数字: 周围所有隐藏格都安全
+		if flags == _adjacent[i]:
+			for h in hidden:
+				if h not in safe_cells:
+					safe_cells.append(h)
+		# 隐藏格 + 旗帜 == 数字: 所有隐藏格都是雷
+		elif hidden.size() + flags == _adjacent[i]:
+			for h in hidden:
+				if not _flagged[h] and h not in flaggable:
+					flaggable.append(h)
+	# 优先揭开安全格
+	if safe_cells.size() > 0:
+		_on_reveal(safe_cells[randi() % safe_cells.size()])
+		return
+	# 插旗
+	if flaggable.size() > 0:
+		_on_flag(flaggable[randi() % flaggable.size()])
+		return
+	# 兜底: 随机揭开一个未揭开未插旗的格子
+	var unknown: Array[int] = []
+	for i in range(COLS * ROWS):
+		if not _revealed[i] and not _flagged[i]:
+			unknown.append(i)
+	if unknown.size() > 0:
+		_on_reveal(unknown[randi() % unknown.size()])
+
 func _process(delta: float) -> void:
 	_time += delta
 	if _game_active or _death_cell >= 0:

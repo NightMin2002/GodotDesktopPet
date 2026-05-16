@@ -57,6 +57,21 @@ func get_hud_data() -> Dictionary:
 func get_best_score() -> int:
 	return _score
 
+## 自玩 AI: 每步操作 (贪心策略: 优先向左/向下)
+func auto_play_step() -> void:
+	if not _game_active:
+		return
+	# 优先方向序列: 左 → 下 → 上 → 右 (角落策略)
+	# _slide_* 内部已有 _after_slide 检测, 无效移动不会产生副作用
+	var old = _board.duplicate()
+	_slide_left()
+	if _board != old: return
+	_slide_down()
+	if _board != old: return
+	_slide_up()
+	if _board != old: return
+	_slide_right()
+
 func _process(delta: float) -> void:
 	_time += delta
 	if _game_active:

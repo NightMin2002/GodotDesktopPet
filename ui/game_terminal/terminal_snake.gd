@@ -47,6 +47,41 @@ func get_hud_data() -> Dictionary:
 func get_best_score() -> int:
 	return _score
 
+## 自玩 AI: 每步操作 (追食策略 + 安全检测)
+func auto_play_step() -> void:
+	if not _game_active:
+		return
+	# 首次输入启动游戏
+	if _tick_acc <= 0 and _score == 0:
+		# 蛇的初始方向已经是向右，不需要特殊处理
+		pass
+	# AI 决策: 选离食物最近且安全的方向
+	var head = _snake[0]
+	var best_dir = _dir
+	var best_dist = 9999
+	var dirs = [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
+	for d in dirs:
+		# 禁止 180 度转向
+		if d == -_dir:
+			continue
+		var np = head + d
+		# 边界检测
+		if np.x < 0 or np.x >= COLS or np.y < 0 or np.y >= ROWS:
+			continue
+		# 自撞检测 (排除尾巴)
+		var safe = true
+		for i in range(_snake.size() - 1):
+			if _snake[i] == np:
+				safe = false
+				break
+		if not safe:
+			continue
+		var dist = absi(np.x - _food.x) + absi(np.y - _food.y)
+		if dist < best_dist:
+			best_dist = dist
+			best_dir = d
+	_next_dir = best_dir
+
 func _process(delta: float) -> void:
 	_time += delta
 	if _game_active:

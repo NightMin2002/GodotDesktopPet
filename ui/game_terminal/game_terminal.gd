@@ -41,6 +41,14 @@ var _hud_slot_labels: Dictionary = {} # slot_id -> Label
 var _hud_mode_label: Label           # 右侧状态指示
 var _hud_record_label: Label = null  # 战绩标签
 
+# ── 自玩模式 ──
+var _auto_play: bool = false          # 是否正在自玩
+var _auto_visible: bool = false       # true=观战模式(面板可见), false=后台模式(面板透明)
+var _auto_timer: Timer = null         # AI 操作定时器
+var _auto_blocker: Control = null     # 观战模式输入拦截层
+const AUTO_PLAY_INTERVAL := 0.4       # AI 操作间隔 (秒)
+const AUTO_CLOSE_DELAY := 3.0         # 后台自玩结束后自动关闭延迟
+
 # ── 围栏 ──
 var _confine_walls: Array[StaticBody2D] = []
 
@@ -53,6 +61,7 @@ func _ready() -> void:
 	_build_ui()
 	EventBus.show_game_terminal.connect(_on_toggle)
 	EventBus.ui_theme_changed.connect(_on_ui_theme_changed)
+	EventBus.terminal_auto_game.connect(launch_auto_game)
 
 func _calc_panel_size() -> void:
 	var vp = get_viewport().get_visible_rect().size
@@ -334,8 +343,12 @@ func _update_hud_mode() -> void:
 			_hud_mode_label.text = "STANDBY"
 			_hud_mode_label.add_theme_color_override("font_color", GameTerminalStyles.status_active())
 		TerminalState.PLAYING:
-			_hud_mode_label.text = "IN GAME"
-			_hud_mode_label.add_theme_color_override("font_color", GameTerminalStyles.accent())
+			if _auto_play:
+				_hud_mode_label.text = "AUTO"
+				_hud_mode_label.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.5, 0.95, 0.75))
+			else:
+				_hud_mode_label.text = "IN GAME"
+				_hud_mode_label.add_theme_color_override("font_color", GameTerminalStyles.accent())
 		TerminalState.RESULT:
 			_hud_mode_label.text = "RESULT"
 			_hud_mode_label.add_theme_color_override("font_color", GameTerminalStyles.bright())
@@ -551,6 +564,40 @@ func _build_game_card(entry: Dictionary, on_press: Callable) -> PanelContainer:
 		rec_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		vb.add_child(rec_lbl)
 
+	# ── 委托推演按钮 (支持自玩的游戏) ──
+	if entry.get("auto", false):
+		var auto_btn = Button.new()
+		auto_btn.text = "[ 委托推演 ]"
+		auto_btn.add_theme_font_size_override("font_size", 10)
+		auto_btn.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.25, 0.6, 0.45))
+		auto_btn.add_theme_color_override("font_hover_color", Color.from_hsv(EventBus.ui_hue, 0.45, 0.85, 0.8))
+		auto_btn.add_theme_color_override("font_pressed_color", Color.from_hsv(EventBus.ui_hue, 0.5, 1.0, 0.9))
+		# 极简样式: 透明背景
+		var ab_normal = StyleBoxFlat.new()
+		ab_normal.bg_color = Color(0.04, 0.06, 0.12, 0.3)
+		ab_normal.set_border_width_all(1)
+		ab_normal.border_color = Color.from_hsv(EventBus.ui_hue, 0.2, 0.4, 0.15)
+		ab_normal.set_corner_radius_all(0)
+		ab_normal.content_margin_left = 6; ab_normal.content_margin_right = 6
+		ab_normal.content_margin_top = 2; ab_normal.content_margin_bottom = 2
+		auto_btn.add_theme_stylebox_override("normal", ab_normal)
+		var ab_hover = ab_normal.duplicate()
+		ab_hover.bg_color = Color(0.06, 0.08, 0.16, 0.5)
+		ab_hover.border_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.7, 0.3)
+		auto_btn.add_theme_stylebox_override("hover", ab_hover)
+		auto_btn.add_theme_stylebox_override("pressed", ab_hover)
+		auto_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		auto_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+		auto_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		# 居中
+		var btn_center = CenterContainer.new()
+		btn_center.mouse_filter = Control.MOUSE_FILTER_PASS
+		btn_center.add_child(auto_btn)
+		vb.add_child(btn_center)
+		# 点击: 启动可见自玩
+		var gid = entry.id
+		auto_btn.pressed.connect(func(): _launch_visible_auto_game(gid))
+
 	# ── hover 效果 ──
 	card.mouse_entered.connect(func():
 		cs.bg_color = Color(0.07, 0.09, 0.16, 0.65)
@@ -578,6 +625,15 @@ func _build_game_card(entry: Dictionary, on_press: Callable) -> PanelContainer:
 
 	GameTerminalStyles.add_tech_brackets(card, 4.0, 0.0)
 	return card
+
+## 可见自玩: 面板保持打开, AI 在终端内自动操作 (观战模式)
+func _launch_visible_auto_game(game_id: String) -> void:
+	_auto_play = true
+	_auto_visible = true
+	_launch_terminal_game(game_id)
+	_auto_start_timer()
+	_update_hud_mode()
+	_show_auto_blocker()
 
 # ═══════════════════════════════════════════════
 #  大厅图标渲染器 (内嵌类)
@@ -949,13 +1005,13 @@ func _on_frame_draw() -> void:
 
 # ── 游戏注册表 (新增游戏只需加一条) ──
 const GAME_REGISTRY := [
-	{ "id": "ttt", "name": "策略矩阵", "desc": "3x3 决策推演",
+	{ "id": "ttt", "name": "策略矩阵", "desc": "3x3 决策推演", "auto": false,
 	  "script": preload("res://ui/game_terminal/terminal_ttt.gd") },
-	{ "id": "minesweeper", "name": "威胁评估", "desc": "9x9 雷区扫描",
+	{ "id": "minesweeper", "name": "威胁评估", "desc": "9x9 雷区扫描", "auto": true,
 	  "script": preload("res://ui/game_terminal/terminal_minesweeper.gd") },
-	{ "id": "2048", "name": "矩阵叠加", "desc": "4x4 数值融合",
+	{ "id": "2048", "name": "矩阵叠加", "desc": "4x4 数值融合", "auto": true,
 	  "script": preload("res://ui/game_terminal/terminal_2048.gd") },
-	{ "id": "snake", "name": "路径规划", "desc": "15x15 线性延伸",
+	{ "id": "snake", "name": "路径规划", "desc": "15x15 线性延伸", "auto": true,
 	  "script": preload("res://ui/game_terminal/terminal_snake.gd") },
 ]
 
@@ -1007,6 +1063,27 @@ func _on_game_over(result: int) -> void:
 		var summary = _get_record_summary(_active_game_id)
 		if summary != "":
 			_hud_record_label.text = summary
+	# 自玩处理
+	if _auto_play:
+		_auto_stop_timer()
+		if _auto_visible:
+			# 观战模式: 延迟后自动重开继续推演
+			_auto_restart_after_delay()
+		else:
+			# 后台模式: 延迟关闭
+			_auto_finish_and_close()
+
+## 观战模式: 延迟后自动重开游戏
+func _auto_restart_after_delay() -> void:
+	await get_tree().create_timer(2.0).timeout
+	# 延迟期间用户可能已接手或退出
+	if not _auto_play or not _auto_visible:
+		return
+	if not _active_game or not is_instance_valid(_active_game):
+		return
+	if _active_game.has_method("start_game"):
+		_active_game.start_game()
+	_auto_start_timer()
 
 func _on_game_restarted() -> void:
 	# 重开时恢复 PLAYING 状态
@@ -1025,6 +1102,12 @@ func _cleanup_active_game() -> void:
 	_active_game_id = ""
 
 func _return_to_lobby() -> void:
+	# 自玩清理
+	if _auto_play:
+		_auto_play = false
+		_auto_visible = false
+		_auto_stop_timer()
+	_hide_auto_blocker()
 	_cleanup_active_game()
 	_clear_hud_slots()
 	_lobby_placeholder.visible = true
@@ -1075,11 +1158,35 @@ func _update_footer_for_game() -> void:
 	for c in _footer_hbox.get_children():
 		c.queue_free()
 
-	var back_btn = Button.new()
-	back_btn.text = "返回大厅"
-	back_btn.add_theme_font_size_override("font_size", 12)
-	back_btn.add_theme_color_override("font_color", Color(0.6, 0.5, 0.4, 0.7))
-	back_btn.add_theme_color_override("font_hover_color", Color(0.9, 0.5, 0.35, 1.0))
+	var back_btn = _make_footer_btn("返回大厅", func(): _return_to_lobby())
+	_footer_hbox.add_child(back_btn)
+
+	# 观战模式: 加“接手操作”按钮
+	if _auto_play and _auto_visible:
+		var takeover_btn = _make_footer_btn("接手操作", func(): _takeover_from_auto())
+		# 用主题色突出显示
+		takeover_btn.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.45, 0.85, 0.75))
+		takeover_btn.add_theme_color_override("font_hover_color", Color.from_hsv(EventBus.ui_hue, 0.5, 1.0, 1.0))
+		_footer_hbox.add_child(takeover_btn)
+
+	var spacer = Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_footer_hbox.add_child(spacer)
+
+	var mode_hint = _active_game_name
+	if _auto_play and _auto_visible:
+		mode_hint += " // AUTO"
+	var game_hint = GameTerminalStyles.dim_label(mode_hint, 11)
+	_footer_hbox.add_child(game_hint)
+
+## 底栏按钮工厂 (避免重复样式代码)
+func _make_footer_btn(text: String, on_press: Callable) -> Button:
+	var btn = Button.new()
+	btn.text = text
+	btn.add_theme_font_size_override("font_size", 12)
+	btn.add_theme_color_override("font_color", Color(0.6, 0.5, 0.4, 0.7))
+	btn.add_theme_color_override("font_hover_color", Color(0.9, 0.5, 0.35, 1.0))
 	var bs = StyleBoxFlat.new()
 	bs.bg_color = Color(0.1, 0.08, 0.06, 0.3)
 	bs.set_corner_radius_all(0)
@@ -1087,29 +1194,31 @@ func _update_footer_for_game() -> void:
 	bs.border_color = Color(0.4, 0.3, 0.2, 0.2)
 	bs.content_margin_left = 8; bs.content_margin_right = 8
 	bs.content_margin_top = 2; bs.content_margin_bottom = 2
-	back_btn.add_theme_stylebox_override("normal", bs)
+	btn.add_theme_stylebox_override("normal", bs)
 	var bh = bs.duplicate()
 	bh.bg_color = Color(0.15, 0.1, 0.08, 0.5)
 	bh.border_color = Color(0.6, 0.35, 0.25, 0.4)
-	back_btn.add_theme_stylebox_override("hover", bh)
-	back_btn.add_theme_stylebox_override("pressed", bh)
-	back_btn.mouse_filter = Control.MOUSE_FILTER_PASS
-	back_btn.gui_input.connect(func(event: InputEvent):
+	btn.add_theme_stylebox_override("hover", bh)
+	btn.add_theme_stylebox_override("pressed", bh)
+	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	btn.mouse_filter = Control.MOUSE_FILTER_PASS
+	btn.gui_input.connect(func(event: InputEvent):
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			var pet = _get_pet()
 			if pet and pet.is_mouse_on_pet():
 				return
-			_return_to_lobby()
+			on_press.call()
 	)
-	_footer_hbox.add_child(back_btn)
+	return btn
 
-	var spacer = Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_footer_hbox.add_child(spacer)
-
-	var game_hint = GameTerminalStyles.dim_label(_active_game_name, 11)
-	_footer_hbox.add_child(game_hint)
+## 接手操作: 从自玩切换为手动模式
+func _takeover_from_auto() -> void:
+	_auto_play = false
+	_auto_visible = false
+	_auto_stop_timer()
+	_hide_auto_blocker()
+	_update_hud_mode()
+	_update_footer_for_game()  # 重建底栏 (移除接手按钮)
 
 ## 更新底栏: 大厅
 func _update_footer_for_lobby() -> void:
@@ -1125,3 +1234,113 @@ func _update_footer_for_lobby() -> void:
 
 func _on_ui_theme_changed(_hue: float) -> void:
 	pass  # frame_drawer 每帧读 EventBus.ui_hue, 自动跟随
+
+# ═══════════════════════════════════════════════
+#  自玩模式 (AI 自主游戏)
+# ═══════════════════════════════════════════════
+
+## 外部入口: 启动终端自玩游戏 (IdleActivities 调用)
+## 不弹出终端面板，在后台运行游戏，纹理供全息屏投影
+func launch_auto_game(game_id: String) -> void:
+	# 已在自玩 / 终端已打开 / 正在游戏中 → 不重复触发
+	if _auto_play or _is_open:
+		return
+	# 查找游戏注册表
+	var entry: Dictionary = {}
+	for e in GAME_REGISTRY:
+		if e.id == game_id:
+			entry = e
+			break
+	if entry.is_empty():
+		return
+
+	_auto_play = true
+
+	# 静默打开终端 (不显示面板，不创建围栏，不拦截输入)
+	panel.visible = true
+	panel.modulate.a = 0.0  # 完全透明 (但 SubViewport 继续渲染)
+	_is_open = true
+	_state = TerminalState.LOBBY
+
+	# 启动游戏
+	_launch_terminal_game(game_id)
+
+	# 启动 AI 操作定时器
+	_auto_start_timer()
+
+	# 激活全息投影
+	_activate_holo_preview()
+
+	print("[GameTerminal] 自玩启动: ", game_id)
+
+## 启动 AI 操作定时器
+func _auto_start_timer() -> void:
+	_auto_stop_timer()
+	_auto_timer = Timer.new()
+	_auto_timer.wait_time = AUTO_PLAY_INTERVAL
+	_auto_timer.timeout.connect(_auto_play_step)
+	add_child(_auto_timer)
+	_auto_timer.start()
+
+## 停止 AI 操作定时器
+func _auto_stop_timer() -> void:
+	if is_instance_valid(_auto_timer):
+		_auto_timer.stop()
+		_auto_timer.queue_free()
+	_auto_timer = null
+
+## AI 每步操作 (Timer 回调)
+func _auto_play_step() -> void:
+	if not _auto_play or not _active_game:
+		return
+	if _state != TerminalState.PLAYING:
+		return
+	if _active_game.has_method("auto_play_step"):
+		_active_game.auto_play_step()
+
+## 显示输入拦截层 (观战模式: 屏蔽游戏区域的用户输入)
+func _show_auto_blocker() -> void:
+	_hide_auto_blocker()
+	if not is_instance_valid(_content_stack):
+		return
+	_auto_blocker = Control.new()
+	_auto_blocker.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_auto_blocker.mouse_filter = Control.MOUSE_FILTER_STOP
+	# 吃掉键盘输入
+	_auto_blocker.focus_mode = Control.FOCUS_ALL
+	_auto_blocker.gui_input.connect(func(event: InputEvent):
+		_auto_blocker.accept_event()
+	)
+	_content_stack.add_child(_auto_blocker)
+	# 确保在最上层
+	_content_stack.move_child(_auto_blocker, _content_stack.get_child_count() - 1)
+	_auto_blocker.grab_focus()
+
+## 隐藏输入拦截层
+func _hide_auto_blocker() -> void:
+	if is_instance_valid(_auto_blocker):
+		_auto_blocker.queue_free()
+	_auto_blocker = null
+
+## 自玩结束: 延迟后静默关闭终端
+func _auto_finish_and_close() -> void:
+	_auto_stop_timer()
+	if not is_instance_valid(panel):
+		_auto_cleanup()
+		return
+	# 延迟几秒后关闭 (让全息屏显示结算画面)
+	await get_tree().create_timer(AUTO_CLOSE_DELAY).timeout
+	_auto_cleanup()
+
+## 自玩清理: 关闭游戏 + 隐藏终端
+func _auto_cleanup() -> void:
+	_auto_play = false
+	_auto_visible = false
+	_auto_stop_timer()
+	_cleanup_active_game()
+	if is_instance_valid(panel):
+		panel.visible = false
+		panel.modulate.a = 1.0  # 恢复透明度
+	_is_open = false
+	_state = TerminalState.CLOSED
+	print("[GameTerminal] 自玩结束")
