@@ -44,6 +44,7 @@ static func update_detail_panel(ctx: Dictionary) -> void:
 	if ui.has("content_wrapper"): ui.content_wrapper.visible = false
 	if ui.has("pet_content_wrapper"): ui.pet_content_wrapper.visible = false
 	if ui.has("window_cards_wrapper"): ui.window_cards_wrapper.visible = false
+	if ui.has("heatmap_btn"): ui.heatmap_btn.visible = false
 
 	if is_window_report:
 		if ui.has("window_cards_wrapper"):
@@ -57,11 +58,16 @@ static func update_detail_panel(ctx: Dictionary) -> void:
 			var bbcode = _format_input_bbcode(entry)
 			ui.pet_content_rtl.text = ""
 			ui.pet_content_rtl.parse_bbcode(bbcode)
+		# 键鼠全图按钮
+		if ui.has("heatmap_btn"):
+			ui.heatmap_btn.visible = true
 	else:
 		# 普通模式: TextEdit
 		if ui.has("content_wrapper"): ui.content_wrapper.visible = true
 		ui.content_edit.text = entry.get("content", "")
 		ui.content_edit.editable = not is_pet
+		if ui.has("heatmap_btn"):
+			ui.heatmap_btn.visible = false
 
 	ui.del_btn.visible = true
 	ui.tag_input.visible = true

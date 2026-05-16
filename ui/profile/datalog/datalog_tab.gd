@@ -15,6 +15,7 @@ const DatalogCategoryView = preload("res://ui/profile/datalog/datalog_category_v
 const DatalogDetailView = preload("res://ui/profile/datalog/datalog_detail_view.gd")
 const DatalogListView = preload("res://ui/profile/datalog/datalog_list_view.gd")
 const DatalogWindowCards = preload("res://ui/profile/datalog/datalog_window_cards.gd")
+const InputHeatmapWindow = preload("res://ui/profile/datalog/input_heatmap_window.gd")
 var _ctx: Dictionary = {}  # 共享上下文, 传递给子模块
 
 # ── UI 引用 ──
@@ -43,6 +44,8 @@ var _window_cards_inner: VBoxContainer    # 卡片挂载点
 var _search_row: HBoxContainer     # 搜索+按钮行 (分类首页时隐藏)
 var _back_btn: Button              # 子列表返回按钮
 var _category_container: VBoxContainer  # 分类卡片容器
+var _heatmap_btn: Button           # 键鼠全图按钮
+var _heatmap_panel: CanvasLayer    # 热力图面板实例
 
 # ── 防抖 ──
 var _save_timer: Timer
@@ -380,6 +383,30 @@ func build() -> void:
 	_pet_content_wrapper = CyberScrollIndicator.wrap(pet_scroll)
 	_pet_content_wrapper.visible = false
 
+	# 键鼠全图按钮 (仅在输入报告时显示)
+	_heatmap_btn = Button.new()
+	_heatmap_btn.text = "键鼠全图"
+	_heatmap_btn.add_theme_font_size_override("font_size", 12)
+	_heatmap_btn.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.5, 0.9, 0.85))
+	_heatmap_btn.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0, 1.0))
+	var hm_s = StyleBoxFlat.new()
+	hm_s.bg_color = Color.from_hsv(EventBus.ui_hue, 0.45, 0.18, 0.6)
+	hm_s.set_border_width_all(1)
+	hm_s.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.55, 0.4)
+	hm_s.set_corner_radius_all(2)
+	hm_s.content_margin_left = 12; hm_s.content_margin_right = 12
+	hm_s.content_margin_top = 5; hm_s.content_margin_bottom = 5
+	_heatmap_btn.add_theme_stylebox_override("normal", hm_s)
+	var hm_h = hm_s.duplicate()
+	hm_h.bg_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.28, 0.8)
+	hm_h.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.7)
+	_heatmap_btn.add_theme_stylebox_override("hover", hm_h)
+	_heatmap_btn.add_theme_stylebox_override("pressed", hm_h)
+	_heatmap_btn.pressed.connect(_open_heatmap)
+	_heatmap_btn.visible = false
+	_heatmap_btn.mouse_filter = Control.MOUSE_FILTER_PASS
+	_detail_panel.add_child(_heatmap_btn)
+
 	# 窗口卡片容器 (替代 TextEdit, 当显示 sys:window 条目时)
 	var win_scroll = ScrollContainer.new()
 	win_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -474,6 +501,7 @@ func _build_ctx() -> void:
 			"save_timer": _save_timer,
 			"window_cards_wrapper": _window_cards_wrapper,
 			"window_cards_inner": _window_cards_inner,
+			"heatmap_btn": _heatmap_btn,
 		},
 		"render_list": _render_list,
 		"apply_filter": _apply_filter,
@@ -707,6 +735,28 @@ func _save_log_to_main(entry: Dictionary) -> void:
 	_sync_ctx()
 	DatalogDetailView._save_log_to_main(_ctx, entry)
 	_sync_from_ctx()
+
+## 打开键鼠全图面板
+func _open_heatmap() -> void:
+	if _selected_idx < 0 or _selected_idx >= _filtered.size():
+		return
+	var entry = _filtered[_selected_idx]
+	var input_data: Dictionary = entry.get("input_data", {})
+	var key_data: Dictionary = input_data.get("keys", {})
+	var mouse_data: Dictionary = input_data.get("mouse", {})
+	
+	# 懒加载面板 (挂载到 Main 节点, 确保不被装置终端面板裁剪)
+	if not is_instance_valid(_heatmap_panel):
+		_heatmap_panel = CanvasLayer.new()
+		_heatmap_panel.set_script(InputHeatmapWindow)
+		var main_node = get_tree().root.get_node_or_null("Main")
+		if main_node:
+			main_node.add_child(_heatmap_panel)
+		else:
+			add_child(_heatmap_panel)
+	
+	_heatmap_panel.set_data(key_data, mouse_data)
+	_heatmap_panel.open_panel()
 
 # ═══════════════════════════════════════════════
 #  样式工具
