@@ -45,6 +45,18 @@ func build() -> void:
 	_build_result_overlay()
 	start_game()
 
+## HUD 协议: 得分 + 最大块
+func get_hud_data() -> Dictionary:
+	var score_c = GameTerminalStyles.status_warning() if _score > 0 else GameTerminalStyles.dim()
+	return {
+		"score": { "label": "SCORE", "value": str(_score), "color": score_c },
+		"max": { "label": "MAX", "value": str(_max_tile()), "color": GameTerminalStyles.dim() },
+	}
+
+## 最佳分数 (供终端持久化)
+func get_best_score() -> int:
+	return _score
+
 func _process(delta: float) -> void:
 	_time += delta
 	if _game_active:
@@ -249,14 +261,6 @@ func _draw() -> void:
 	_calc_layout()
 	var hue = EventBus.ui_hue
 	var font = ThemeDB.fallback_font
-
-	# 状态栏
-	var status_y = _grid_origin.y - 8.0
-	draw_string(font, Vector2(_grid_origin.x + 2, status_y), "SCORE: %d" % _score, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, GameTerminalStyles.status_warning())
-	var max_str = "MAX: %d" % _max_tile()
-	var max_w = font.get_string_size(max_str, HORIZONTAL_ALIGNMENT_RIGHT, -1, 12).x
-	var grid_end_x = _grid_origin.x + _cell_size * GRID + _GAP * (GRID - 1)
-	draw_string(font, Vector2(grid_end_x - max_w - 2, status_y), max_str, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.5, 0.6, 0.7, 0.6))
 
 	# 底板
 	var total = _cell_size * GRID + _GAP * (GRID - 1)

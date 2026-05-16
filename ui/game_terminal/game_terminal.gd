@@ -26,6 +26,7 @@ var _footer_hbox: HBoxContainer     # 底栏内容
 var _lobby_placeholder: Control     # 大厅占位视觉
 var _active_game: Control = null    # 当前活跃游戏控件
 var _active_game_name: String = "" # 当前游戏名称
+var _active_game_id: String = ""   # 当前游戏ID
 var _dragging: bool = false
 var _drag_offset: Vector2 = Vector2.ZERO
 var _is_open: bool = false
@@ -33,6 +34,12 @@ var _state: int = TerminalState.CLOSED
 
 var _frame_drawer: Control
 var _time_passed: float = 0.0
+
+# ── HUD ──
+var _hud_hbox: HBoxContainer        # HUD 内部容器
+var _hud_slot_labels: Dictionary = {} # slot_id -> Label
+var _hud_mode_label: Label           # 右侧状态指示
+var _hud_record_label: Label = null  # 战绩标签
 
 # ── 围栏 ──
 var _confine_walls: Array[StaticBody2D] = []
@@ -72,6 +79,9 @@ func _process(delta: float) -> void:
 		var pet = _get_pet()
 		if pet:
 			pet.overlay_rect = Rect2(panel.position, Vector2(_panel_w, _panel_h))
+		# HUD 数据轮询 (PLAYING 状态下每帧从游戏拉取)
+		if _state == TerminalState.PLAYING and _active_game:
+			_update_hud()
 
 # ═══════════════════════════════════════════════
 #  UI 构建
@@ -243,25 +253,150 @@ func _build_hud_bar() -> PanelContainer:
 	bar.custom_minimum_size.y = 28
 	bar.mouse_filter = Control.MOUSE_FILTER_PASS
 
-	var hbox = HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 16)
-	hbox.mouse_filter = Control.MOUSE_FILTER_PASS
-	bar.add_child(hbox)
+	_hud_hbox = HBoxContainer.new()
+	_hud_hbox.add_theme_constant_override("separation", 16)
+	_hud_hbox.mouse_filter = Control.MOUSE_FILTER_PASS
+	bar.add_child(_hud_hbox)
 
-	# 占位: 未来会放计分器/计时器/回合指示
-	var slot_hint = GameTerminalStyles.dim_label("[ HUD 数据槽位 ]", 12)
-	hbox.add_child(slot_hint)
+	# 初始大厅状态
+	_hud_record_label = GameTerminalStyles.dim_label("// 选择推演目标", 12)
+	_hud_hbox.add_child(_hud_record_label)
 
 	var spacer = Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hbox.add_child(spacer)
+	_hud_hbox.add_child(spacer)
 
-	var mode_hint = GameTerminalStyles.dim_label("LOBBY", 12)
-	hbox.add_child(mode_hint)
+	_hud_mode_label = GameTerminalStyles.dim_label("STANDBY", 12)
+	_hud_mode_label.add_theme_color_override("font_color", GameTerminalStyles.status_active())
+	_hud_hbox.add_child(_hud_mode_label)
 
 	GameTerminalStyles.add_tech_brackets(bar, 5.0, 0.0)
 	return bar
+
+## 从活跃游戏轮询 HUD 数据并更新槽位
+func _update_hud() -> void:
+	if not _active_game or not _active_game.has_method("get_hud_data"):
+		return
+	var data: Dictionary = _active_game.get_hud_data()
+	for slot_id in data:
+		if slot_id in _hud_slot_labels:
+			var info = data[slot_id]
+			var lbl: Label = _hud_slot_labels[slot_id]
+			var text = "%s: %s" % [str(info.get("label", slot_id)), str(info.get("value", ""))]
+			if lbl.text != text:
+				lbl.text = text
+			var c = info.get("color", null)
+			if c is Color:
+				lbl.add_theme_color_override("font_color", c)
+
+## 从游戏初始化 HUD 槽位
+func _setup_hud_for_game() -> void:
+	_clear_hud_slots()
+	if not _active_game or not _active_game.has_method("get_hud_data"):
+		return
+	var data: Dictionary = _active_game.get_hud_data()
+	# 按 data 的 key 顺序插入到 mode_label 之前
+	var insert_idx := 0
+	for slot_id in data:
+		var info = data[slot_id]
+		var text = "%s: %s" % [str(info.get("label", slot_id)), str(info.get("value", ""))]
+		var c = info.get("color", GameTerminalStyles.dim())
+		var lbl = GameTerminalStyles.make_label(text, 12, c if c is Color else GameTerminalStyles.dim())
+		_hud_hbox.add_child(lbl)
+		_hud_hbox.move_child(lbl, insert_idx)
+		_hud_slot_labels[slot_id] = lbl
+		insert_idx += 1
+	# 战绩摘要 (紧跟数据槽位之后)
+	var record_text = _get_record_summary(_active_game_id)
+	if record_text != "":
+		_hud_record_label.text = record_text
+		_hud_record_label.visible = true
+	else:
+		_hud_record_label.visible = false
+
+## 清空 HUD 槽位 (回到大厅状态)
+func _clear_hud_slots() -> void:
+	for lbl in _hud_slot_labels.values():
+		if is_instance_valid(lbl):
+			lbl.queue_free()
+	_hud_slot_labels.clear()
+	if is_instance_valid(_hud_record_label):
+		_hud_record_label.text = "// 选择推演目标"
+		_hud_record_label.visible = true
+
+## 更新 HUD 右侧状态指示
+func _update_hud_mode() -> void:
+	if not is_instance_valid(_hud_mode_label):
+		return
+	match _state:
+		TerminalState.LOBBY:
+			_hud_mode_label.text = "STANDBY"
+			_hud_mode_label.add_theme_color_override("font_color", GameTerminalStyles.status_active())
+		TerminalState.PLAYING:
+			_hud_mode_label.text = "IN GAME"
+			_hud_mode_label.add_theme_color_override("font_color", GameTerminalStyles.accent())
+		TerminalState.RESULT:
+			_hud_mode_label.text = "RESULT"
+			_hud_mode_label.add_theme_color_override("font_color", GameTerminalStyles.bright())
+		_:
+			_hud_mode_label.text = _state_to_string(_state)
+			_hud_mode_label.add_theme_color_override("font_color", GameTerminalStyles.dim())
+
+func _state_to_string(s: int) -> String:
+	match s:
+		TerminalState.CLOSED: return "CLOSED"
+		TerminalState.LOBBY: return "STANDBY"
+		TerminalState.LOADING: return "LOADING"
+		TerminalState.PLAYING: return "IN GAME"
+		TerminalState.PAUSED: return "PAUSED"
+		TerminalState.RESULT: return "RESULT"
+	return "UNKNOWN"
+
+# ═══════════════════════════════════════════════
+#  战绩持久化
+# ═══════════════════════════════════════════════
+
+func _record_key(game_id: String, suffix: String) -> String:
+	return "terminal_" + game_id + "_" + suffix
+
+func _save_record(game_id: String, result: int) -> void:
+	if game_id == "":
+		return
+	match result:
+		0: # 胜
+			var w = SettingsManager.get_int(_record_key(game_id, "wins"), 0)
+			SettingsManager.set_int(_record_key(game_id, "wins"), w + 1)
+		1: # 负
+			var l = SettingsManager.get_int(_record_key(game_id, "losses"), 0)
+			SettingsManager.set_int(_record_key(game_id, "losses"), l + 1)
+		2: # 平
+			var d = SettingsManager.get_int(_record_key(game_id, "draws"), 0)
+			SettingsManager.set_int(_record_key(game_id, "draws"), d + 1)
+	# 保存最佳分数 (如果游戏提供)
+	if _active_game and _active_game.has_method("get_best_score"):
+		var score: int = _active_game.get_best_score()
+		var old_best = SettingsManager.get_int(_record_key(game_id, "best"), 0)
+		if score > old_best:
+			SettingsManager.set_int(_record_key(game_id, "best"), score)
+
+func _get_record_summary(game_id: String) -> String:
+	if game_id == "":
+		return ""
+	var w = SettingsManager.get_int(_record_key(game_id, "wins"), 0)
+	var l = SettingsManager.get_int(_record_key(game_id, "losses"), 0)
+	var d = SettingsManager.get_int(_record_key(game_id, "draws"), 0)
+	var best = SettingsManager.get_int(_record_key(game_id, "best"), 0)
+	var parts: Array[String] = []
+	if w + l + d == 0:
+		return "// 首次推演"
+	parts.append("%dW" % w)
+	parts.append("%dL" % l)
+	if d > 0:
+		parts.append("%dD" % d)
+	if best > 0:
+		parts.append("BEST:%d" % best)
+	return "// " + " / ".join(parts)
 
 # ═══════════════════════════════════════════════
 #  中央内容区
@@ -290,95 +425,149 @@ func _build_content_area() -> PanelContainer:
 	return area
 
 func _build_lobby_placeholder() -> Control:
-	var center = CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_PASS
+	var outer = MarginContainer.new()
+	outer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	outer.add_theme_constant_override("margin_left", 8)
+	outer.add_theme_constant_override("margin_right", 8)
+	outer.add_theme_constant_override("margin_top", 4)
+	outer.add_theme_constant_override("margin_bottom", 4)
+	outer.mouse_filter = Control.MOUSE_FILTER_PASS
 
 	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 20)
+	vbox.add_theme_constant_override("separation", 12)
 	vbox.mouse_filter = Control.MOUSE_FILTER_PASS
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
-	# 终端标识
+	# ── 终端标识行 ──
+	var header = HBoxContainer.new()
+	header.add_theme_constant_override("separation", 8)
+	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var line_l = HSeparator.new()
+	line_l.add_theme_stylebox_override("separator", GameTerminalStyles.separator_style())
+	line_l.add_theme_constant_override("separation", 1)
+	line_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	header.add_child(line_l)
+
 	var logo_label = Label.new()
 	logo_label.text = "GAME TERMINAL"
-	logo_label.add_theme_font_size_override("font_size", 26)
-	logo_label.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.3, 0.6, 0.2))
-	logo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	logo_label.add_theme_font_size_override("font_size", 13)
+	logo_label.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.3, 0.65, 0.3))
 	logo_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(logo_label)
+	header.add_child(logo_label)
 
-	# 分隔
-	var sep = HSeparator.new()
-	sep.add_theme_stylebox_override("separator", GameTerminalStyles.separator_style())
-	sep.add_theme_constant_override("separation", 1)
-	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	sep.custom_minimum_size.x = 200
-	vbox.add_child(sep)
+	var line_r = HSeparator.new()
+	line_r.add_theme_stylebox_override("separator", GameTerminalStyles.separator_style())
+	line_r.add_theme_constant_override("separation", 1)
+	line_r.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line_r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	header.add_child(line_r)
 
-	# ── 游戏卡片 (从注册表自动生成) ──
+	vbox.add_child(header)
+
+	# ── 游戏卡片网格 (2列) ──
+	var grid = GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 12)
+	grid.add_theme_constant_override("v_separation", 12)
+	grid.mouse_filter = Control.MOUSE_FILTER_PASS
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
 	for entry in GAME_REGISTRY:
-		var card = _build_game_card(entry.name, entry.desc, func(): _launch_terminal_game(entry.id))
-		vbox.add_child(card)
+		var card = _build_game_card(entry, func(): _launch_terminal_game(entry.id))
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		grid.add_child(card)
 
-	# 状态提示
+	vbox.add_child(grid)
+
+	# ── 底部状态提示 ──
 	var hint = Label.new()
-	hint.text = "选择目标开始推演"
-	hint.add_theme_font_size_override("font_size", 12)
-	hint.add_theme_color_override("font_color", Color(0.35, 0.45, 0.55, 0.35))
+	hint.text = "选择目标开始推演 // %d 项可用" % GAME_REGISTRY.size()
+	hint.add_theme_font_size_override("font_size", 11)
+	hint.add_theme_color_override("font_color", Color(0.30, 0.40, 0.50, 0.3))
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(hint)
 
-	center.add_child(vbox)
-	return center
+	outer.add_child(vbox)
+	return outer
 
-## 构建游戏选择卡片
-func _build_game_card(title: String, desc: String, on_press: Callable) -> PanelContainer:
+## 构建大厅游戏卡片 (网格版)
+func _build_game_card(entry: Dictionary, on_press: Callable) -> PanelContainer:
 	var card = PanelContainer.new()
 	var cs = StyleBoxFlat.new()
-	cs.bg_color = Color(0.05, 0.07, 0.12, 0.5)
+	cs.bg_color = Color(0.04, 0.06, 0.11, 0.55)
 	cs.set_border_width_all(1)
-	cs.border_color = Color.from_hsv(EventBus.ui_hue, 0.3, 0.5, 0.25)
+	cs.border_color = Color.from_hsv(EventBus.ui_hue, 0.25, 0.45, 0.2)
 	cs.set_corner_radius_all(0)
-	cs.content_margin_left = 20; cs.content_margin_right = 20
-	cs.content_margin_top = 14; cs.content_margin_bottom = 14
+	cs.content_margin_left = 14; cs.content_margin_right = 14
+	cs.content_margin_top = 10; cs.content_margin_bottom = 10
 	card.add_theme_stylebox_override("panel", cs)
 	card.mouse_filter = Control.MOUSE_FILTER_PASS
-	card.custom_minimum_size.x = 240
 
 	var vb = VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 6)
 	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.add_child(vb)
 
+	# ── 图标区 (自绘) ──
+	var icon_area = _LobbyIcon.new()
+	icon_area.game_id = entry.id
+	icon_area.custom_minimum_size = Vector2(0, 60)
+	icon_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	icon_area.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(icon_area)
+
+	# ── 标题 ──
 	var t = Label.new()
-	t.text = title
-	t.add_theme_font_size_override("font_size", 18)
+	t.text = entry.name
+	t.add_theme_font_size_override("font_size", 15)
 	t.add_theme_color_override("font_color", GameTerminalStyles.bright())
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(t)
 
+	# ── 描述 ──
 	var d = Label.new()
-	d.text = desc
-	d.add_theme_font_size_override("font_size", 12)
+	d.text = entry.desc
+	d.add_theme_font_size_override("font_size", 11)
 	d.add_theme_color_override("font_color", GameTerminalStyles.dim())
 	d.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	d.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(d)
 
-	# hover 效果
-	var normal_border = cs.border_color
+	# ── 战绩角标 ──
+	var record = _get_record_summary(entry.id)
+	if record != "":
+		var rec_lbl = Label.new()
+		rec_lbl.text = record.replace("// ", "")
+		rec_lbl.add_theme_font_size_override("font_size", 10)
+		rec_lbl.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.3, 0.7, 0.35))
+		rec_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		rec_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		vb.add_child(rec_lbl)
+
+	# ── hover 效果 ──
 	card.mouse_entered.connect(func():
-		cs.bg_color = Color(0.08, 0.10, 0.18, 0.6)
-		cs.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.5)
+		cs.bg_color = Color(0.07, 0.09, 0.16, 0.65)
+		cs.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.45)
+		if is_instance_valid(icon_area):
+			icon_area._hovered = true
+			icon_area.queue_redraw()
 	)
 	card.mouse_exited.connect(func():
-		cs.bg_color = Color(0.05, 0.07, 0.12, 0.5)
-		cs.border_color = normal_border
+		cs.bg_color = Color(0.04, 0.06, 0.11, 0.55)
+		cs.border_color = Color.from_hsv(EventBus.ui_hue, 0.25, 0.45, 0.2)
+		if is_instance_valid(icon_area):
+			icon_area._hovered = false
+			icon_area.queue_redraw()
 	)
 
-	# 点击
+	# ── 点击 ──
 	card.gui_input.connect(func(event: InputEvent):
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			var pet = _get_pet()
@@ -389,6 +578,117 @@ func _build_game_card(title: String, desc: String, on_press: Callable) -> PanelC
 
 	GameTerminalStyles.add_tech_brackets(card, 4.0, 0.0)
 	return card
+
+# ═══════════════════════════════════════════════
+#  大厅图标渲染器 (内嵌类)
+# ═══════════════════════════════════════════════
+
+class _LobbyIcon extends Control:
+	var game_id: String = ""
+	var _hovered: bool = false
+
+	func _draw() -> void:
+		var hue = EventBus.ui_hue
+		var w = size.x
+		var h = size.y
+		var cx = w * 0.5
+		var cy = h * 0.5
+		var alpha_base = 0.5 if _hovered else 0.3
+		var alpha_hi = 0.85 if _hovered else 0.55
+		var line_c = Color.from_hsv(hue, 0.4, 0.75, alpha_base)
+		var accent_c = Color.from_hsv(hue, 0.55, 0.9, alpha_hi)
+		var glow_c = Color.from_hsv(hue, 0.4, 0.85, alpha_base * 0.3)
+
+		match game_id:
+			"ttt":
+				# 井字棋: 3x3 网格 + X/O 标记
+				var gs = minf(w, h) * 0.55
+				var cs = gs / 3.0
+				var ox = cx - gs * 0.5
+				var oy = cy - gs * 0.5
+				for i in range(1, 3):
+					draw_line(Vector2(ox + i * cs, oy + 2), Vector2(ox + i * cs, oy + gs - 2), line_c, 1.0)
+					draw_line(Vector2(ox + 2, oy + i * cs), Vector2(ox + gs - 2, oy + i * cs), line_c, 1.0)
+				# X at [0,0]
+				var p = 6.0
+				draw_line(Vector2(ox + p, oy + p), Vector2(ox + cs - p, oy + cs - p), accent_c, 1.5, true)
+				draw_line(Vector2(ox + cs - p, oy + p), Vector2(ox + p, oy + cs - p), accent_c, 1.5, true)
+				# O at [1,1]
+				draw_arc(Vector2(ox + cs * 1.5, oy + cs * 1.5), cs * 0.3, 0, TAU, 24, Color(0.9, 0.55, 0.3, alpha_hi), 1.5, true)
+				# X at [2,2]
+				var bx = ox + cs * 2
+				var by = oy + cs * 2
+				draw_line(Vector2(bx + p, by + p), Vector2(bx + cs - p, by + cs - p), accent_c, 1.5, true)
+				draw_line(Vector2(bx + cs - p, by + p), Vector2(bx + p, by + cs - p), accent_c, 1.5, true)
+
+			"minesweeper":
+				# 扫雷: 3x3 小网格 + 雷标记 + 旗帜
+				var gs = minf(w, h) * 0.5
+				var cs = gs / 3.0
+				var ox = cx - gs * 0.5
+				var oy = cy - gs * 0.5
+				for i in range(4):
+					draw_line(Vector2(ox + i * cs, oy), Vector2(ox + i * cs, oy + gs), line_c, 0.5)
+					draw_line(Vector2(ox, oy + i * cs), Vector2(ox + gs, oy + i * cs), line_c, 0.5)
+				# 雷 at center
+				draw_circle(Vector2(ox + cs * 1.5, oy + cs * 1.5), cs * 0.25, Color(0.9, 0.25, 0.2, alpha_hi), true, -1.0, true)
+				# 旗帜 at [0,0]
+				var fc = Vector2(ox + cs * 0.5, oy + cs * 0.5)
+				draw_line(fc + Vector2(0, -cs * 0.3), fc + Vector2(0, cs * 0.2), Color(0.7, 0.8, 0.9, alpha_base), 1.0)
+				var flag_pts = PackedVector2Array([
+					fc + Vector2(0, -cs * 0.3),
+					fc + Vector2(cs * 0.28, -cs * 0.15),
+					fc + Vector2(0, 0),
+				])
+				draw_colored_polygon(flag_pts, accent_c)
+				# 数字
+				var font = ThemeDB.fallback_font
+				draw_string(font, Vector2(ox + cs * 2.15, oy + cs * 0.7), "2", HORIZONTAL_ALIGNMENT_LEFT, -1, int(cs * 0.6), Color(0.2, 0.75, 0.3, alpha_hi))
+
+			"2048":
+				# 2048: 2x2 方块 + 数字
+				var gs = minf(w, h) * 0.5
+				var cs = gs * 0.45
+				var gap = gs * 0.05
+				var ox = cx - gs * 0.5
+				var oy = cy - gs * 0.5
+				var tiles = [2, 4, 8, 16]
+				var colors = [Color(0.14, 0.20, 0.32, 0.5), Color(0.18, 0.26, 0.40, 0.5),
+							  Color(0.50, 0.35, 0.15, 0.6), Color(0.58, 0.36, 0.12, 0.65)]
+				var font = ThemeDB.fallback_font
+				for row in range(2):
+					for col in range(2):
+						var idx = row * 2 + col
+						var rx = ox + col * (cs + gap)
+						var ry = oy + row * (cs + gap)
+						draw_rect(Rect2(rx, ry, cs, cs), colors[idx])
+						var txt = str(tiles[idx])
+						var fs = 12
+						var ts = font.get_string_size(txt, HORIZONTAL_ALIGNMENT_CENTER, -1, fs)
+						draw_string(font, Vector2(rx + (cs - ts.x) * 0.5, ry + cs * 0.5 + ts.y * 0.35), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.8, 0.85, 0.9, alpha_hi))
+
+			"snake":
+				# 贪吃蛇: 蛇身 + 食物
+				var segments = [
+					Vector2(cx - 16, cy), Vector2(cx - 8, cy), Vector2(cx, cy),
+					Vector2(cx + 8, cy), Vector2(cx + 8, cy - 8), Vector2(cx + 8, cy - 16),
+				]
+				var s = 6.0
+				for i in range(segments.size()):
+					var pos = segments[i]
+					var a = lerpf(0.2, alpha_hi, 1.0 - float(i) / float(segments.size()))
+					var c = accent_c if i == segments.size() - 1 else Color.from_hsv(hue, 0.4, 0.7, a)
+					draw_rect(Rect2(pos.x - s * 0.5, pos.y - s * 0.5, s, s), c)
+				# 食物
+				draw_circle(Vector2(cx + 20, cy - 16), 3.0, Color(0.9, 0.55, 0.3, alpha_hi), true, -1.0, true)
+
+			_:
+				# 默认: 问号
+				var font = ThemeDB.fallback_font
+				draw_string(font, Vector2(cx - 6, cy + 8), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, accent_c)
+
+		# 底部薄分隔线
+		draw_line(Vector2(8, h - 1), Vector2(w - 8, h - 1), Color.from_hsv(hue, 0.3, 0.5, 0.1), 1.0)
 
 # ═══════════════════════════════════════════════
 #  底部操作栏
@@ -424,6 +724,8 @@ func _open_panel() -> void:
 	_is_open = true
 	_state = TerminalState.LOBBY
 	_update_status_display()
+	_update_hud_mode()
+	_clear_hud_slots()
 	# 保底恢复大厅 (上次直接断开可能残留隐藏状态)
 	if is_instance_valid(_lobby_placeholder):
 		_lobby_placeholder.visible = true
@@ -672,9 +974,12 @@ func _launch_terminal_game(game_id: String) -> void:
 	var game: Control = entry.script.new()
 	game.build()
 	game.game_over.connect(_on_game_over)
+	if game.has_signal("game_started"):
+		game.game_started.connect(_on_game_restarted)
 
 	_active_game = game
 	_active_game_name = entry.name
+	_active_game_id = entry.id
 
 	# 隐藏大厅，显示游戏 (直接挂内容区，由面板级 SubViewport 统一捕获)
 	_lobby_placeholder.visible = false
@@ -684,6 +989,8 @@ func _launch_terminal_game(game_id: String) -> void:
 	_state = TerminalState.PLAYING
 	_title_label.text = "游戏终端 // " + entry.name
 	_update_status_display()
+	_update_hud_mode()
+	_setup_hud_for_game()
 	_update_footer_for_game()
 
 	# 激活全息投影
@@ -692,6 +999,21 @@ func _launch_terminal_game(game_id: String) -> void:
 func _on_game_over(result: int) -> void:
 	_state = TerminalState.RESULT
 	_update_status_display()
+	_update_hud_mode()
+	# 战绩持久化
+	_save_record(_active_game_id, result)
+	# 刷新 HUD 战绩显示
+	if is_instance_valid(_hud_record_label):
+		var summary = _get_record_summary(_active_game_id)
+		if summary != "":
+			_hud_record_label.text = summary
+
+func _on_game_restarted() -> void:
+	# 重开时恢复 PLAYING 状态
+	if _state != TerminalState.PLAYING:
+		_state = TerminalState.PLAYING
+		_update_status_display()
+		_update_hud_mode()
 
 func _cleanup_active_game() -> void:
 	# 断开全息投影
@@ -700,13 +1022,16 @@ func _cleanup_active_game() -> void:
 		_active_game.queue_free()
 	_active_game = null
 	_active_game_name = ""
+	_active_game_id = ""
 
 func _return_to_lobby() -> void:
 	_cleanup_active_game()
+	_clear_hud_slots()
 	_lobby_placeholder.visible = true
 	_state = TerminalState.LOBBY
 	_title_label.text = "游戏终端"
 	_update_status_display()
+	_update_hud_mode()
 	_update_footer_for_lobby()
 
 # ═══════════════════════════════════════════════

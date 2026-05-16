@@ -34,6 +34,19 @@ func build() -> void:
 	_build_result_overlay()
 	start_game()
 
+## HUD 协议: 路径长度 + 速度
+func get_hud_data() -> Dictionary:
+	var spd_pct = int(TICK_BASE / _tick_interval * 100)
+	var spd_c = GameTerminalStyles.status_warning() if spd_pct > 100 else GameTerminalStyles.dim()
+	return {
+		"len": { "label": "LEN", "value": str(_score + 3), "color": GameTerminalStyles.status_active() },
+		"spd": { "label": "SPD", "value": "%d%%" % spd_pct, "color": spd_c },
+	}
+
+## 最佳分数 (供终端持久化)
+func get_best_score() -> int:
+	return _score
+
 func _process(delta: float) -> void:
 	_time += delta
 	if _game_active:
@@ -160,15 +173,6 @@ func _draw() -> void:
 	_calc_layout()
 	var hue = EventBus.ui_hue
 	var font = ThemeDB.fallback_font
-
-	# 状态栏
-	var status_y = _grid_origin.y - 6.0
-	var len_c = GameTerminalStyles.status_active()
-	draw_string(font, Vector2(_grid_origin.x + 2, status_y), "LEN: %d" % (_score + 3), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, len_c)
-	var spd_str = "SPD: %d%%" % int(TICK_BASE / _tick_interval * 100)
-	var spd_w = font.get_string_size(spd_str, HORIZONTAL_ALIGNMENT_RIGHT, -1, 12).x
-	var grid_end_x = _grid_origin.x + COLS * _cell_size
-	draw_string(font, Vector2(grid_end_x - spd_w - 2, status_y), spd_str, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, GameTerminalStyles.status_warning())
 
 	# 网格背景
 	var grid_size = Vector2(COLS * _cell_size, ROWS * _cell_size)

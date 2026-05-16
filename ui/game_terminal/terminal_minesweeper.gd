@@ -47,6 +47,15 @@ func build() -> void:
 	_build_result_overlay()
 	start_game()
 
+## HUD 协议: 剩余雷数 + 用时
+func get_hud_data() -> Dictionary:
+	var remain_c = GameTerminalStyles.status_warning() if _mines_remaining > 0 else GameTerminalStyles.status_active()
+	var time_str = "%02d:%02d" % [int(_time) / 60, int(_time) % 60]
+	return {
+		"mines": { "label": "MINES", "value": str(_mines_remaining), "color": remain_c },
+		"time": { "label": "TIME", "value": time_str, "color": GameTerminalStyles.dim() },
+	}
+
 func _process(delta: float) -> void:
 	_time += delta
 	if _game_active or _death_cell >= 0:
@@ -282,14 +291,6 @@ func _draw() -> void:
 	_calc_layout()
 	var hue = EventBus.ui_hue
 	var font = ThemeDB.fallback_font
-
-	# ── 状态栏 (剩余雷数 + 时间) ──
-	var status_y = _grid_origin.y - 6.0
-	var remain_c = GameTerminalStyles.status_warning() if _mines_remaining > 0 else GameTerminalStyles.status_active()
-	draw_string(font, Vector2(_grid_origin.x + 2, status_y), "MINES: %d" % _mines_remaining, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, remain_c)
-	var time_str = "%02d:%02d" % [int(_time) / 60, int(_time) % 60]
-	var time_w = font.get_string_size(time_str, HORIZONTAL_ALIGNMENT_RIGHT, -1, 12).x
-	draw_string(font, Vector2(_grid_origin.x + _cell_size * COLS - time_w - 2, status_y), time_str, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.5, 0.6, 0.7, 0.6))
 
 	# ── 网格 ──
 	for i in range(COLS * ROWS):

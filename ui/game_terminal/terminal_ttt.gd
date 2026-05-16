@@ -36,6 +36,29 @@ func build() -> void:
 	_build_result_overlay()
 	start_game()
 
+## HUD 协议: 返回当前游戏状态数据
+func get_hud_data() -> Dictionary:
+	var turn_text: String
+	var turn_color: Color
+	if not _game_active:
+		turn_text = "已结束"
+		turn_color = GameTerminalStyles.dim()
+	elif _player_turn:
+		turn_text = "USR"
+		turn_color = GameTerminalStyles.status_active()
+	else:
+		turn_text = "SYS"
+		turn_color = GameTerminalStyles.status_warning()
+	# 统计棋子数
+	var placed := 0
+	for cell in _board:
+		if cell != 0:
+			placed += 1
+	return {
+		"turn": { "label": "回合", "value": turn_text, "color": turn_color },
+		"moves": { "label": "落子", "value": "%d/9" % placed, "color": GameTerminalStyles.dim() },
+	}
+
 func _process(delta: float) -> void:
 	_time += delta
 	# 胜负线动画 或 hover 时持续重绘
