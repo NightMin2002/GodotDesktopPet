@@ -37,7 +37,10 @@ var _scroll: ScrollContainer
 var _detail_header: Label
 var _detail_empty: VBoxContainer  # 右栏未选中时的引导
 var _content_wrapper: HBoxContainer # 正文包裹 (CyberScrollIndicator.wrap 生成)
-var _pet_content_rtl: RichTextLabel  # 机体记录只读展示 (支持 BBCode 绿字增量)
+var _pet_header_rtl: RichTextLabel
+var _pet_col1_rtl: RichTextLabel
+var _pet_col2_rtl: RichTextLabel
+var _pet_col3_rtl: RichTextLabel
 var _pet_content_wrapper: HBoxContainer  # 机体记录包裹
 var _window_cards_wrapper: HBoxContainer  # 窗口包裹 (CyberScrollIndicator.wrap 生成)
 var _window_cards_inner: VBoxContainer    # 卡片挂载点
@@ -360,25 +363,69 @@ func build() -> void:
 	_detail_panel.add_child(_content_edit)
 	_content_wrapper = CyberScrollIndicator.wrap(_content_edit)
 
-	# 机体记录只读展示 (RichTextLabel, 支持 BBCode 绿字)
+	# 机体记录只读展示 (支持 BBCode 绿字，分为头部与三列结构)
 	var pet_scroll = ScrollContainer.new()
 	pet_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	pet_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	pet_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_detail_panel.add_child(pet_scroll)
-
-	_pet_content_rtl = RichTextLabel.new()
-	_pet_content_rtl.bbcode_enabled = true
-	_pet_content_rtl.fit_content = true
-	_pet_content_rtl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_pet_content_rtl.add_theme_font_size_override("normal_font_size", 14)
-	_pet_content_rtl.add_theme_color_override("default_color", Color(0.80, 0.85, 0.90, 0.95))
-	var rtl_bg = StyleBoxFlat.new()
-	rtl_bg.bg_color = Color(0.03, 0.04, 0.08, 0.4)
-	rtl_bg.set_corner_radius_all(2)
-	rtl_bg.set_content_margin_all(12)
-	_pet_content_rtl.add_theme_stylebox_override("normal", rtl_bg)
-	pet_scroll.add_child(_pet_content_rtl)
+	
+	var pet_frame = StyleBoxFlat.new()
+	pet_frame.bg_color = Color(0.03, 0.04, 0.08, 0.4)
+	pet_frame.set_corner_radius_all(2)
+	pet_frame.set_content_margin_all(12)
+	
+	var pet_layout = VBoxContainer.new()
+	pet_layout.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	
+	_pet_header_rtl = RichTextLabel.new()
+	_pet_header_rtl.bbcode_enabled = true
+	_pet_header_rtl.fit_content = true
+	_pet_header_rtl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_pet_header_rtl.add_theme_font_size_override("normal_font_size", 14)
+	_pet_header_rtl.add_theme_color_override("default_color", Color(0.80, 0.85, 0.90, 0.95))
+	pet_layout.add_child(_pet_header_rtl)
+	
+	var header_spacer = Control.new()
+	header_spacer.custom_minimum_size.y = 4
+	pet_layout.add_child(header_spacer)
+	pet_layout.add_child(CyberDashedSeparator.new(false))
+	
+	var header_spacer2 = Control.new()
+	header_spacer2.custom_minimum_size.y = 4
+	pet_layout.add_child(header_spacer2)
+	
+	var cols = HBoxContainer.new()
+	cols.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cols.add_theme_constant_override("separation", 24)
+	
+	var _create_col = func() -> RichTextLabel:
+		var rtl = RichTextLabel.new()
+		rtl.bbcode_enabled = true
+		rtl.fit_content = true
+		rtl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		rtl.add_theme_font_size_override("normal_font_size", 14)
+		rtl.add_theme_color_override("default_color", Color(0.80, 0.85, 0.90, 0.95))
+		return rtl
+		
+	_pet_col1_rtl = _create_col.call()
+	_pet_col2_rtl = _create_col.call()
+	_pet_col3_rtl = _create_col.call()
+	
+	cols.add_child(_pet_col1_rtl)
+	cols.add_child(CyberDashedSeparator.new(true))
+	cols.add_child(_pet_col2_rtl)
+	cols.add_child(CyberDashedSeparator.new(true))
+	cols.add_child(_pet_col3_rtl)
+	
+	pet_layout.add_child(cols)
+	
+	var pet_bg_panel = PanelContainer.new()
+	pet_bg_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pet_bg_panel.add_theme_stylebox_override("panel", pet_frame)
+	pet_bg_panel.add_child(pet_layout)
+	
+	pet_scroll.add_child(pet_bg_panel)
 
 	_pet_content_wrapper = CyberScrollIndicator.wrap(pet_scroll)
 	_pet_content_wrapper.visible = false
@@ -492,7 +539,10 @@ func _build_ctx() -> void:
 			"title_edit": _title_edit,
 			"content_edit": _content_edit,
 			"content_wrapper": _content_wrapper,
-			"pet_content_rtl": _pet_content_rtl,
+			"pet_header_rtl": _pet_header_rtl,
+			"pet_col1_rtl": _pet_col1_rtl,
+			"pet_col2_rtl": _pet_col2_rtl,
+			"pet_col3_rtl": _pet_col3_rtl,
 			"pet_content_wrapper": _pet_content_wrapper,
 			"tags_flow": _tags_flow,
 			"tag_input": _tag_input,
@@ -805,3 +855,24 @@ func _make_line_edit(placeholder: String, min_width: int) -> LineEdit:
 	lf.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.7, 0.5)
 	input.add_theme_stylebox_override("focus", lf)
 	return input
+
+# ── 自定义虚线分隔符 ──
+
+class CyberDashedSeparator extends Control:
+	var is_vertical: bool = true
+	
+	func _init(vertical: bool = true) -> void:
+		is_vertical = vertical
+		if is_vertical:
+			custom_minimum_size.x = 2
+			size_flags_vertical = Control.SIZE_EXPAND_FILL
+		else:
+			custom_minimum_size.y = 2
+			size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			
+	func _draw() -> void:
+		var c = Color.from_hsv(EventBus.ui_hue, 0.4, 0.6, 0.25)
+		if is_vertical:
+			draw_dashed_line(Vector2(1, 0), Vector2(1, size.y), c, 1.0, 4.0)
+		else:
+			draw_dashed_line(Vector2(0, 1), Vector2(size.x, 1), c, 1.0, 4.0)

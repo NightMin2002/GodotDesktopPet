@@ -52,12 +52,18 @@ static func update_detail_panel(ctx: Dictionary) -> void:
 			if ui.has("window_cards_inner") and ctx.has("render_window_cards"):
 				ctx.render_window_cards.call(ui.window_cards_inner, entry.get("window_data", {}), entry.get("window_delta", {}))
 	elif is_input_report:
-		# 输入报告: 用 RichTextLabel 显示带增量绿字的内容
-		if ui.has("pet_content_wrapper") and ui.has("pet_content_rtl"):
+		# 输入报告: 用多列 RichTextLabel 显示带增量绿字的内容
+		if ui.has("pet_content_wrapper") and ui.has("pet_header_rtl"):
 			ui.pet_content_wrapper.visible = true
-			var bbcode = _format_input_bbcode(entry)
-			ui.pet_content_rtl.text = ""
-			ui.pet_content_rtl.parse_bbcode(bbcode)
+			var bbcodes = _format_input_bbcode_modular(entry)
+			ui.pet_header_rtl.text = ""
+			ui.pet_header_rtl.parse_bbcode(bbcodes[0])
+			ui.pet_col1_rtl.text = ""
+			ui.pet_col1_rtl.parse_bbcode(bbcodes[1])
+			ui.pet_col2_rtl.text = ""
+			ui.pet_col2_rtl.parse_bbcode(bbcodes[2])
+			ui.pet_col3_rtl.text = ""
+			ui.pet_col3_rtl.parse_bbcode(bbcodes[3])
 		# 键鼠全图按钮
 		if ui.has("heatmap_btn"):
 			ui.heatmap_btn.visible = true
@@ -77,30 +83,28 @@ static func update_detail_panel(ctx: Dictionary) -> void:
 
 	_refresh_tags_display(ctx, entry.get("tags", []))
 
-## 生成输入报告的 BBCode (内联绿字增量)
-static func _format_input_bbcode(entry: Dictionary) -> String:
+## 生成输入报告的分栏 BBCode (数组格式: [头部, 左栏按键, 中栏组合键, 右栏鼠标])
+static func _format_input_bbcode_modular(entry: Dictionary) -> Array[String]:
 	var data: Dictionary = entry.get("input_data", {})
 	var delta: Dictionary = entry.get("input_delta", {})
 	var has_delta = not delta.is_empty()
-	var green = "4cf06a"  # 增量绿色
+	var green = "4cf06a"
 
-	var lines: PackedStringArray = []
-	lines.append("=== 输入行为统计报告 ===")
+	var header_lines: PackedStringArray = []
+	header_lines.append("[center]=== 输入行为统计报告 ===[/center]")
 	var sess = int(data.get("session_sec", 0))
-	lines.append("会话时长: %d 秒" % sess)
 	var total_keys = int(data.get("total_keystrokes", 0))
 	var dk = int(delta.get("keystrokes", 0))
+	var total_str = "%d 次" % total_keys
 	if has_delta and dk > 0:
-		lines.append("总击键: %d 次[color=#%s]+%d次[/color]" % [total_keys, green, dk])
-	else:
-		lines.append("总击键: %d 次" % total_keys)
-	lines.append("")
+		total_str += "[color=#%s]+%d次[/color]" % [green, dk]
+	header_lines.append("[center]会话时长: %d 秒  |  总击键: %s[/center]" % [sess, total_str])
 
-	# 按键 (全部)
+	var col1: PackedStringArray = []
 	var keys: Dictionary = data.get("keys", {})
 	var keys_delta: Dictionary = delta.get("keys", {})
 	if keys.size() > 0:
-		lines.append("-- 按键统计 (全量) --")
+		col1.append("[color=#9cc2ff]-- 按键统计 (全量) --[/color]")
 		var sorted_keys = []
 		for k in keys:
 			sorted_keys.append([k, keys[k]])
@@ -110,16 +114,15 @@ static func _format_input_bbcode(entry: Dictionary) -> String:
 			var k_val = sorted_keys[i][1]
 			var dk_i = int(keys_delta.get(k_name, 0))
 			if has_delta and dk_i > 0:
-				lines.append("  %s: %d 次[color=#%s]+%d次[/color]" % [k_name, k_val, green, dk_i])
+				col1.append("  %s: %d 次[color=#%s]+%d次[/color]" % [k_name, k_val, green, dk_i])
 			else:
-				lines.append("  %s: %d 次" % [k_name, k_val])
-		lines.append("")
+				col1.append("  %s: %d 次" % [k_name, k_val])
 
-	# 组合键
+	var col2: PackedStringArray = []
 	var combos: Dictionary = data.get("combos", {})
 	var combos_delta: Dictionary = delta.get("combos", {})
 	if combos.size() > 0:
-		lines.append("-- 组合键统计 --")
+		col2.append("[color=#ffcc99]-- 组合键统计 --[/color]")
 		var sorted_combos = []
 		for k in combos:
 			sorted_combos.append([k, combos[k]])
@@ -129,33 +132,32 @@ static func _format_input_bbcode(entry: Dictionary) -> String:
 			var c_val = item[1]
 			var dc = int(combos_delta.get(c_name, 0))
 			if has_delta and dc > 0:
-				lines.append("  %s: %d 次[color=#%s]+%d次[/color]" % [c_name, c_val, green, dc])
+				col2.append("  %s: %d 次[color=#%s]+%d次[/color]" % [c_name, c_val, green, dc])
 			else:
-				lines.append("  %s: %d 次" % [c_name, c_val])
-		lines.append("")
+				col2.append("  %s: %d 次" % [c_name, c_val])
 
-	# 鼠标 (逐项标注增量)
+	var col3: PackedStringArray = []
 	var mouse: Dictionary = data.get("mouse", {})
 	if mouse.size() > 0:
-		lines.append("-- 鼠标统计 --")
+		col3.append("[color=#99e699]-- 鼠标统计 --[/color]")
 		var lc = int(mouse.get("left_clicks", 0))
 		var d_lc = int(delta.get("left_clicks", 0))
 		if has_delta and d_lc > 0:
-			lines.append("  左键: %d 次[color=#%s]+%d次[/color]" % [lc, green, d_lc])
+			col3.append("  左键: %d 次[color=#%s]+%d次[/color]" % [lc, green, d_lc])
 		else:
-			lines.append("  左键: %d 次" % lc)
+			col3.append("  左键: %d 次" % lc)
 		var rc = int(mouse.get("right_clicks", 0))
 		var d_rc = int(delta.get("right_clicks", 0))
 		if has_delta and d_rc > 0:
-			lines.append("  右键: %d 次[color=#%s]+%d次[/color]" % [rc, green, d_rc])
+			col3.append("  右键: %d 次[color=#%s]+%d次[/color]" % [rc, green, d_rc])
 		else:
-			lines.append("  右键: %d 次" % rc)
-		lines.append("  中键: %d 次" % int(mouse.get("middle_clicks", 0)))
+			col3.append("  右键: %d 次" % rc)
+		col3.append("  中键: %d 次" % int(mouse.get("middle_clicks", 0)))
 		var dist_px = int(mouse.get("distance_px", 0))
 		if dist_px > 0:
-			lines.append("  移动: %.1f m (估算)" % (float(dist_px) / 3780.0))
+			col3.append("  移动: %.1f m (估算)" % (float(dist_px) / 3780.0))
 
-	return "\n".join(lines)
+	return ["\n".join(header_lines), "\n".join(col1), "\n".join(col2), "\n".join(col3)]
 
 ## 刷新标签徽章列表
 static func _refresh_tags_display(ctx: Dictionary, tags: Array) -> void:
