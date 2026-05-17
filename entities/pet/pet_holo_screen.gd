@@ -303,12 +303,15 @@ func render() -> void:
 	var holo_w: float
 	var holo_h: float
 	if mode == Mode.GAME:
-		# 游戏模式: 匹配宠物体型 + 4:3 宽高比
-		holo_w = pet.PET_RADIUS * 2.5
-		holo_h = pet.PET_RADIUS * 1.9
+		# 游戏模式: 宠物直径 * 缩放, 保持面板 4:3 比例
+		var _sz = SettingsManager.get_int("holo_size", 10) / 10.0
+		holo_w = pet.PET_RADIUS * 2.0 * _sz
+		holo_h = holo_w * 0.76  # 4:3
 	else:
-		holo_w = pet.PET_RADIUS * 2.0
-		holo_h = pet.PET_RADIUS * 2.5
+		# 终端模式: 正方形, 宠物直径 * 缩放
+		var _sz = SettingsManager.get_int("holo_size", 10) / 10.0
+		holo_w = pet.PET_RADIUS * 2.0 * _sz
+		holo_h = holo_w  # 1:1 正方形
 
 	# 展开动画: 从宠物体表横向展开
 	var anim_w = holo_w * _deploy_progress
@@ -326,32 +329,20 @@ func render() -> void:
 	pet.draw_line(beam_start, beam_end, Color.from_hsv(hue, 0.3, 0.8, 0.2 * beam_alpha), 0.8, true)
 	pet.draw_circle(beam_start, 1.5, Color.from_hsv(hue, 0.4, 1.0, 0.4 * beam_alpha), true, -1.0, true)
 
-	# 梯形透视: 靠近宠物的边上下收缩，远离的边保持原高
+	# 矩形顶点 (后仰时顶边偏移)
 	var half_w = anim_w / 2.0
 	var half_h = anim_h / 2.0
-	var shrink = 0 # 近端收缩比例 (15%)
-	var near_half_h = half_h * (1.0 - shrink)  # 近端半高 (较短)
-	var far_half_h = half_h                     # 远端半高 (原高)
 
-	# 微后仰: 顶部向远离宠物方向偏移，模拟屏幕微倾
-	var tilt = side * anim_w * 0
+	# 后仰: 顶部向远离宠物方向偏移
+	var tilt = side * anim_w * SettingsManager.get_int("holo_tilt", 0) / 100.0
 
-	# 梯形 4 个顶点 (左上→右上→右下→左下)
-	var pts: PackedVector2Array
-	if side > 0:  # 全息屏在右侧: 左边(近端)窄，右边(远端)宽
-		pts = PackedVector2Array([
-			Vector2(cx - half_w + tilt, cy - near_half_h),  # 左上 (近, 后仰)
-			Vector2(cx + half_w + tilt, cy - far_half_h),   # 右上 (远, 后仰)
-			Vector2(cx + half_w, cy + far_half_h),           # 右下 (远)
-			Vector2(cx - half_w, cy + near_half_h),          # 左下 (近)
-		])
-	else:  # 全息屏在左侧: 右边(近端)窄，左边(远端)宽
-		pts = PackedVector2Array([
-			Vector2(cx - half_w + tilt, cy - far_half_h),   # 左上 (远, 后仰)
-			Vector2(cx + half_w + tilt, cy - near_half_h),  # 右上 (近, 后仰)
-			Vector2(cx + half_w, cy + near_half_h),          # 右下 (近)
-			Vector2(cx - half_w, cy + far_half_h),           # 左下 (远)
-		])
+	# 4 个顶点 (左上→右上→右下→左下)
+	var pts = PackedVector2Array([
+		Vector2(cx - half_w + tilt, cy - half_h),  # 左上 (后仰偏移)
+		Vector2(cx + half_w + tilt, cy - half_h),  # 右上 (后仰偏移)
+		Vector2(cx + half_w, cy + half_h),          # 右下
+		Vector2(cx - half_w, cy + half_h),          # 左下
+	])
 
 	# 根据模式渲染内容
 	if mode == Mode.GAME:
@@ -372,11 +363,13 @@ func get_screen_rect() -> Rect2:
 	var holo_w: float
 	var holo_h: float
 	if mode == Mode.GAME:
-		holo_w = pet.PET_RADIUS * 2.5
-		holo_h = pet.PET_RADIUS * 1.9
+		var _sz = SettingsManager.get_int("holo_size", 10) / 10.0
+		holo_w = pet.PET_RADIUS * 2.0 * _sz
+		holo_h = holo_w * 0.76
 	else:
-		holo_w = pet.PET_RADIUS * 2.0
-		holo_h = pet.PET_RADIUS * 2.5
+		var _sz = SettingsManager.get_int("holo_size", 10) / 10.0
+		holo_w = pet.PET_RADIUS * 2.0 * _sz
+		holo_h = holo_w
 	var cx = side * (gap_val + holo_w * 0.5)
 	var cy = 0.0
 	# 转到屏幕坐标

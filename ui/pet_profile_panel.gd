@@ -505,6 +505,11 @@ func _close_panel() -> void:
 	var pet = _get_pet()
 	if pet:
 		pet.overlay_rect = Rect2()
+	# 通知终端配置 Tab 收起全息屏预览
+	if _tab_contents.size() > 7 and is_instance_valid(_tab_contents[7]):
+		var config_tab = _tab_contents[7]
+		if config_tab.has_method("cleanup"):
+			config_tab.cleanup()
 	panel.pivot_offset = panel.size / 2.0
 	var tween = create_tween().set_parallel(true)
 	tween.tween_property(panel, "modulate:a", 0.0, 0.1)
