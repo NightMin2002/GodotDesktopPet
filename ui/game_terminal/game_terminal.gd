@@ -692,44 +692,6 @@ class _LobbyIcon extends Control:
 		var t = _time
 
 		match game_id:
-			"minesweeper":
-				# ── 扫雷: 放大网格 + 脉冲雷芯 + 辐射刺 + 旗帜 ──
-				var gs = minf(w, h) * 0.7
-				var cs = gs / 3.0
-				var ox = cx - gs * 0.5
-				var oy = cy - gs * 0.5
-				# 网格
-				for i in range(4):
-					draw_line(Vector2(ox + i * cs, oy), Vector2(ox + i * cs, oy + gs), line_c, 0.5)
-					draw_line(Vector2(ox, oy + i * cs), Vector2(ox + gs, oy + i * cs), line_c, 0.5)
-				# 雷芯 — 脉冲 + 泛光 + 十字/对角刺
-				var mc = Vector2(ox + cs * 1.5, oy + cs * 1.5)
-				var mine_pulse = sin(t * 3.0) * 0.12 + 0.88
-				var mr = cs * 0.3 * mine_pulse
-				draw_circle(mc, mr + 4, Color(0.9, 0.2, 0.15, 0.1 * mine_pulse), true, -1.0, true)
-				draw_circle(mc, mr, Color(0.9, 0.25, 0.2, alpha_hi), true, -1.0, true)
-				var spike_c = Color(0.95, 0.3, 0.25, 0.55 * mine_pulse)
-				var sl = mr * 1.6
-				draw_line(mc - Vector2(sl, 0), mc + Vector2(sl, 0), spike_c, 1.5, true)
-				draw_line(mc - Vector2(0, sl), mc + Vector2(0, sl), spike_c, 1.5, true)
-				var dsl = sl * 0.7
-				draw_line(mc - Vector2(dsl, dsl), mc + Vector2(dsl, dsl), spike_c, 1.0, true)
-				draw_line(mc - Vector2(dsl, -dsl), mc + Vector2(dsl, -dsl), spike_c, 1.0, true)
-				# 高光点
-				draw_circle(mc + Vector2(-mr * 0.3, -mr * 0.3), mr * 0.18, Color(1.0, 0.6, 0.5, 0.5), true, -1.0, true)
-				# 旗帜 at [0,0]
-				var fc = Vector2(ox + cs * 0.5, oy + cs * 0.5)
-				draw_line(fc + Vector2(0, -cs * 0.35), fc + Vector2(0, cs * 0.25), Color(0.7, 0.8, 0.9, alpha_base), 1.5, true)
-				var flag_pts = PackedVector2Array([
-					fc + Vector2(0, -cs * 0.35),
-					fc + Vector2(cs * 0.32, -cs * 0.17),
-					fc + Vector2(0, 0),
-				])
-				draw_colored_polygon(flag_pts, accent_c)
-				# 数字 "2"
-				var font = ThemeDB.fallback_font
-				draw_string(font, Vector2(ox + cs * 2.12, oy + cs * 0.72), "2", HORIZONTAL_ALIGNMENT_LEFT, -1, int(cs * 0.65), Color(0.2, 0.75, 0.3, alpha_hi))
-
 			"2048":
 				# ── 2048: 2x2 矩阵 + 高级数字 + 发光顶块 ──
 				var gs = minf(w, h) * 0.65
@@ -1149,8 +1111,6 @@ var _game_registry: Array[Dictionary] = []
 
 ## 旧版平铺文件兼容 (未迁移到 games/ 文件夹的游戏)
 const _LEGACY_GAMES := [
-	{ "id": "minesweeper", "name": "威胁评估", "desc": "9x9 雷区扫描", "auto": true,
-	  "script": preload("res://ui/game_terminal/terminal_minesweeper.gd") },
 	{ "id": "2048", "name": "矩阵叠加", "desc": "4x4 数值融合", "auto": true,
 	  "script": preload("res://ui/game_terminal/terminal_2048.gd") },
 	{ "id": "snake", "name": "路径规划", "desc": "15x15 线性延伸", "auto": true,

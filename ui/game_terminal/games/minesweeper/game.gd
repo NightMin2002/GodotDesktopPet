@@ -1,10 +1,12 @@
-# terminal_minesweeper.gd — 终端原生扫雷 (威胁评估)
+# game.gd — 终端扫雷 (威胁评估)
 # 直接在游戏终端内容区渲染，_draw 自绘
 # 自包含: 雷区 + 输入 + 洪泛揭开 + 结算覆盖 + 重开按钮
-extends Control
+extends TerminalGameBase
 
-signal game_started
-signal game_over(result: int)  # 0=胜, 1=负
+func get_game_id() -> String: return "minesweeper"
+func get_game_name() -> String: return "威胁评估"
+func get_game_desc() -> String: return "9x9 雷区扫描"
+func supports_auto_play() -> bool: return true
 
 # ── 棋盘参数 ──
 const COLS := 9
