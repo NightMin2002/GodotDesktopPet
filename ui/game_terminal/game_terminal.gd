@@ -18,7 +18,7 @@ var _panel_inner: PanelContainer       # 内层面板 (实际 UI 内容)
 var _title_bar: Control
 var _title_label: Label
 var _status_label: Label
-var _hud_bar: PanelContainer        # 顶部 HUD 槽位
+
 var _content_area: PanelContainer   # 中央内容区
 var _content_stack: Control         # 内容区堆叠容器
 var _footer_bar: PanelContainer     # 底部操作栏
@@ -34,11 +34,7 @@ var _state: int = TerminalState.CLOSED
 
 var _frame_drawer: Control  # GameTerminalFrame 实例
 
-# ── HUD ──
-var _hud_hbox: HBoxContainer        # HUD 内部容器
-var _hud_slot_labels: Dictionary = {} # slot_id -> Label
-var _hud_mode_label: Label           # 右侧状态指示
-var _hud_record_label: Label = null  # 战绩标签
+
 
 # ── 自玩模式 ──
 var _auto_play: bool = false          # 是否正在自玩
@@ -91,9 +87,7 @@ func _process(_delta: float) -> void:
 		var pet = _get_pet()
 		if pet:
 			pet.set_overlay_rect("game_terminal", Rect2(panel.position, Vector2(_panel_w, _panel_h)))
-		# HUD 数据轮询 (PLAYING 状态下每帧从游戏拉取)
-		if _state == TerminalState.PLAYING and _active_game:
-			_update_hud()
+
 		# 注册面板矩形 (供层级管理用)
 		EventBus._active_panel_rects[_PANEL_ID] = { "rect": Rect2(panel.position, Vector2(_panel_w, _panel_h)), "layer": layer }
 	else:
@@ -184,9 +178,7 @@ func _build_ui() -> void:
 	hsep.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	outer.add_child(hsep)
 
-	# ── HUD 状态条 (预留槽位) ──
-	_hud_bar = _build_hud_bar()
-	outer.add_child(_hud_bar)
+
 
 	# ── 中央内容区 ──
 	_content_area = _build_content_area()
@@ -229,6 +221,7 @@ func _build_title_bar() -> Control:
 	# 关闭按钮
 	var close_btn = Button.new()
 	close_btn.text = "断开"
+	close_btn.focus_mode = Control.FOCUS_NONE
 	close_btn.add_theme_font_size_override("font_size", 15)
 	close_btn.add_theme_color_override("font_color", Color(0.7, 0.4, 0.4, 0.7))
 	close_btn.add_theme_color_override("font_hover_color", Color(0.95, 0.4, 0.35, 1.0))
@@ -273,109 +266,7 @@ func _on_title_bar_input(event: InputEvent) -> void:
 			return
 		panel.position = _clamp_pos(panel.get_global_mouse_position() - _drag_offset)
 
-# ═══════════════════════════════════════════════
-#  HUD 状态条
-# ═══════════════════════════════════════════════
 
-func _build_hud_bar() -> PanelContainer:
-	var bar = PanelContainer.new()
-	bar.add_theme_stylebox_override("panel", GameTerminalStyles.status_bar_bg())
-	bar.custom_minimum_size.y = 34
-	bar.mouse_filter = Control.MOUSE_FILTER_PASS
-
-	_hud_hbox = HBoxContainer.new()
-	_hud_hbox.add_theme_constant_override("separation", 16)
-	_hud_hbox.mouse_filter = Control.MOUSE_FILTER_PASS
-	bar.add_child(_hud_hbox)
-
-	# 初始大厅状态
-	_hud_record_label = GameTerminalStyles.dim_label("// 选择推演目标", 14)
-	_hud_hbox.add_child(_hud_record_label)
-
-	var spacer = Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hud_hbox.add_child(spacer)
-
-	_hud_mode_label = GameTerminalStyles.dim_label("STANDBY", 14)
-	_hud_mode_label.add_theme_color_override("font_color", GameTerminalStyles.status_active())
-	_hud_hbox.add_child(_hud_mode_label)
-
-	GameTerminalStyles.add_tech_brackets(bar, 5.0, 0.0)
-	return bar
-
-## 从活跃游戏轮询 HUD 数据并更新槽位
-func _update_hud() -> void:
-	if not _active_game or not _active_game.has_method("get_hud_data"):
-		return
-	var data: Dictionary = _active_game.get_hud_data()
-	for slot_id in data:
-		if slot_id in _hud_slot_labels:
-			var info = data[slot_id]
-			var lbl: Label = _hud_slot_labels[slot_id]
-			var text = "%s: %s" % [str(info.get("label", slot_id)), str(info.get("value", ""))]
-			if lbl.text != text:
-				lbl.text = text
-			var c = info.get("color", null)
-			if c is Color:
-				lbl.add_theme_color_override("font_color", c)
-
-## 从游戏初始化 HUD 槽位
-func _setup_hud_for_game() -> void:
-	_clear_hud_slots()
-	if not _active_game or not _active_game.has_method("get_hud_data"):
-		return
-	var data: Dictionary = _active_game.get_hud_data()
-	# 按 data 的 key 顺序插入到 mode_label 之前
-	var insert_idx := 0
-	for slot_id in data:
-		var info = data[slot_id]
-		var text = "%s: %s" % [str(info.get("label", slot_id)), str(info.get("value", ""))]
-		var c = info.get("color", GameTerminalStyles.dim())
-		var lbl = GameTerminalStyles.make_label(text, 14, c if c is Color else GameTerminalStyles.dim())
-		_hud_hbox.add_child(lbl)
-		_hud_hbox.move_child(lbl, insert_idx)
-		_hud_slot_labels[slot_id] = lbl
-		insert_idx += 1
-	# 战绩摘要 (紧跟数据槽位之后)
-	var record_text = _get_record_summary(_active_game_id)
-	if record_text != "":
-		_hud_record_label.text = record_text
-		_hud_record_label.visible = true
-	else:
-		_hud_record_label.visible = false
-
-## 清空 HUD 槽位 (回到大厅状态)
-func _clear_hud_slots() -> void:
-	for lbl in _hud_slot_labels.values():
-		if is_instance_valid(lbl):
-			lbl.queue_free()
-	_hud_slot_labels.clear()
-	if is_instance_valid(_hud_record_label):
-		_hud_record_label.text = "// 选择推演目标"
-		_hud_record_label.visible = true
-
-## 更新 HUD 右侧状态指示
-func _update_hud_mode() -> void:
-	if not is_instance_valid(_hud_mode_label):
-		return
-	match _state:
-		TerminalState.LOBBY:
-			_hud_mode_label.text = "STANDBY"
-			_hud_mode_label.add_theme_color_override("font_color", GameTerminalStyles.status_active())
-		TerminalState.PLAYING:
-			if _auto_play:
-				_hud_mode_label.text = "AUTO"
-				_hud_mode_label.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.5, 0.95, 0.75))
-			else:
-				_hud_mode_label.text = "IN GAME"
-				_hud_mode_label.add_theme_color_override("font_color", GameTerminalStyles.accent())
-		TerminalState.RESULT:
-			_hud_mode_label.text = "RESULT"
-			_hud_mode_label.add_theme_color_override("font_color", GameTerminalStyles.bright())
-		_:
-			_hud_mode_label.text = _state_to_string(_state)
-			_hud_mode_label.add_theme_color_override("font_color", GameTerminalStyles.dim())
 
 func _state_to_string(s: int) -> String:
 	match s:
@@ -780,6 +671,7 @@ func _rebuild_preview(index: int) -> void:
 func _make_lobby_btn(text: String, primary: bool) -> Button:
 	var btn = Button.new()
 	btn.text = text
+	btn.focus_mode = Control.FOCUS_NONE
 	btn.add_theme_font_size_override("font_size", 15)
 	var hue = EventBus.ui_hue
 	if primary:
@@ -813,7 +705,7 @@ func _launch_visible_auto_game(game_id: String) -> void:
 	_auto_visible = true
 	_launch_terminal_game(game_id)
 	_auto_start_timer()
-	_update_hud_mode()
+	_update_status_display()
 	_show_auto_blocker()
 
 # ═══════════════════════════════════════════════
@@ -893,8 +785,6 @@ func _open_panel() -> void:
 	EventBus.panel_focus_requested.emit(_PANEL_ID)
 	_state = TerminalState.LOBBY
 	_update_status_display()
-	_update_hud_mode()
-	_clear_hud_slots()
 	# 保底恢复大厅 (上次直接断开可能残留隐藏状态)
 	if is_instance_valid(_lobby_placeholder):
 		_lobby_placeholder.visible = true
@@ -937,8 +827,12 @@ func _update_status_display() -> void:
 			_status_label.text = "STANDBY"
 			_status_label.add_theme_color_override("font_color", GameTerminalStyles.status_active())
 		TerminalState.PLAYING:
-			_status_label.text = "IN GAME"
-			_status_label.add_theme_color_override("font_color", GameTerminalStyles.accent())
+			if _auto_play:
+				_status_label.text = "AUTO"
+				_status_label.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.5, 0.95, 0.75))
+			else:
+				_status_label.text = "IN GAME"
+				_status_label.add_theme_color_override("font_color", GameTerminalStyles.accent())
 		TerminalState.RESULT:
 			_status_label.text = "RESULT"
 			_status_label.add_theme_color_override("font_color", GameTerminalStyles.bright())
@@ -1078,8 +972,6 @@ func _launch_terminal_game(game_id: String) -> void:
 	_state = TerminalState.PLAYING
 	_title_label.text = "游戏终端 // " + entry.name
 	_update_status_display()
-	_update_hud_mode()
-	_setup_hud_for_game()
 	_update_footer_for_game()
 
 	# 激活全息投影
@@ -1088,14 +980,8 @@ func _launch_terminal_game(game_id: String) -> void:
 func _on_game_over(result: int) -> void:
 	_state = TerminalState.RESULT
 	_update_status_display()
-	_update_hud_mode()
 	# 战绩持久化
 	_save_record(_active_game_id, result)
-	# 刷新 HUD 战绩显示
-	if is_instance_valid(_hud_record_label):
-		var summary = _get_record_summary(_active_game_id)
-		if summary != "":
-			_hud_record_label.text = summary
 	# 自玩处理
 	if _auto_play:
 		_auto_stop_timer()
@@ -1120,7 +1006,6 @@ func _on_game_restarted() -> void:
 	if _state != TerminalState.PLAYING:
 		_state = TerminalState.PLAYING
 		_update_status_display()
-		_update_hud_mode()
 
 func _cleanup_active_game() -> void:
 	# 断开全息投影
@@ -1133,12 +1018,10 @@ func _cleanup_active_game() -> void:
 
 func _return_to_lobby() -> void:
 	_force_full_cleanup()
-	_clear_hud_slots()
 	_lobby_placeholder.visible = true
 	_state = TerminalState.LOBBY
 	_title_label.text = "游戏终端"
 	_update_status_display()
-	_update_hud_mode()
 	_update_footer_for_lobby()
 
 # ═══════════════════════════════════════════════
@@ -1208,6 +1091,7 @@ func _update_footer_for_game() -> void:
 func _make_footer_btn(text: String, on_press: Callable) -> Button:
 	var btn = Button.new()
 	btn.text = text
+	btn.focus_mode = Control.FOCUS_NONE
 	btn.add_theme_font_size_override("font_size", 14)
 	btn.add_theme_color_override("font_color", Color(0.6, 0.5, 0.4, 0.7))
 	btn.add_theme_color_override("font_hover_color", Color(0.9, 0.5, 0.35, 1.0))
@@ -1241,7 +1125,7 @@ func _takeover_from_auto() -> void:
 	_auto_visible = false
 	_auto_stop_timer()
 	_hide_auto_blocker()
-	_update_hud_mode()
+	_update_status_display()
 	_update_footer_for_game()  # 重建底栏 (移除接手按钮)
 
 ## 更新底栏: 大厅

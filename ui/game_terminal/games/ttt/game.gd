@@ -419,6 +419,36 @@ func _draw() -> void:
 	var ch = _cell_size
 	var is_ended = _win_line.size() > 0 or (_board.find(0) == -1 and _win_line.size() == 0)
 
+	# ── 顶部 HUD ──
+	var font = ThemeDB.fallback_font
+	if font:
+		var lbl_c = Color.from_hsv(hue, 0.3, 0.7, 0.5)
+		var turn_text: String
+		var turn_color: Color
+		if not _game_active:
+			turn_text = "END"
+			turn_color = GameTerminalStyles.dim()
+		elif _player_turn:
+			turn_text = "USR"
+			turn_color = GameTerminalStyles.status_active()
+		else:
+			turn_text = "SYS"
+			turn_color = GameTerminalStyles.status_warning()
+		var placed := 0
+		for cell in _board:
+			if cell != 0:
+				placed += 1
+		# 左: 回合
+		draw_string(font, Vector2(_grid_origin.x, _grid_origin.y - 10.0), "TURN",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lbl_c)
+		draw_string(font, Vector2(_grid_origin.x + 40, _grid_origin.y - 10.0), turn_text,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, turn_color)
+		# 右: 落子
+		draw_string(font, Vector2(_grid_origin.x + _grid_size - 68, _grid_origin.y - 10.0), "MOVE",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lbl_c)
+		draw_string(font, Vector2(_grid_origin.x + _grid_size - 24, _grid_origin.y - 10.0), "%d/9" % placed,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, GameTerminalStyles.dim())
+
 	# ── 网格线: 极细低存在感基准轴 ──
 	var line_color = Color.from_hsv(hue, 0.2, 0.4, 0.15)
 	var cross_color = Color.from_hsv(hue, 0.3, 0.7, 0.4)
@@ -441,7 +471,6 @@ func _draw() -> void:
 	var coord_labels = ["A1","A2","A3","B1","B2","B3","C1","C2","C3"]
 	for i in range(9):
 		var cr = _cell_rect(i)
-		var font = ThemeDB.fallback_font
 		draw_string(font, cr.position + Vector2(4, 13), coord_labels[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, coord_c)
 
 	# ── 悬停: 四角锁定框 [ ] ──

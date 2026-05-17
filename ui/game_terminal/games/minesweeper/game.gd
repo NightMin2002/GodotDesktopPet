@@ -345,6 +345,23 @@ func _draw() -> void:
 	var hue = EventBus.ui_hue
 	var font = ThemeDB.fallback_font
 
+	# ── 顶部 HUD ──
+	if font:
+		var lbl_c = Color.from_hsv(hue, 0.3, 0.7, 0.5)
+		var remain_c = GameTerminalStyles.status_warning() if _mines_remaining > 0 else GameTerminalStyles.status_active()
+		var time_str = "%02d:%02d" % [int(_time) / 60, int(_time) % 60]
+		# 左: MINES
+		draw_string(font, Vector2(_grid_origin.x, _grid_origin.y - 10.0), "MINES",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lbl_c)
+		draw_string(font, Vector2(_grid_origin.x + 46, _grid_origin.y - 10.0), str(_mines_remaining),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, remain_c)
+		# 右: TIME
+		var grid_w = _cell_size * COLS
+		draw_string(font, Vector2(_grid_origin.x + grid_w - 80, _grid_origin.y - 10.0), "TIME",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lbl_c)
+		draw_string(font, Vector2(_grid_origin.x + grid_w - 42, _grid_origin.y - 10.0), time_str,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, GameTerminalStyles.dim())
+
 	# ── 网格 ──
 	for i in range(COLS * ROWS):
 		var cr = _cell_rect(i)

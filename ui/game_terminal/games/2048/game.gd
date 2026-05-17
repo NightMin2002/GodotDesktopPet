@@ -278,9 +278,24 @@ func _draw() -> void:
 	_calc_layout()
 	var hue = EventBus.ui_hue
 	var font = ThemeDB.fallback_font
+	var total = _cell_size * GRID + _GAP * (GRID - 1)
+
+	# ── 顶部 HUD ──
+	if font:
+		var lbl_c = Color.from_hsv(hue, 0.3, 0.7, 0.5)
+		var score_c = GameTerminalStyles.status_warning() if _score > 0 else GameTerminalStyles.dim()
+		# 左: SCORE
+		draw_string(font, Vector2(_grid_origin.x, _grid_origin.y - 10.0), "SCORE",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lbl_c)
+		draw_string(font, Vector2(_grid_origin.x + 48, _grid_origin.y - 10.0), str(_score),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, score_c)
+		# 右: MAX
+		draw_string(font, Vector2(_grid_origin.x + total - 70, _grid_origin.y - 10.0), "MAX",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lbl_c)
+		draw_string(font, Vector2(_grid_origin.x + total - 36, _grid_origin.y - 10.0), str(_max_tile()),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, GameTerminalStyles.dim())
 
 	# 底板
-	var total = _cell_size * GRID + _GAP * (GRID - 1)
 	draw_rect(Rect2(_grid_origin - Vector2(3, 3), Vector2(total + 6, total + 6)), Color(0.04, 0.06, 0.10, 0.5))
 
 	# 方块

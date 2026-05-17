@@ -167,6 +167,7 @@ static func create_result_overlay(btn_text: String, restart_cb: Callable) -> Dic
 
 	var btn = Button.new()
 	btn.text = btn_text
+	btn.focus_mode = Control.FOCUS_NONE
 	btn.add_theme_font_size_override("font_size", 15)
 	btn.add_theme_stylebox_override("normal", small_btn_normal())
 	btn.add_theme_stylebox_override("hover", small_btn_hover())

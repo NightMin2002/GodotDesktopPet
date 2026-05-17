@@ -227,6 +227,23 @@ func _draw() -> void:
 	var hue = EventBus.ui_hue
 	var font = ThemeDB.fallback_font
 
+	# ── 顶部 HUD ──
+	if font:
+		var lbl_c = Color.from_hsv(hue, 0.3, 0.7, 0.5)
+		var spd_pct = int(TICK_BASE / _tick_interval * 100)
+		var spd_c = GameTerminalStyles.status_warning() if spd_pct > 100 else GameTerminalStyles.dim()
+		# 左: LEN
+		draw_string(font, Vector2(_grid_origin.x, _grid_origin.y - 10.0), "LEN",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lbl_c)
+		draw_string(font, Vector2(_grid_origin.x + 32, _grid_origin.y - 10.0), str(_score + 3),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, GameTerminalStyles.status_active())
+		# 右: SPD
+		var grid_w = _cell_size * COLS
+		draw_string(font, Vector2(_grid_origin.x + grid_w - 70, _grid_origin.y - 10.0), "SPD",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lbl_c)
+		draw_string(font, Vector2(_grid_origin.x + grid_w - 38, _grid_origin.y - 10.0), "%d%%" % spd_pct,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, spd_c)
+
 	# 网格背景
 	var grid_size = Vector2(COLS * _cell_size, ROWS * _cell_size)
 	draw_rect(Rect2(_grid_origin, grid_size), Color(0.03, 0.04, 0.07, 0.3))

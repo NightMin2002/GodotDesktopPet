@@ -134,6 +134,7 @@ var _time: float = 0.0
 var _cell_size: float = 0.0
 var _field_origin: Vector2 = Vector2.ZERO
 var _sidebar_x: float = 0.0
+var _left_sidebar_x: float = 0.0
 
 # ── 结算覆盖层 ──
 var _result_overlay: PanelContainer
@@ -250,9 +251,6 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	var pkc = event.physical_keycode
 	if kc == KEY_SHIFT or pkc == KEY_C:
 		_do_hold()
-	# 空格硬降 (备份路径)
-	if kc == KEY_SPACE:
-		_hard_drop()
 
 func _update_logic(delta: float) -> void:
 	# 消行动画
@@ -576,18 +574,20 @@ func _calc_layout() -> void:
 	var w = size.x
 	var h = size.y
 	var header_h = 6.0
-	var sidebar_ratio = 0.22  # 侧栏占总宽比
-	var field_area_w = w * (1.0 - sidebar_ratio)
+	var side_ratio = 0.18  # 每侧侧栏占总宽比
+	var field_area_w = w * (1.0 - side_ratio * 2)
 	var field_area_h = h - header_h - 6.0
 	# 场地按 10:20 比例缩放
 	_cell_size = minf(field_area_w / COLS, field_area_h / ROWS)
 	var field_w = _cell_size * COLS
 	var field_h = _cell_size * ROWS
-	# 场地居中偏左
+	var side_w = w * side_ratio
+	# 场地居中 (左右对称侧栏)
 	_field_origin = Vector2(
-		(field_area_w - field_w) * 0.5,
+		side_w + (field_area_w - field_w) * 0.5,
 		header_h + (field_area_h - field_h) * 0.5
 	)
+	_left_sidebar_x = side_w * 0.12
 	_sidebar_x = _field_origin.x + field_w + _cell_size * 0.6
 
 # ══════════════════════════════════════════════
@@ -697,10 +697,10 @@ func _draw() -> void:
 	draw_rect(Rect2(_field_origin, Vector2(field_w, field_h)),
 		Color.from_hsv(hue, 0.4, 0.7, 0.3), false, 1.0)
 
-	# ── 侧栏 ──
+	# ── 右侧栏: NEXT / HOLD ──
 	if font:
 		var label_c = Color.from_hsv(hue, 0.3, 0.7, 0.5)
-		var sidebar_cell = _cell_size * 0.65  # 预览格子大小
+		var sidebar_cell = _cell_size * 0.65
 
 		# NEXT
 		draw_string(font, Vector2(_sidebar_x, _field_origin.y + 12.0), "NEXT",
@@ -711,22 +711,36 @@ func _draw() -> void:
 		var hold_y = _field_origin.y + _cell_size * 5.0
 		draw_string(font, Vector2(_sidebar_x, hold_y), "HOLD",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, label_c)
-		var hold_c = label_c if not _hold_used else Color(0.3, 0.35, 0.4, 0.3)
 		_draw_piece_preview(_hold_type, _sidebar_x, hold_y + 6.0, sidebar_cell)
 
-		# LINE
-		var ln_y = _field_origin.y + _cell_size * 9.5
-		draw_string(font, Vector2(_sidebar_x, ln_y), "LINE",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, label_c)
-		draw_string(font, Vector2(_sidebar_x + 4, ln_y + 16.0), str(_lines_cleared),
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.from_hsv(hue, 0.4, 0.9, 0.8))
+	# ── 左侧栏: SCORE / LEVEL / LINES ──
+	if font:
+		var lbl_c = Color.from_hsv(hue, 0.3, 0.7, 0.5)
+		var val_c = Color.from_hsv(hue, 0.4, 0.9, 0.8)
+		var lx = _left_sidebar_x
+		var ly = _field_origin.y + 12.0
+		var gap = _cell_size * 3.2
 
 		# SCORE
-		var sc_y = _field_origin.y + _cell_size * 12.0
-		draw_string(font, Vector2(_sidebar_x, sc_y), "SCR",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, label_c)
-		draw_string(font, Vector2(_sidebar_x + 4, sc_y + 16.0), str(_score),
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 13, GameTerminalStyles.bright())
+		draw_string(font, Vector2(lx, ly), "SCORE",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lbl_c)
+		draw_string(font, Vector2(lx, ly + 18.0), str(_score),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, GameTerminalStyles.bright())
+
+		# LEVEL
+		ly += gap
+		var lv_c = GameTerminalStyles.status_warning() if _level >= 10 else GameTerminalStyles.status_active()
+		draw_string(font, Vector2(lx, ly), "LEVEL",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lbl_c)
+		draw_string(font, Vector2(lx, ly + 18.0), str(_level),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, lv_c)
+
+		# LINES
+		ly += gap
+		draw_string(font, Vector2(lx, ly), "LINES",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lbl_c)
+		draw_string(font, Vector2(lx, ly + 18.0), str(_lines_cleared),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, val_c)
 
 	# ── Game Over 覆盖 ──
 	if not _game_active and font:
