@@ -148,7 +148,7 @@ func _build_ui() -> void:
 	_panel_viewport.add_child(_panel_inner)
 
 	# ── 自定义边框绘制层 (独立渲染器) ──
-	var FrameScript = load("res://ui/game_terminal/game_terminal_frame.gd")
+	var FrameScript = load("res://ui/game_terminal/theme/frame.gd")
 	_frame_drawer = FrameScript.new()
 	_frame_drawer.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_frame_drawer.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1006,7 +1006,7 @@ func _destroy_confine_walls() -> void:
 			wall.queue_free()
 	_confine_walls.clear()
 
-# (边框渲染已提取到 game_terminal_frame.gd)
+# (边框渲染已提取到 theme/frame.gd)
 
 # ═══════════════════════════════════════════════
 #  游戏生命周期
