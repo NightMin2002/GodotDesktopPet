@@ -999,7 +999,6 @@ func _launch_terminal_game(game_id: String) -> void:
 		return
 
 	var game: Control = entry.script.new()
-	game.build()
 	game.game_over.connect(_on_game_over)
 	if game.has_signal("game_started"):
 		game.game_started.connect(_on_game_restarted)
@@ -1008,9 +1007,10 @@ func _launch_terminal_game(game_id: String) -> void:
 	_active_game_name = entry.name
 	_active_game_id = entry.id
 
-	# 隐藏大厅，显示游戏 (直接挂内容区，由面板级 SubViewport 统一捕获)
+	# 先挂树再 build (build 中可能调用 grab_focus 等需要 in-tree 的操作)
 	_lobby_placeholder.visible = false
 	_content_stack.add_child(_active_game)
+	game.build()
 
 	# 更新终端显示
 	_state = TerminalState.PLAYING
