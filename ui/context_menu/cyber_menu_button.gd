@@ -2,6 +2,7 @@
 # 提供: 悬浮时左右 [ ] 装甲咬合框 + X轴光刃追踪
 # 用法: var btn = CyberMenuButton.new()  或  btn.set_script(CyberMenuButton)
 extends Button
+class_name CyberMenuButton
 
 var is_hovered: bool = false
 var hover_t: float = 0.0

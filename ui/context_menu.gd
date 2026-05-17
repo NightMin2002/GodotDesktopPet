@@ -7,7 +7,7 @@ extends CanvasLayer
 const InfoSidebar = preload("res://ui/context_menu/info_sidebar.gd")
 const MenuTooltip = preload("res://ui/context_menu/menu_tooltip.gd")
 const SubmenuSystem = preload("res://ui/context_menu/submenu_system.gd")
-const CyberMenuBtn = preload("res://ui/context_menu/cyber_menu_button.gd")
+
 const EffectPreview = preload("res://ui/context_menu/effect_preview.gd")
 const SecPet = preload("res://ui/context_menu/sec_pet.gd")
 const SecBehavior = preload("res://ui/context_menu/sec_behavior.gd")
@@ -163,7 +163,7 @@ func _style_section_buttons() -> void:
 	]
 	for def in section_defs:
 		var btn: Button = def[0]
-		btn.set_script(CyberMenuBtn)
+		btn.set_script(CyberMenuButton)
 		btn._ready()
 		var color: Color = def[1]
 		var style = StyleBoxFlat.new()
@@ -195,7 +195,7 @@ func _style_section_buttons() -> void:
 # ═══════════════════════════════════════════
 
 func _make_menu_btn(text: String, hover_color: Color) -> Button:
-	var btn = CyberMenuBtn.new()
+	var btn = CyberMenuButton.new()
 	btn.flat = true
 	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	btn.add_theme_font_size_override("font_size", 20)
@@ -411,7 +411,7 @@ func _apply_ui_theme(hue: float) -> void:
 # ═══════════════════════════════════════════
 
 func _apply_capsule_style(btn: Button, bg_color: Color, border_color: Color) -> void:
-	btn.set_script(CyberMenuBtn)
+	btn.set_script(CyberMenuButton)
 	btn._ready()
 	var style_normal = StyleBoxFlat.new()
 	style_normal.bg_color = bg_color
@@ -443,12 +443,7 @@ func _flip_toggle(btn: Button, on_text: String, off_text: String) -> bool:
 	return new_val
 
 func _get_win_manager() -> Node:
-	var main_node = get_tree().root.get_node_or_null("Main")
-	if main_node:
-		for child in main_node.get_children():
-			if child.get_class() == "WindowsManager" or child.has_method("IsAutoStartEnabled"):
-				return child
-	return null
+	return ProfileStyles.get_win_manager(get_tree())
 
 # ── 外部点击关闭 ──
 

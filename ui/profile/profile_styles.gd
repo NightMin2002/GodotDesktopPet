@@ -236,3 +236,23 @@ static func add_avatar_frame(control: Control) -> void:
 		control.draw_line(Vector2(w - m, h*0.5), Vector2(w - m - 8, h*0.5), hl_c, 1.5)
 	)
 	EventBus.ui_theme_changed.connect(func(_h): if is_instance_valid(control): control.queue_redraw())
+
+# ── 全局通用工具 ──
+
+## 获取宠物原体引用 (集中管理, 避免多文件重复)
+static func get_pet(tree: SceneTree) -> Node:
+	if not tree: return null
+	var main_n = tree.root.get_node_or_null("Main")
+	if main_n and "pet_instances" in main_n and main_n.pet_instances.size() > 0:
+		return main_n.pet_instances[0]
+	return null
+
+## 获取 WindowsManager 引用 (集中管理)
+static func get_win_manager(tree: SceneTree) -> Node:
+	if not tree: return null
+	var main_n = tree.root.get_node_or_null("Main")
+	if main_n:
+		for child in main_n.get_children():
+			if child.get_class() == "WindowsManager" or child.has_method("IsAutoStartEnabled"):
+				return child
+	return null

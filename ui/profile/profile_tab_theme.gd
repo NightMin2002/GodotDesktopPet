@@ -674,7 +674,4 @@ func _check_color_conflict() -> void:
 # ═══════════════════════════════════════════════
 
 func _get_pet() -> Node:
-	var main_n = get_tree().root.get_node_or_null("Main")
-	if main_n and "pet_instances" in main_n and main_n.pet_instances.size() > 0:
-		return main_n.pet_instances[0]
-	return null
+	return ProfileStyles.get_pet(get_tree())

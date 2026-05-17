@@ -1,7 +1,7 @@
 # sec_behavior.gd — 行为分区 (构建 + 回调 + debug 子菜单)
 extends RefCounted
 
-const _CyberMenuBtn = preload("res://ui/context_menu/cyber_menu_button.gd")
+
 
 var ctx  # ContextMenu 引用
 
@@ -51,29 +51,25 @@ func build() -> void:
 		{"value": 0, "label": "自由漫游"},
 		{"value": 1, "label": "窗口封闭"},
 		{"value": 2, "label": "窗口排斥"},
-	], _on_radio_window_mode, 3)
-	ctx._submenu._l3_parent_map["window_mode"] = "sec_behavior"
+	], _on_radio_window_mode, 3, "sec_behavior")
 
 	ctx._submenu.create_radio("behavior_mode", [
 		{"value": 0, "label": "自由行动"},
 		{"value": 1, "label": "安静待命"},
-	], _on_radio_behavior_mode, 3)
-	ctx._submenu._l3_parent_map["behavior_mode"] = "sec_behavior"
+	], _on_radio_behavior_mode, 3, "sec_behavior")
 
 	ctx._submenu.create_radio("gait", [
 		{"value": 0, "label": "蹦跳为主"},
 		{"value": 1, "label": "滚动为主"},
 		{"value": 2, "label": "混合平衡"},
-	], _on_radio_gait, 3)
-	ctx._submenu._l3_parent_map["gait"] = "sec_behavior"
+	], _on_radio_gait, 3, "sec_behavior")
 
 	ctx._submenu.create_toggle("mode", [
 		{"id": "eye_track", "on": "指针跟踪 [●]", "off": "指针跟踪 [○]", "key": "eye_track", "default": true},
 		{"id": "anti_gravity", "on": "反重力 [●]", "off": "反重力 [○]", "key": "anti_gravity", "default": false},
 		{"id": "free_roam", "on": "空间跳跃 [●]", "off": "空间跳跃 [○]", "key": "free_roam", "default": false},
 		{"id": "screen_wrap", "on": "屏幕穿越 [●]", "off": "屏幕穿越 [○]", "key": "screen_wrap", "default": false},
-	], 3)
-	ctx._submenu._l3_parent_map["mode"] = "sec_behavior"
+	], 3, "sec_behavior")
 	# 模式子菜单追加踏板外观胶囊
 	_append_platform_style_capsule()
 
@@ -129,7 +125,7 @@ func _append_platform_style_capsule() -> void:
 	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(sep)
 
-	var btn = _CyberMenuBtn.new()
+	var btn = CyberMenuButton.new()
 	btn.text = "踏板外观"
 	btn.add_theme_font_size_override("font_size", 17)
 	ctx._apply_capsule_style(btn,

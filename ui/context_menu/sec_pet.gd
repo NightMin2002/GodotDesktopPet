@@ -1,7 +1,7 @@
 # sec_pet.gd — 宠物分区 (构建 + 回调 + 分身 + profile + terminal)
 extends RefCounted
 
-const _CyberMenuBtn = preload("res://ui/context_menu/cyber_menu_button.gd")
+
 
 var ctx  # ContextMenu 引用
 
@@ -58,16 +58,14 @@ func build() -> void:
 		{"value": 0, "label": "关闭", "desc": "宠物不会主动说话"},
 		{"value": 1, "label": "每30分钟", "desc": "每到整点和半点，冒泡说点什么"},
 		{"value": 2, "label": "每60分钟", "desc": "每到整点，冒泡说点什么"},
-	], _on_radio_chatter_mode, 3)
-	ctx._submenu._l3_parent_map["chatter"] = "sec_pet"
+	], _on_radio_chatter_mode, 3, "sec_pet")
 
 	# L3: 运行功耗单选
 	ctx._submenu.create_radio("auto_activity", [
 		{"value": 0, "label": "待机", "desc": "不会自发执行任何活动"},
 		{"value": 1, "label": "节能", "desc": "偶尔自发活动，间隔较长"},
 		{"value": 2, "label": "性能", "desc": "频繁自发活动，保持活跃"},
-	], _on_radio_auto_activity, 3)
-	ctx._submenu._l3_parent_map["auto_activity"] = "sec_pet"
+	], _on_radio_auto_activity, 3, "sec_pet")
 
 	# L3: 分身操作面板
 	_build_clone_l3_panel()
@@ -116,11 +114,7 @@ func _build_clone_l3_panel() -> void:
 	_dismiss_btn.pressed.connect(_on_dismiss_btn_pressed)
 	vbox.add_child(_dismiss_btn)
 
-	panel.mouse_entered.connect(func(): ctx._submenu.on_l3_panel_enter())
-	panel.mouse_exited.connect(func(): ctx._submenu.on_l3_panel_exit())
-	ctx.add_child(panel)
-	ctx._submenu.l3_panels["clone"] = panel
-	ctx._submenu._l3_parent_map["clone"] = "sec_pet"
+	ctx._submenu.register_l3_panel("clone", panel, "sec_pet")
 
 func _on_deploy_clone_pressed() -> void:
 	if is_instance_valid(ctx.target):
@@ -151,10 +145,7 @@ func refresh_profile() -> void:
 
 
 func _get_pet() -> Node:
-	var main_n = ctx.get_tree().root.get_node_or_null("Main")
-	if main_n and "pet_instances" in main_n and main_n.pet_instances.size() > 0:
-		return main_n.pet_instances[0]
-	return null
+	return ProfileStyles.get_pet(ctx.get_tree())
 
 # ── 个人终端 ──
 
@@ -181,7 +172,7 @@ func _build_terminal_l3_panel() -> void:
 	]
 
 	for item in items:
-		var btn = _CyberMenuBtn.new()
+		var btn = CyberMenuButton.new()
 
 		btn.flat = true
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -198,11 +189,7 @@ func _build_terminal_l3_panel() -> void:
 			btn.mouse_exited.connect(func(): ctx._tooltip.show_for(b, desc_text, false))
 		vbox.add_child(btn)
 
-	panel.mouse_entered.connect(func(): ctx._submenu.on_l3_panel_enter())
-	panel.mouse_exited.connect(func(): ctx._submenu.on_l3_panel_exit())
-	ctx.add_child(panel)
-	ctx._submenu.l3_panels["holo_terminal"] = panel
-	ctx._submenu._l3_parent_map["holo_terminal"] = "sec_pet"
+	ctx._submenu.register_l3_panel("holo_terminal", panel, "sec_pet")
 
 func _on_terminal_action(behavior: String) -> void:
 	ctx._tooltip.panel.hide()
@@ -266,7 +253,7 @@ func _build_debug_behavior_submenu() -> void:
 	]
 
 	for item in debug_items:
-		var btn = _CyberMenuBtn.new()
+		var btn = CyberMenuButton.new()
 		btn.flat = true
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.add_theme_font_size_override("font_size", 19)
@@ -282,11 +269,7 @@ func _build_debug_behavior_submenu() -> void:
 			btn.mouse_exited.connect(func(): ctx._tooltip.show_for(b, desc_text, false))
 		vbox.add_child(btn)
 
-	panel.mouse_entered.connect(func(): ctx._submenu.on_l3_panel_enter())
-	panel.mouse_exited.connect(func(): ctx._submenu.on_l3_panel_exit())
-	ctx.add_child(panel)
-	ctx._submenu.l3_panels["debug_behavior"] = panel
-	ctx._submenu._l3_parent_map["debug_behavior"] = "sec_pet"
+	ctx._submenu.register_l3_panel("debug_behavior", panel, "sec_pet")
 
 func _on_debug_behavior_pressed(behavior: String) -> void:
 	ctx._tooltip.panel.hide()

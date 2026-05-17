@@ -4,7 +4,7 @@
 # 从 context_menu.gd 拆分
 extends RefCounted
 
-const _CyberMenuBtn = preload("res://ui/context_menu/cyber_menu_button.gd")
+
 
 var _menu  # context_menu 引用
 
@@ -48,14 +48,14 @@ func get_trigger(menu_id: String) -> Button:
 
 # ── 开关子菜单 ──
 
-func create_toggle(menu_id: String, toggle_items: Array, level: int = 2) -> void:
+func create_toggle(menu_id: String, toggle_items: Array, level: int = 2, parent_l2_id: String = "") -> void:
 	var panel = _make_panel()
 	var vbox = VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 6)
 	panel.add_child(vbox)
 	var target_items = items if level == 2 else l3_items
 	for item in toggle_items:
-		var btn = _CyberMenuBtn.new()
+		var btn = CyberMenuButton.new()
 		btn.flat = true
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.add_theme_font_size_override("font_size", 19)
@@ -75,10 +75,12 @@ func create_toggle(menu_id: String, toggle_items: Array, level: int = 2) -> void
 		panel.mouse_exited.connect(func(): on_l3_panel_exit())
 		_menu.add_child(panel)
 		l3_panels[menu_id] = panel
+		if parent_l2_id != "":
+			_l3_parent_map[menu_id] = parent_l2_id
 
 # ── 单选子菜单 ──
 
-func create_radio(menu_id: String, radio_items: Array, callback: Callable, level: int = 2) -> void:
+func create_radio(menu_id: String, radio_items: Array, callback: Callable, level: int = 2, parent_l2_id: String = "") -> void:
 	var panel = _make_panel()
 	var vbox = VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 4)
@@ -87,7 +89,7 @@ func create_radio(menu_id: String, radio_items: Array, callback: Callable, level
 	var target_radio = _radio_buttons if level == 2 else _l3_radio_buttons
 	var target_callbacks = _radio_callbacks if level == 2 else _l3_radio_callbacks
 	for item in radio_items:
-		var btn = _CyberMenuBtn.new()
+		var btn = CyberMenuButton.new()
 		btn.flat = true
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.add_theme_font_size_override("font_size", 19)
@@ -115,6 +117,8 @@ func create_radio(menu_id: String, radio_items: Array, callback: Callable, level
 		panel.mouse_exited.connect(func(): on_l3_panel_exit())
 		_menu.add_child(panel)
 		l3_panels[menu_id] = panel
+		if parent_l2_id != "":
+			_l3_parent_map[menu_id] = parent_l2_id
 	target_radio[menu_id] = group_items
 	target_callbacks[menu_id] = callback
 
@@ -446,6 +450,14 @@ func _make_panel() -> PanelContainer:
 	panel.add_theme_stylebox_override("panel", style)
 	panel.draw.connect(_menu.draw_panel_tail.bind(panel))
 	return panel
+
+## 注册自定义 L3 面板 (封装 hover/exit + add_child + 归属关系)
+func register_l3_panel(l3_id: String, panel: PanelContainer, parent_l2_id: String) -> void:
+	panel.mouse_entered.connect(func(): on_l3_panel_enter())
+	panel.mouse_exited.connect(func(): on_l3_panel_exit())
+	_menu.add_child(panel)
+	l3_panels[l3_id] = panel
+	_l3_parent_map[l3_id] = parent_l2_id
 
 func _on_toggle_pressed(item: Dictionary, target_items: Dictionary) -> void:
 	var btn: Button = target_items[item.id]

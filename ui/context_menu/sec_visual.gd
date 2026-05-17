@@ -1,7 +1,7 @@
 # sec_visual.gd — 视觉分区 (构建 + 回调 + 特效配色 + 弹性形变)
 extends RefCounted
 
-const _CyberMenuBtn = preload("res://ui/context_menu/cyber_menu_button.gd")
+
 
 var ctx  # ContextMenu 引用
 
@@ -37,8 +37,7 @@ func build() -> void:
 		{"id": "shockwave", "on": "撞击冲击波 [●]", "off": "撞击冲击波 [○]", "key": "shockwave", "default": true},
 		{"id": "trail_fx", "on": "粒子尾流 [●]", "off": "粒子尾流 [○]", "key": "trail_fx", "default": true},
 		{"id": "arc_fx", "on": "静电弧 [●]", "off": "静电弧 [○]", "key": "arc_fx", "default": true},
-	], 3)
-	ctx._submenu._l3_parent_map["effects"] = "sec_visual"
+	], 3, "sec_visual")
 	_append_effect_color_radio()
 
 	# L3: 弹性形变单选
@@ -47,8 +46,7 @@ func build() -> void:
 		{"value": 1, "label": "轻弹", "desc": "自然柔弹，快速恢复"},
 		{"value": 2, "label": "果冻", "desc": "QQ弹弹，慢速晃动恢复"},
 		{"value": 3, "label": "弹力球", "desc": "弹性十足，强力回弹"},
-	], _on_radio_elastic, 3)
-	ctx._submenu._l3_parent_map["elastic"] = "sec_visual"
+	], _on_radio_elastic, 3, "sec_visual")
 
 # ── 特效配色 ──
 
@@ -77,7 +75,7 @@ func _append_effect_color_radio() -> void:
 	var labels = ["虹彩模式", "跟随体色"]
 	_effect_color_btns.clear()
 	for i in range(2):
-		var btn = _CyberMenuBtn.new()
+		var btn = CyberMenuButton.new()
 
 		btn.flat = true
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT

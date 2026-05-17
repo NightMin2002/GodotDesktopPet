@@ -208,8 +208,8 @@ func _build_holo_card(parent: VBoxContainer) -> void:
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vbox.add_child(desc)
 
-	# 滑条: 屏幕尺寸 (1.0x ~ 2.0x)
-	_add_holo_slider(vbox, "holo_size", "屏幕尺寸", 10, 20, 10,
+	# 滑条: 屏幕尺寸 (1.0x ~ 1.5x)
+	_add_holo_slider(vbox, "holo_size", "屏幕尺寸", 10, 15, 10,
 		func(v: int) -> String: return "%.1fx" % (v / 10.0))
 
 	# 滑条: 后仰角度
@@ -363,19 +363,7 @@ func cleanup() -> void:
 # ═══════════════════════════════════════════════
 
 func _get_pet() -> Node:
-	var tree = get_tree()
-	if not tree: return null
-	var main_n = tree.root.get_node_or_null("Main")
-	if main_n and "pet_instances" in main_n and main_n.pet_instances.size() > 0:
-		return main_n.pet_instances[0]
-	return null
+	return ProfileStyles.get_pet(get_tree())
 
 func _get_win_manager() -> Node:
-	var tree = get_tree()
-	if not tree: return null
-	var main_node = tree.root.get_node_or_null("Main")
-	if main_node:
-		for child in main_node.get_children():
-			if child.get_class() == "WindowsManager" or child.has_method("IsAutoStartEnabled"):
-				return child
-	return null
+	return ProfileStyles.get_win_manager(get_tree())

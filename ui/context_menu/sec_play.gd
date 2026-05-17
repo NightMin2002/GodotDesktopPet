@@ -1,7 +1,7 @@
 # sec_play.gd — 玩法分区 (构建 + 回调 + 游戏列表 + 自娱指令)
 extends RefCounted
 
-const _CyberMenuBtn = preload("res://ui/context_menu/cyber_menu_button.gd")
+
 
 var ctx  # ContextMenu 引用
 
@@ -40,8 +40,7 @@ func build() -> void:
 	# L3: 娱乐
 	ctx._submenu.create_toggle("entertain", [
 		{"id": "stroll", "on": "自主巡航 [●]", "off": "自主巡航 [○]", "key": "stroll", "default": true},
-	], 3)
-	ctx._submenu._l3_parent_map["entertain"] = "sec_play"
+	], 3, "sec_play")
 
 	# L3: 自娱指令
 	_build_auto_play_submenu()
@@ -62,7 +61,7 @@ func _build_auto_play_submenu() -> void:
 	]
 
 	for item in auto_items:
-		var btn = _CyberMenuBtn.new()
+		var btn = CyberMenuButton.new()
 		btn.flat = true
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.add_theme_font_size_override("font_size", 19)
@@ -78,11 +77,7 @@ func _build_auto_play_submenu() -> void:
 			btn.mouse_exited.connect(func(): ctx._tooltip.show_for(b, desc_text, false))
 		vbox.add_child(btn)
 
-	panel.mouse_entered.connect(func(): ctx._submenu.on_l3_panel_enter())
-	panel.mouse_exited.connect(func(): ctx._submenu.on_l3_panel_exit())
-	ctx.add_child(panel)
-	ctx._submenu.l3_panels["auto_play"] = panel
-	ctx._submenu._l3_parent_map["auto_play"] = "sec_play"
+	ctx._submenu.register_l3_panel("auto_play", panel, "sec_play")
 
 func _on_auto_play_pressed(game_id: String) -> void:
 	ctx._tooltip.panel.hide()
