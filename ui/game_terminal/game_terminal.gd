@@ -842,6 +842,52 @@ class _LobbyIcon extends Control:
 				draw_circle(fpt, 4.5 * pulse, Color(0.9, 0.55, 0.3, 0.12), true, -1.0, true)
 				draw_circle(fpt, 3.5 * pulse, Color(0.9, 0.55, 0.3, alpha_hi), true, -1.0, true)
 
+			"tetris":
+				# ── 俄罗斯方块: 底部堆叠 + 下落 T 块 + ghost ──
+				var gs = minf(w, h) * 0.75
+				var cols_n = 6
+				var rows_n = 8
+				var cs = gs / maxf(cols_n, rows_n)
+				var ox = cx - cols_n * cs * 0.5
+				var oy = cy - rows_n * cs * 0.5 + cs
+				# 预设底部堆叠 (3 行残留)
+				var stack = [
+					[1,1,0,0,1,1],
+					[1,1,1,0,1,1],
+					[1,1,1,1,1,1],  # 满行 (闪烁)
+				]
+				var stack_colors = ["S", "J", "L", "T", "Z", "I"]
+				for row_i in range(stack.size()):
+					var ry = rows_n - stack.size() + row_i
+					for col_i in range(cols_n):
+						if stack[row_i][col_i] == 1:
+							var bx = ox + col_i * cs
+							var by = oy + ry * cs
+							var is_full_row = (row_i == stack.size() - 1)
+							var flash = sin(t * 4.0) * 0.2 + 0.8 if is_full_row else 1.0
+							var pc = Color.from_hsv(fmod(hue + col_i * 0.08, 1.0), 0.35, 0.6 * flash, alpha_base * flash)
+							draw_rect(Rect2(bx, by, cs - 1, cs - 1), pc)
+				# 下落 T 块 (脉冲)
+				var t_cells = [Vector2i(1,0), Vector2i(0,1), Vector2i(1,1), Vector2i(2,1)]
+				var fall_y = fmod(t * 0.6, 1.0) * (rows_n - 4)  # 循环下落
+				var t_pulse = sin(t * 3.0) * 0.1 + 0.9
+				for c in t_cells:
+					var bx = ox + (c.x + 1) * cs
+					var by = oy + (c.y + fall_y) * cs
+					# ghost (底部投影)
+					var ghost_y = oy + (c.y + rows_n - 4) * cs
+					draw_rect(Rect2(bx, ghost_y, cs - 1, cs - 1), Color.from_hsv(hue, 0.3, 0.6, 0.08))
+					# 活动块
+					var ac = Color.from_hsv(fmod(hue + 0.16, 1.0), 0.55, 0.9 * t_pulse, alpha_hi)
+					draw_rect(Rect2(bx, by, cs - 1, cs - 1), ac)
+				# 网格点
+				var grid_c = Color.from_hsv(hue, 0.2, 0.5, 0.08)
+				for gx in range(1, cols_n):
+					for gy in range(1, rows_n):
+						draw_circle(Vector2(ox + gx * cs, oy + gy * cs), 0.6, grid_c, true, -1.0, true)
+				# 外框
+				draw_rect(Rect2(ox, oy, cols_n * cs, rows_n * cs), Color.from_hsv(hue, 0.4, 0.6, 0.15), false, 1.0)
+
 			_:
 				# 默认: 问号
 				var font = ThemeDB.fallback_font
@@ -1145,6 +1191,8 @@ const GAME_REGISTRY := [
 	  "script": preload("res://ui/game_terminal/terminal_2048.gd") },
 	{ "id": "snake", "name": "路径规划", "desc": "15x15 线性延伸", "auto": true,
 	  "script": preload("res://ui/game_terminal/terminal_snake.gd") },
+	{ "id": "tetris", "name": "结构堆叠", "desc": "10x20 方块序列", "auto": true,
+	  "script": preload("res://ui/game_terminal/terminal_tetris.gd") },
 ]
 
 ## 启动终端内置游戏
