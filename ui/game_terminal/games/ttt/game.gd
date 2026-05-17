@@ -89,14 +89,16 @@ var _time: float = 0.0
 var _cell_anims: Array[float] = [0.0,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0]
 
 # ── 结算 UI ──
-var _result_overlay: Control = null
-var _result_label: Label = null
 var _restart_btn: Button = null
 
-# ── 话术 ──
-var _speech_label: Label = null           # 棋盘下方的话术显示
-var _speech_tween: Tween = null           # 淡入淡出动画
-var _q_start: Array = []                  # 洗牌队列
+# ── 话术气泡 ──
+var _chat_log: Array = []             # [{text, birth}]
+const _CHAT_MAX := 5                  # 最大可见气泡数
+const _CHAT_STAY := 5.0               # 持续秒数
+const _CHAT_FADE := 1.5               # 淡出秒数
+var _chat_area_x: float = 0.0
+var _chat_area_w: float = 0.0
+var _q_start: Array = []
 var _q_player_move: Array = []
 var _q_ai_move: Array = []
 var _q_ai_win: Array = []
@@ -111,8 +113,7 @@ func build() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	gui_input.connect(_on_input)
-	_build_speech_label()
-	_build_result_overlay()
+	_build_restart_btn()
 	start_game()
 
 func _process(delta: float) -> void:
@@ -133,8 +134,10 @@ func start_game() -> void:
 	_hover_cell = -1
 	_win_line = []
 	_result = -1
-	if _result_overlay:
-		_result_overlay.visible = false
+	_chat_log.clear()
+	_time = 0.0
+	if is_instance_valid(_restart_btn):
+		_restart_btn.visible = false
 	_say(_pick(_q_start, _POOL_START))
 	game_started.emit()
 	queue_redraw()
@@ -190,35 +193,10 @@ func _minimax_best_for_player() -> int:
 #  话术系统
 # ══════════════════════════════════════════════
 
-func _build_speech_label() -> void:
-	_speech_label = Label.new()
-	_speech_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_speech_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	_speech_label.offset_top = -28
-	_speech_label.offset_bottom = -8
-	_speech_label.add_theme_font_size_override("font_size", 13)
-	_speech_label.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7, 0.0))
-	_speech_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_speech_label)
-
-## 显示一条话术 (淡入 → 持续 → 淡出)
 func _say(text: String) -> void:
-	if not is_instance_valid(_speech_label):
-		return
-	_speech_label.text = text
-	if _speech_tween and _speech_tween.is_valid():
-		_speech_tween.kill()
-	var hue = EventBus.ui_hue
-	var c = Color.from_hsv(hue, 0.15, 0.7, 1.0)
-	_speech_label.add_theme_color_override("font_color", Color(c.r, c.g, c.b, 0.0))
-	_speech_tween = create_tween()
-	_speech_tween.tween_method(func(a: float):
-		_speech_label.add_theme_color_override("font_color", Color(c.r, c.g, c.b, a))
-	, 0.0, 0.8, 0.3)
-	_speech_tween.tween_interval(3.5)
-	_speech_tween.tween_method(func(a: float):
-		_speech_label.add_theme_color_override("font_color", Color(c.r, c.g, c.b, a))
-	, 0.8, 0.0, 1.0)
+	_chat_log.push_front({ "text": text, "birth": _time })
+	if _chat_log.size() > _CHAT_MAX:
+		_chat_log.resize(_CHAT_MAX)
 
 ## 从洗牌队列取一条 (空了就重填+洗牌)
 func _pick(queue: Array, pool: Array) -> String:
@@ -232,13 +210,19 @@ func _pick(queue: Array, pool: Array) -> String:
 # ══════════════════════════════════════════════
 
 func _calc_layout() -> void:
-	var available = minf(size.x, size.y) * 0.78
+	var w = size.x
+	var h = size.y
+	var chat_ratio = 0.28
+	var grid_area_w = w * (1.0 - chat_ratio)
+	var available = minf(grid_area_w * 0.88, (h - 40) * 0.78)
 	_grid_size = available
 	_cell_size = _grid_size / 3.0
 	_grid_origin = Vector2(
-		(size.x - _grid_size) * 0.5,
-		(size.y - _grid_size) * 0.5 - 10  # 上移一点给话术腾空间
+		(grid_area_w - _grid_size) * 0.5,
+		(h - _grid_size) * 0.5
 	)
+	_chat_area_x = grid_area_w + 2
+	_chat_area_w = w - _chat_area_x - 4
 
 func _cell_rect(idx: int) -> Rect2:
 	var row = idx / 3
@@ -383,30 +367,42 @@ func _find_win_line(winner: int) -> void:
 #  结算覆盖层
 # ══════════════════════════════════════════════
 
-func _build_result_overlay() -> void:
-	var d = GameTerminalStyles.create_result_overlay("再来一局", start_game)
-	_result_overlay = d.overlay
-	_result_label = d.label
-	_restart_btn = d.btn
-	add_child(_result_overlay)
+func _build_restart_btn() -> void:
+	_restart_btn = Button.new()
+	_restart_btn.text = "重新推演"
+	_restart_btn.focus_mode = Control.FOCUS_NONE
+	_restart_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	_restart_btn.add_theme_font_size_override("font_size", 12)
+	var hue = EventBus.ui_hue
+	_restart_btn.add_theme_color_override("font_color", Color.from_hsv(hue, 0.3, 0.8, 0.7))
+	_restart_btn.add_theme_color_override("font_hover_color", Color.from_hsv(hue, 0.4, 1.0, 0.95))
+	var sn = StyleBoxFlat.new()
+	sn.bg_color = Color(0.06, 0.08, 0.14, 0.7)
+	sn.set_border_width_all(1)
+	sn.border_color = Color.from_hsv(hue, 0.3, 0.5, 0.25)
+	sn.set_corner_radius_all(0)
+	sn.content_margin_left = 8; sn.content_margin_right = 8
+	sn.content_margin_top = 4; sn.content_margin_bottom = 4
+	_restart_btn.add_theme_stylebox_override("normal", sn)
+	var sh = sn.duplicate()
+	sh.bg_color = Color(0.10, 0.14, 0.22, 0.8)
+	sh.border_color = Color.from_hsv(hue, 0.4, 0.8, 0.4)
+	_restart_btn.add_theme_stylebox_override("hover", sh)
+	_restart_btn.add_theme_stylebox_override("pressed", sh)
+	_restart_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	_restart_btn.pressed.connect(start_game)
+	_restart_btn.visible = false
+	add_child(_restart_btn)
 
 func _show_result() -> void:
-	if not _result_overlay:
-		return
 	var speech: String
-	var color: Color
 	match _result:
-		0:
-			speech = _pick(_q_player_win, _POOL_PLAYER_WIN)
-			color = GameTerminalStyles.status_active()
-		1:
-			speech = _pick(_q_ai_win, _POOL_AI_WIN)
-			color = Color(0.9, 0.55, 0.3, 0.9)
-		2:
-			speech = _pick(_q_draw, _POOL_DRAW)
-			color = GameTerminalStyles.dim()
+		0: speech = _pick(_q_player_win, _POOL_PLAYER_WIN)
+		1: speech = _pick(_q_ai_win, _POOL_AI_WIN)
+		2: speech = _pick(_q_draw, _POOL_DRAW)
 	_say(speech)
-	GameTerminalStyles.show_result_overlay(_result_overlay, _result_label, speech, color)
+	if is_instance_valid(_restart_btn):
+		_restart_btn.visible = true
 
 # ══════════════════════════════════════════════
 #  渲染: 棋盘 + 网格 + 悬停 + 棋子 + 终局线
@@ -523,6 +519,41 @@ func _draw() -> void:
 	# ── 外框包边 ──
 	var frame_c = Color.from_hsv(hue, 0.4, 0.6, 0.2)
 	draw_rect(Rect2(_grid_origin, Vector2(_grid_size, _grid_size)), frame_c, false, 1.0)
+
+	# ── 右侧聊天气泡 ──
+	if font and _chat_log.size() > 0:
+		var bubble_y = _grid_origin.y + _grid_size  # 从底部开始向上堆叠
+		var fs = 12
+		for i in range(_chat_log.size()):
+			var msg = _chat_log[i]
+			var age = _time - msg.birth
+			# 生命周期 alpha
+			var a: float
+			if age < 0.25:
+				a = age / 0.25
+			elif age < _CHAT_STAY:
+				a = 1.0
+			elif age < _CHAT_STAY + _CHAT_FADE:
+				a = 1.0 - (age - _CHAT_STAY) / _CHAT_FADE
+			else:
+				continue
+			# 测量文字尺寸
+			var text_size = font.get_multiline_string_size(msg.text, HORIZONTAL_ALIGNMENT_LEFT, _chat_area_w - 12, fs)
+			var bubble_h = text_size.y + 10
+			bubble_y -= bubble_h + 4
+			# 气泡背景
+			var bg = Rect2(_chat_area_x, bubble_y, _chat_area_w, bubble_h)
+			draw_rect(bg, Color(0.05, 0.07, 0.12, 0.65 * a))
+			draw_rect(bg, Color.from_hsv(hue, 0.25, 0.5, 0.15 * a), false, 1.0)
+			# 文字
+			var text_c = Color.from_hsv(hue, 0.12, 0.75, 0.85 * a)
+			draw_multiline_string(font, Vector2(_chat_area_x + 6, bubble_y + fs + 2), msg.text,
+				HORIZONTAL_ALIGNMENT_LEFT, _chat_area_w - 12, fs, -1, text_c)
+
+	# ── 重开按钮定位 (聊天区底部) ──
+	if is_instance_valid(_restart_btn) and _restart_btn.visible:
+		_restart_btn.position = Vector2(_chat_area_x, _grid_origin.y + _grid_size + 6)
+		_restart_btn.size = Vector2(_chat_area_w, 26)
 
 # ══════════════════════════════════════════════
 #  渲染: 精密仪器棋子 (移植自旧版)
