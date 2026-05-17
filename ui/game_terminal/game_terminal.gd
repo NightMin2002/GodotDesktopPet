@@ -5,7 +5,7 @@
 extends CanvasLayer
 
 # ── 终端状态枚举 ──
-enum TerminalState { CLOSED, LOBBY, LOADING, PLAYING, PAUSED, RESULT }
+enum TerminalState { CLOSED, LOBBY, PLAYING, RESULT }
 
 # ── 面板尺寸 ──
 var _panel_w: float = 700
@@ -378,9 +378,7 @@ func _state_to_string(s: int) -> String:
 	match s:
 		TerminalState.CLOSED: return "CLOSED"
 		TerminalState.LOBBY: return "STANDBY"
-		TerminalState.LOADING: return "LOADING"
 		TerminalState.PLAYING: return "IN GAME"
-		TerminalState.PAUSED: return "PAUSED"
 		TerminalState.RESULT: return "RESULT"
 	return "UNKNOWN"
 
@@ -465,9 +463,10 @@ func _build_lobby_placeholder() -> Control:
 	outer.mouse_filter = Control.MOUSE_FILTER_PASS
 
 	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 12)
+	vbox.add_theme_constant_override("separation", 10)
 	vbox.mouse_filter = Control.MOUSE_FILTER_PASS
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	# ── 终端标识行 ──
 	var header = HBoxContainer.new()
@@ -497,22 +496,38 @@ func _build_lobby_placeholder() -> Control:
 
 	vbox.add_child(header)
 
-	# ── 游戏卡片网格 (2列) ──
+	# ── 可滚动卡片区域 ──
+	var scroll = ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# 隐藏滚动条 (保持终端美感，鼠标滚轮可滚动)
+	scroll.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	var vscroll = scroll.get_v_scroll_bar()
+	if vscroll:
+		vscroll.add_theme_stylebox_override("scroll", StyleBoxEmpty.new())
+		vscroll.add_theme_stylebox_override("grabber", StyleBoxEmpty.new())
+		vscroll.add_theme_stylebox_override("grabber_highlight", StyleBoxEmpty.new())
+		vscroll.add_theme_stylebox_override("grabber_pressed", StyleBoxEmpty.new())
+		vscroll.custom_minimum_size.x = 0
+
+	# ── 游戏卡片网格 (动态列数) ──
 	var grid = GridContainer.new()
-	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 12)
-	grid.add_theme_constant_override("v_separation", 12)
+	var count = _game_registry.size()
+	grid.columns = 3 if count >= 5 else (2 if count >= 2 else 1)
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 10)
 	grid.mouse_filter = Control.MOUSE_FILTER_PASS
 	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	for entry in _game_registry:
 		var card = _build_game_card(entry, func(): _launch_terminal_game(entry.id))
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		card.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		card.size_flags_vertical = Control.SIZE_FILL
 		grid.add_child(card)
 
-	vbox.add_child(grid)
+	scroll.add_child(grid)
+	vbox.add_child(scroll)
 
 	# ── 底部状态提示 ──
 	var hint = Label.new()
@@ -779,15 +794,9 @@ func _update_status_display() -> void:
 		TerminalState.LOBBY:
 			_status_label.text = "STANDBY"
 			_status_label.add_theme_color_override("font_color", GameTerminalStyles.status_active())
-		TerminalState.LOADING:
-			_status_label.text = "LOADING"
-			_status_label.add_theme_color_override("font_color", GameTerminalStyles.status_warning())
 		TerminalState.PLAYING:
 			_status_label.text = "IN GAME"
 			_status_label.add_theme_color_override("font_color", GameTerminalStyles.accent())
-		TerminalState.PAUSED:
-			_status_label.text = "PAUSED"
-			_status_label.add_theme_color_override("font_color", GameTerminalStyles.status_warning())
 		TerminalState.RESULT:
 			_status_label.text = "RESULT"
 			_status_label.add_theme_color_override("font_color", GameTerminalStyles.bright())
