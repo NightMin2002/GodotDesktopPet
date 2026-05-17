@@ -1,10 +1,13 @@
-# terminal_ttt.gd — 终端原生井字棋 (策略矩阵)
+# game.gd — 终端井字棋 (策略矩阵)
 # 精密仪器风格 (移植自旧版 games/tic_tac_toe)
 # 自包含: 棋盘 + 输入 + AI + 话术 + 结算覆盖
-extends Control
+extends TerminalGameBase
 
-signal game_started
-signal game_over(result: int)  # 0=玩家胜, 1=AI胜, 2=平局
+func get_game_id() -> String: return "ttt"
+func get_game_name() -> String: return "策略矩阵"
+func get_game_desc() -> String: return "3x3 决策推演"
+func supports_auto_play() -> bool: return false
+
 
 # ══════════════════════════════════════════════
 #  话术常量池 (洗牌防重复)

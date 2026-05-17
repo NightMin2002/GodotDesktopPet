@@ -57,6 +57,7 @@ var _confine_walls: Array[StaticBody2D] = []
 
 func _ready() -> void:
 	_calc_panel_size()
+	_scan_games()
 	_build_ui()
 	EventBus.show_game_terminal.connect(_on_toggle)
 	EventBus.ui_theme_changed.connect(_on_ui_theme_changed)
@@ -505,7 +506,7 @@ func _build_lobby_placeholder() -> Control:
 	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
-	for entry in GAME_REGISTRY:
+	for entry in _game_registry:
 		var card = _build_game_card(entry, func(): _launch_terminal_game(entry.id))
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		card.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -515,7 +516,7 @@ func _build_lobby_placeholder() -> Control:
 
 	# ── 底部状态提示 ──
 	var hint = Label.new()
-	hint.text = "选择目标开始推演 // %d 项可用" % GAME_REGISTRY.size()
+	hint.text = "选择目标开始推演 // %d 项可用" % _game_registry.size()
 	hint.add_theme_font_size_override("font_size", 14)
 	hint.add_theme_color_override("font_color", Color(0.30, 0.40, 0.50, 0.3))
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -544,9 +545,15 @@ func _build_game_card(entry: Dictionary, on_press: Callable) -> PanelContainer:
 	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.add_child(vb)
 
-	# ── 图标区 (自绘) ──
-	var icon_area = _LobbyIcon.new()
-	icon_area.game_id = entry.id
+	# ── 图标区 (优先从游戏文件夹加载 icon.gd) ──
+	var icon_area: Control
+	var icon_path = entry.get("folder", "") + "icon.gd" if entry.has("folder") else ""
+	if icon_path != "" and ResourceLoader.exists(icon_path):
+		icon_area = load(icon_path).new()
+		icon_area.game_id = entry.id
+	else:
+		icon_area = _LobbyIcon.new()
+		icon_area.game_id = entry.id
 	icon_area.custom_minimum_size = Vector2(0, 100)
 	icon_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	icon_area.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -685,50 +692,6 @@ class _LobbyIcon extends Control:
 		var t = _time
 
 		match game_id:
-			"ttt":
-				# ── 井字棋: 放大网格 + 脉冲标记 + 扫描线 ──
-				var gs = minf(w, h) * 0.75
-				var cs = gs / 3.0
-				var ox = cx - gs * 0.5
-				var oy = cy - gs * 0.5
-				# 网格线
-				for i in range(1, 3):
-					draw_line(Vector2(ox + i * cs, oy + 3), Vector2(ox + i * cs, oy + gs - 3), line_c, 1.0)
-					draw_line(Vector2(ox + 3, oy + i * cs), Vector2(ox + gs - 3, oy + i * cs), line_c, 1.0)
-				# 十字瞄准节点 (网格交叉点)
-				var cross_c = Color.from_hsv(hue, 0.3, 0.7, alpha_base * 0.7)
-				for gx in range(1, 3):
-					for gy in range(1, 3):
-						var px = ox + cs * gx
-						var py = oy + cs * gy
-						draw_line(Vector2(px - 3, py), Vector2(px + 3, py), cross_c, 1.0, true)
-						draw_line(Vector2(px, py - 3), Vector2(px, py + 3), cross_c, 1.0, true)
-				# X at [0,0] — 分离线段 + 脉冲
-				var pad = cs * 0.22
-				var x_pulse = sin(t * 2.0) * 0.12 + 0.88
-				var x_c = Color.from_hsv(hue, 0.3, 0.9, alpha_hi * x_pulse)
-				var gap_x = cs * 0.06
-				var arm = cs * 0.5 - pad
-				var c00 = Vector2(ox + cs * 0.5, oy + cs * 0.5)
-				draw_line(c00 + Vector2(-gap_x, -gap_x), c00 + Vector2(-gap_x - arm, -gap_x - arm), x_c, 2.0, true)
-				draw_line(c00 + Vector2(gap_x, gap_x), c00 + Vector2(gap_x + arm, gap_x + arm), x_c, 2.0, true)
-				draw_line(c00 + Vector2(gap_x, -gap_x), c00 + Vector2(gap_x + arm, -gap_x - arm), x_c, 2.0, true)
-				draw_line(c00 + Vector2(-gap_x, gap_x), c00 + Vector2(-gap_x - arm, gap_x + arm), x_c, 2.0, true)
-				# O at [1,1] — 留缺口圆弧 + 脉冲
-				var o_pulse = sin(t * 2.5 + 1.0) * 0.08 + 0.92
-				var o_r = cs * 0.32 * o_pulse
-				var o_c = Color(0.9, 0.55, 0.3, alpha_hi)
-				draw_arc(Vector2(ox + cs * 1.5, oy + cs * 1.5), o_r, -PI * 0.48 + 0.12, PI * 1.52 - 0.12, 28, o_c, 2.0, true)
-				# X at [2,0]
-				var c20 = Vector2(ox + cs * 2.5, oy + cs * 0.5)
-				draw_line(c20 + Vector2(-gap_x, -gap_x), c20 + Vector2(-gap_x - arm, -gap_x - arm), x_c, 2.0, true)
-				draw_line(c20 + Vector2(gap_x, gap_x), c20 + Vector2(gap_x + arm, gap_x + arm), x_c, 2.0, true)
-				draw_line(c20 + Vector2(gap_x, -gap_x), c20 + Vector2(gap_x + arm, -gap_x - arm), x_c, 2.0, true)
-				draw_line(c20 + Vector2(-gap_x, gap_x), c20 + Vector2(-gap_x - arm, gap_x + arm), x_c, 2.0, true)
-				# 扫描线
-				var scan_y = oy + fmod(t * 30.0, gs)
-				draw_line(Vector2(ox, scan_y), Vector2(ox + gs, scan_y), Color.from_hsv(hue, 0.3, 0.8, 0.1), 1.0)
-
 			"minesweeper":
 				# ── 扫雷: 放大网格 + 脉冲雷芯 + 辐射刺 + 旗帜 ──
 				var gs = minf(w, h) * 0.7
@@ -1181,10 +1144,11 @@ func _on_frame_draw() -> void:
 #  游戏生命周期
 # ═══════════════════════════════════════════════
 
-# ── 游戏注册表 (新增游戏只需加一条) ──
-const GAME_REGISTRY := [
-	{ "id": "ttt", "name": "策略矩阵", "desc": "3x3 决策推演", "auto": false,
-	  "script": preload("res://ui/game_terminal/terminal_ttt.gd") },
+# ── 游戏注册表 (自动扫描 games/ 子目录 + 兼容旧版平铺文件) ──
+var _game_registry: Array[Dictionary] = []
+
+## 旧版平铺文件兼容 (未迁移到 games/ 文件夹的游戏)
+const _LEGACY_GAMES := [
 	{ "id": "minesweeper", "name": "威胁评估", "desc": "9x9 雷区扫描", "auto": true,
 	  "script": preload("res://ui/game_terminal/terminal_minesweeper.gd") },
 	{ "id": "2048", "name": "矩阵叠加", "desc": "4x4 数值融合", "auto": true,
@@ -1195,12 +1159,51 @@ const GAME_REGISTRY := [
 	  "script": preload("res://ui/game_terminal/terminal_tetris.gd") },
 ]
 
+func _scan_games() -> void:
+	_game_registry.clear()
+	var scanned_ids: Dictionary = {}  # 防重复
+
+	# ── Phase 1: 扫描 games/ 子目录 ──
+	var base_path = "res://ui/game_terminal/games/"
+	var dir = DirAccess.open(base_path)
+	if dir:
+		dir.list_dir_begin()
+		var folder = dir.get_next()
+		while folder != "":
+			if dir.current_is_dir() and not folder.begins_with("."):
+				var game_path = base_path + folder + "/game.gd"
+				if ResourceLoader.exists(game_path):
+					var script = load(game_path)
+					var tmp = script.new()
+					var gid = tmp.get_game_id() if tmp.has_method("get_game_id") else folder
+					var entry := {
+						"id": gid,
+						"name": tmp.get_game_name() if tmp.has_method("get_game_name") else folder,
+						"desc": tmp.get_game_desc() if tmp.has_method("get_game_desc") else "",
+						"auto": tmp.supports_auto_play() if tmp.has_method("supports_auto_play") else false,
+						"script": script,
+						"folder": base_path + folder + "/",
+					}
+					tmp.queue_free()
+					_game_registry.append(entry)
+					scanned_ids[gid] = true
+			folder = dir.get_next()
+		dir.list_dir_end()
+
+	# ── Phase 2: 兼容旧版平铺文件 (跳过已扫描到的) ──
+	for legacy in _LEGACY_GAMES:
+		if legacy.id not in scanned_ids:
+			_game_registry.append(legacy.duplicate())
+
+	# 按 id 排序保证稳定顺序
+	_game_registry.sort_custom(func(a, b): return a.id < b.id)
+
 ## 启动终端内置游戏
 func _launch_terminal_game(game_id: String) -> void:
 	if _active_game:
 		return
 	var entry = null
-	for g in GAME_REGISTRY:
+	for g in _game_registry:
 		if g.id == game_id:
 			entry = g
 			break
