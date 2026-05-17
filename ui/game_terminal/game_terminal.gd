@@ -999,6 +999,9 @@ func _launch_terminal_game(game_id: String) -> void:
 		return
 
 	var game: Control = entry.script.new()
+	# 布局预配置 (必须在 add_child 前设好，否则容器内锚点不生效)
+	game.set_anchors_preset(Control.PRESET_FULL_RECT)
+	game.mouse_filter = Control.MOUSE_FILTER_STOP
 	game.game_over.connect(_on_game_over)
 	if game.has_signal("game_started"):
 		game.game_started.connect(_on_game_restarted)
