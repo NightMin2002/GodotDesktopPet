@@ -418,5 +418,202 @@ public partial class WindowsManager : Node
             style &= ~WS_EX_TRANSPARENT;
         SetWindowLong(hwnd, GWL_EXSTYLE, style);
     }
+
+    // ══════════════════════════════════════════════════════════════
+    //  屏幕捕捉 (GDI BitBlt)
+    //  ── 截取桌面画面并降采样, 供全息屏实时显示 ──
+    // ══════════════════════════════════════════════════════════════
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetDC(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateCompatibleBitmap(IntPtr hdc, int nWidth, int nHeight);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr SelectObject(IntPtr hdc, IntPtr hgdiobj);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool BitBlt(IntPtr hdcDest, int nXDest, int nYDest, int nWidth, int nHeight,
+        IntPtr hdcSrc, int nXSrc, int nYSrc, uint dwRop);
+
+    [DllImport("gdi32.dll")]
+    private static extern int SetStretchBltMode(IntPtr hdc, int iStretchMode);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool StretchBlt(IntPtr hdcDest, int xDest, int yDest, int wDest, int hDest,
+        IntPtr hdcSrc, int xSrc, int ySrc, int wSrc, int hSrc, uint dwRop);
+
+    [DllImport("gdi32.dll")]
+    private static extern int GetDIBits(IntPtr hdc, IntPtr hbmp, uint uStartScan, uint cScanLines,
+        byte[] lpvBits, ref BITMAPINFO lpbi, uint uUsage);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteDC(IntPtr hdc);
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int nIndex);
+
+    private const int SM_CXSCREEN = 0;
+    private const int SM_CYSCREEN = 1;
+    private const uint SRCCOPY = 0x00CC0020;
+    private const int COLORONCOLOR = 3;  // StretchBlt 最近邻采样 (极快, 全息屏不需要插值)
+    private const int DIB_RGB_COLORS = 0;
+    private const int BI_RGB = 0;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BITMAPINFOHEADER
+    {
+        public int biSize;
+        public int biWidth;
+        public int biHeight;
+        public short biPlanes;
+        public short biBitCount;
+        public int biCompression;
+        public int biSizeImage;
+        public int biXPelsPerMeter;
+        public int biYPelsPerMeter;
+        public int biClrUsed;
+        public int biClrImportant;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BITMAPINFO
+    {
+        public BITMAPINFOHEADER bmiHeader;
+        // RGBQUAD[1] 占位, 这里不需要调色板
+    }
+    // ── 屏幕捕捉 (后台线程异步模式) ──
+    // StartCapture/StopCapture 控制生命周期
+    // 后台线程按间隔自动截屏, 主线程通过 GetCaptureFrame 零阻塞取最新帧
+    private System.Threading.Thread _capThread = null;
+    private volatile bool _capRunning = false;
+    private int _capTargetW = 160, _capTargetH = 90;
+    private int _capIntervalMs = 166;  // ~6fps
+    private readonly object _capLock = new object();
+    private byte[] _capFrontBuffer = null;  // 主线程读取的前台缓冲
+    private volatile bool _capFrameReady = false;
+
+    /// <summary>
+    /// 启动后台屏幕捕捉线程。
+    /// width/height: 目标尺寸, intervalMs: 截屏间隔(毫秒)
+    /// </summary>
+    public void StartCapture(int width = 160, int height = 90, int intervalMs = 166)
+    {
+        StopCapture();
+        _capTargetW = width > 0 ? width : 160;
+        _capTargetH = height > 0 ? height : 90;
+        _capIntervalMs = intervalMs > 16 ? intervalMs : 16;
+        _capRunning = true;
+        _capFrameReady = false;
+        _capThread = new System.Threading.Thread(_CaptureLoop);
+        _capThread.IsBackground = true;
+        _capThread.Priority = System.Threading.ThreadPriority.BelowNormal;
+        _capThread.Start();
+    }
+
+    /// <summary>
+    /// 停止后台屏幕捕捉线程。
+    /// </summary>
+    public void StopCapture()
+    {
+        _capRunning = false;
+        if (_capThread != null)
+        {
+            _capThread.Join(500);
+            _capThread = null;
+        }
+        _capFrameReady = false;
+    }
+
+    /// <summary>
+    /// 获取最新已捕捉的帧 (RGBA byte[])。非阻塞, 无新帧时返回 null。
+    /// 主线程每帧调用, 开销仅为一次 lock + Array.Copy。
+    /// </summary>
+    public byte[] GetCaptureFrame()
+    {
+        if (!_capFrameReady) return null;
+        lock (_capLock)
+        {
+            _capFrameReady = false;
+            // 返回前台缓冲的拷贝 (供 GDScript 持有, 不受后台线程覆写影响)
+            var copy = new byte[_capFrontBuffer.Length];
+            System.Buffer.BlockCopy(_capFrontBuffer, 0, copy, 0, copy.Length);
+            return copy;
+        }
+    }
+
+    /// <summary>
+    /// 后台截屏是否运行中。
+    /// </summary>
+    public bool IsCaptureRunning()
+    {
+        return _capRunning;
+    }
+
+    private void _CaptureLoop()
+    {
+        int tw = _capTargetW, th = _capTargetH;
+
+        // GDI 资源 (在后台线程创建和使用, 不跨线程)
+        IntPtr screenDC = GetDC(IntPtr.Zero);
+        IntPtr memDC = CreateCompatibleDC(screenDC);
+        IntPtr hBitmap = CreateCompatibleBitmap(screenDC, tw, th);
+        IntPtr oldBmp = SelectObject(memDC, hBitmap);
+        SetStretchBltMode(memDC, COLORONCOLOR);
+        ReleaseDC(IntPtr.Zero, screenDC);
+
+        var bmi = new BITMAPINFO();
+        bmi.bmiHeader.biSize = Marshal.SizeOf(typeof(BITMAPINFOHEADER));
+        bmi.bmiHeader.biWidth = tw;
+        bmi.bmiHeader.biHeight = -th;
+        bmi.bmiHeader.biPlanes = 1;
+        bmi.bmiHeader.biBitCount = 32;
+        bmi.bmiHeader.biCompression = BI_RGB;
+
+        byte[] backBuffer = new byte[tw * th * 4];
+        int screenW = GetSystemMetrics(SM_CXSCREEN);
+        int screenH = GetSystemMetrics(SM_CYSCREEN);
+
+        while (_capRunning)
+        {
+            // 截屏
+            IntPtr srcDC = GetDC(IntPtr.Zero);
+            StretchBlt(memDC, 0, 0, tw, th, srcDC, 0, 0, screenW, screenH, SRCCOPY);
+            GetDIBits(memDC, hBitmap, 0, (uint)th, backBuffer, ref bmi, DIB_RGB_COLORS);
+            ReleaseDC(IntPtr.Zero, srcDC);
+
+            // BGRA → RGBA
+            for (int i = 0; i < backBuffer.Length; i += 4)
+            {
+                byte tmp = backBuffer[i];
+                backBuffer[i] = backBuffer[i + 2];
+                backBuffer[i + 2] = tmp;
+                backBuffer[i + 3] = 255;
+            }
+
+            // 交换到前台缓冲
+            lock (_capLock)
+            {
+                if (_capFrontBuffer == null || _capFrontBuffer.Length != backBuffer.Length)
+                    _capFrontBuffer = new byte[backBuffer.Length];
+                System.Buffer.BlockCopy(backBuffer, 0, _capFrontBuffer, 0, backBuffer.Length);
+                _capFrameReady = true;
+            }
+
+            System.Threading.Thread.Sleep(_capIntervalMs);
+        }
+
+        // 清理 GDI 资源
+        SelectObject(memDC, oldBmp);
+        DeleteObject(hBitmap);
+        DeleteDC(memDC);
+    }
 }
 

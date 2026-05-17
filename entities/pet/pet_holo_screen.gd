@@ -3,7 +3,7 @@
 # Phase 2: 支持多显示模式 (游戏 / 待机屏保)
 class_name PetHoloScreen extends RefCounted
 
-enum Mode { OFF, GAME, IDLE, LOADING, BATTERY, DONE, MAIL, ERROR, WARNING, QUERY, ALARM, CLEANUP, GLOBE, SYNC, LOCK }
+enum Mode { OFF, GAME, IDLE, LOADING, BATTERY, DONE, MAIL, ERROR, WARNING, QUERY, ALARM, CLEANUP, GLOBE, SYNC, LOCK, DESKTOP }
 
 var pet: RigidBody2D  # 由 pet.gd 注入
 
@@ -56,6 +56,7 @@ const _MODE_REGISTRY := {
 	Mode.GLOBE:   {"class": "HoloModeGlobe",   "label": "网络监控"},
 	Mode.SYNC:    {"class": "HoloModeSync",    "label": "网络通信"},
 	Mode.LOCK:    {"class": "HoloModeLock",    "label": "终端锁定"},
+	Mode.DESKTOP: {"class": "HoloModeDesktop", "label": "桌面监控"},
 }
 var _renderers: Dictionary = {}  # Mode -> RefCounted 实例缓存
 
@@ -228,6 +229,10 @@ func show_sync(screen_side: float, duration: float = 0.0) -> void:
 func show_lock(screen_side: float, duration: float = 0.0) -> void:
 	_show_terminal(Mode.LOCK, screen_side, duration)
 
+## 显示桌面监控 (实时屏幕捕捉)
+func show_desktop(screen_side: float, duration: float = 0.0) -> void:
+	_show_terminal(Mode.DESKTOP, screen_side, duration)
+
 ## 通用终端模式启动 (注册表驱动)
 func _show_terminal(m: Mode, screen_side: float, duration: float = 0.0) -> void:
 	if is_terminal_mode:
@@ -308,10 +313,13 @@ func render() -> void:
 		holo_w = pet.PET_RADIUS * 2.0 * _sz
 		holo_h = holo_w * 0.76  # 4:3
 	else:
-		# 终端模式: 正方形, 宠物直径 * 缩放
+		# 终端模式: 宠物直径 * 缩放
 		var _sz = SettingsManager.get_int("holo_size", 10) / 10.0
 		holo_w = pet.PET_RADIUS * 2.0 * _sz
-		holo_h = holo_w  # 1:1 正方形
+		if mode == Mode.DESKTOP:
+			holo_h = holo_w * 0.5625  # 16:9 宽屏 (桌面监控)
+		else:
+			holo_h = holo_w  # 1:1 正方形 (其他终端模式)
 
 	# 展开动画: 从宠物体表横向展开
 	var anim_w = holo_w * _deploy_progress
@@ -369,7 +377,10 @@ func get_screen_rect() -> Rect2:
 	else:
 		var _sz = SettingsManager.get_int("holo_size", 10) / 10.0
 		holo_w = pet.PET_RADIUS * 2.0 * _sz
-		holo_h = holo_w
+		if mode == Mode.DESKTOP:
+			holo_h = holo_w * 0.5625
+		else:
+			holo_h = holo_w
 	var cx = side * (gap_val + holo_w * 0.5)
 	var cy = 0.0
 	# 转到屏幕坐标
@@ -611,6 +622,7 @@ func _resolve_mode_class(cls: String) -> GDScript:
 		"HoloModeGlobe": HoloModeGlobe,
 		"HoloModeSync": HoloModeSync,
 		"HoloModeLock": HoloModeLock,
+		"HoloModeDesktop": HoloModeDesktop,
 	}
 	return map.get(cls, null)
 # ══════════════════════════════════════
@@ -626,8 +638,13 @@ func _map_uv(pts: PackedVector2Array, u: float, v: float) -> Vector2:
 # 统一清理
 # ══════════════════════════════════════
 
-## 清理当前活跃模式的所有资源 (踏板/按钮/解锁)
+## 清理当前活跃模式的所有资源 (踏板/按钮/解锁/后台线程)
 func _cleanup_active_mode() -> void:
+	# 桌面监控模式: 停止后台截屏线程
+	if mode == Mode.DESKTOP:
+		var renderer = _renderers.get(Mode.DESKTOP)
+		if renderer and renderer.has_method("stop_capture"):
+			renderer.stop_capture()
 	_cleanup_mini_vp()
 	_unlock_pet()
 	_remove_close_btn()

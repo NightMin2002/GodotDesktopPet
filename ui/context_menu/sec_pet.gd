@@ -167,6 +167,7 @@ func _build_terminal_l3_panel() -> void:
 		{"label": "网络连接", "behavior": "_holo_sync", "desc": "全息屏显示超大机能版扇形通信测算信号"},
 		{"label": "系统锁定", "behavior": "_holo_lock", "desc": "全息屏显示防卫锁闭的隐私状态"},
 		{"label": "新消息", "behavior": "_holo_mail", "desc": "全息屏显示系统级通知与新邮件待办"},
+		{"label": "桌面监控", "behavior": "_holo_desktop", "desc": "实时捕捉桌面画面投射到全息屏"},
 		{"label": "终端引导", "behavior": "_holo_loading", "desc": "全息屏显示系统初始化引导序列"},
 		{"label": "待机屏保", "behavior": "_holo_browse", "desc": "弹出全息屏待机屏保 (25秒)"}
 	]
@@ -224,6 +225,7 @@ const _TERMINAL_ACTIONS := {
 	"_holo_sync":    {"method": "show_sync",    "duration": 6.0},
 	"_holo_lock":    {"method": "show_lock",    "duration": 5.0},
 	"_holo_mail":    {"method": "show_mail",    "duration": 6.0},
+	"_holo_desktop": {"method": "show_desktop", "duration": 0.0},
 }
 
 func _dispatch_terminal(pet, behavior: String, s: float) -> void:
