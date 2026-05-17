@@ -774,7 +774,7 @@ func _build_footer_bar() -> PanelContainer:
 # ═══════════════════════════════════════════════
 
 func _on_toggle() -> void:
-	if panel.visible:
+	if _is_open:
 		_close_panel()
 	else:
 		_open_panel()
@@ -1379,9 +1379,6 @@ func _sanity_check() -> void:
 		_auto_play = false
 		_auto_visible = false
 		issues.append("auto_play_flag")
-	var pet = _get_pet()
-	if pet and pet.overlay_rect.size != Vector2.ZERO:
-		pet.overlay_rect = Rect2()
-		issues.append("overlay_rect")
+	# 注意: overlay_rect 不在此检查, 可能是其他面板 (装置终端) 设置的
 	if not issues.is_empty():
 		print("[GameTerminal] 兜底自检修复: ", ", ".join(issues))

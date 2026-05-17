@@ -33,6 +33,9 @@ var _time_passed: float = 0.0
 # ── 档案围栏 ──
 var _confine_walls: Array[StaticBody2D] = []
 
+# ── 分身数量监测 ──
+var _cached_pet_count: int = -1
+
 func _ready() -> void:
 	_calc_panel_size()
 	_build_ui()
@@ -65,6 +68,8 @@ func _process(delta: float) -> void:
 		var pet = _get_pet()
 		if pet:
 			pet.overlay_rect = Rect2(panel.position, Vector2(_panel_w, _panel_h))
+		# 监测分身数量变化, 通知外观主题 Tab 刷新
+		_check_pet_count_change()
 
 # ═══════════════════════════════════════════════
 #  UI 构建
@@ -469,7 +474,7 @@ func _animate_tab_btn(idx: int, is_hovered: bool) -> void:
 # ═══════════════════════════════════════════════
 
 func _on_toggle() -> void:
-	if panel.visible:
+	if _is_open:
 		_close_panel()
 	else:
 		_open_panel()
@@ -477,6 +482,7 @@ func _on_toggle() -> void:
 func _open_panel() -> void:
 	_is_open = true
 	_refresh_data()
+	_update_pet_count_cache()
 	var vp = get_viewport().get_visible_rect().size
 	panel.position = _clamp_pos(Vector2(
 		(vp.x - _panel_w) * 0.5,
@@ -516,6 +522,30 @@ func _refresh_data() -> void:
 		if is_instance_valid(tab) and tab.has_method("refresh"):
 			tab.refresh()
 	_switch_tab(_current_tab, true)
+
+# ═══════════════════════════════════════════════
+#  分身数量监测 (通知外观主题 Tab 动态刷新)
+# ═══════════════════════════════════════════════
+
+func _update_pet_count_cache() -> void:
+	var main_node = _get_main_node()
+	if main_node and "pet_instances" in main_node:
+		_cached_pet_count = main_node.pet_instances.size()
+	else:
+		_cached_pet_count = -1
+
+func _check_pet_count_change() -> void:
+	var main_node = _get_main_node()
+	if not main_node or not "pet_instances" in main_node:
+		return
+	var current_count = main_node.pet_instances.size()
+	if current_count != _cached_pet_count:
+		_cached_pet_count = current_count
+		# 找到外观主题 Tab (index 4) 并通知刷新目标选择器
+		if _tab_contents.size() > 4 and is_instance_valid(_tab_contents[4]):
+			var theme_tab = _tab_contents[4]
+			if theme_tab.has_method("_rebuild_target_selector"):
+				theme_tab._rebuild_target_selector()
 
 # ═══════════════════════════════════════════════
 #  档案围栏 (单向碰撞墙)
@@ -690,6 +720,6 @@ func _on_ui_theme_changed(hue: float) -> void:
 
 ## 从菜单直接跳到定时提醒 Tab
 func _on_show_reminder_tab() -> void:
-	if not panel.visible:
+	if not _is_open:
 		_open_panel()
 	_switch_tab(2)

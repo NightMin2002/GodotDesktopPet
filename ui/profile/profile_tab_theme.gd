@@ -101,6 +101,7 @@ class CyberSlider extends Control:
 
 # ── UI 引用 ──
 var _target_btns: Array[Button] = []
+var _target_hbox: HBoxContainer  # 目标选择器容器直引用
 var _wheel: Control
 var _sat_slider: CyberSlider
 var _val_slider: CyberSlider
@@ -212,23 +213,21 @@ func _build_cyber_card(parent: Control, sub_title: String, main_title: String) -
 # ═══════════════════════════════════════════════
 
 func _build_target_selector(parent: VBoxContainer) -> void:
-	var hbox = HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 8)
-	hbox.mouse_filter = Control.MOUSE_FILTER_PASS
-	hbox.set_meta("is_target_selector", true)
-	parent.add_child(hbox)
+	_target_hbox = HBoxContainer.new()
+	_target_hbox.add_theme_constant_override("separation", 8)
+	_target_hbox.mouse_filter = Control.MOUSE_FILTER_PASS
+	parent.add_child(_target_hbox)
 	
 	if is_inside_tree():
-		_populate_target_btns(hbox)
+		_populate_target_btns(_target_hbox)
 	else:
-		ready.connect(func(): if is_instance_valid(hbox): _populate_target_btns(hbox), CONNECT_ONE_SHOT)
+		ready.connect(func(): if is_instance_valid(_target_hbox): _populate_target_btns(_target_hbox), CONNECT_ONE_SHOT)
 
 func _populate_target_btns(hbox: HBoxContainer) -> void:
 	for child in hbox.get_children():
 		child.queue_free()
 	_target_btns.clear()
 	
-	# 加入微弱的间隔
 	var btn0 = _make_target_btn("SYS_0 (原体)", 0)
 	hbox.add_child(btn0)
 	_target_btns.append(btn0)
@@ -250,18 +249,14 @@ func _populate_target_btns(hbox: HBoxContainer) -> void:
 	_refresh_target_highlight()
 
 func _rebuild_target_selector() -> void:
-	var scroll = get_child(0)
-	if not scroll: return
-	var margin = scroll.get_node_or_null("MarginContainer")
-	if not margin: return
-	var vbox = margin.get_child(0)
-	for card in vbox.get_children():
-		if card is PanelContainer:
-			var group = card.get_child(0)
-			for child in group.get_children():
-				if child.has_meta("is_target_selector"):
-					_populate_target_btns(child)
-					return
+	if is_instance_valid(_target_hbox):
+		_populate_target_btns(_target_hbox)
+		# 如果当前选中的分身已被遣散, 回退到原体
+		var main_node = get_tree().root.get_node_or_null("Main")
+		if main_node and "pet_instances" in main_node:
+			if _target_index > 0 and _target_index >= main_node.pet_instances.size():
+				_target_index = 0
+				_load_target_color()
 
 func _make_target_btn(text: String, index: int) -> Button:
 	var btn = Button.new()
@@ -277,6 +272,7 @@ func _make_target_btn(text: String, index: int) -> Button:
 	btn.add_theme_stylebox_override("normal", s)
 	
 	var h = ProfileStyles.small_btn_hover()
+	h.content_margin_left = 12; h.content_margin_right = 12
 	btn.add_theme_stylebox_override("hover", h)
 	btn.add_theme_stylebox_override("pressed", h)
 

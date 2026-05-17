@@ -130,6 +130,9 @@ func _on_deploy_clone_pressed() -> void:
 
 func _on_dismiss_btn_pressed() -> void:
 	EventBus.dismiss_clones.emit()
+	# 遣散是异步退场动画, 先刷新标签再关菜单
+	await ctx.get_tree().process_frame
+	update_clone_label()
 	ctx._close_hud()
 
 func update_clone_label() -> void:
