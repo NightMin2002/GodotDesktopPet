@@ -162,12 +162,12 @@ static func create_result_overlay(btn_text: String, restart_cb: Callable) -> Dic
 
 	var lbl = Label.new()
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.add_theme_font_size_override("font_size", 14)
+	lbl.add_theme_font_size_override("font_size", 18)
 	vbox.add_child(lbl)
 
 	var btn = Button.new()
 	btn.text = btn_text
-	btn.add_theme_font_size_override("font_size", 13)
+	btn.add_theme_font_size_override("font_size", 15)
 	btn.add_theme_stylebox_override("normal", small_btn_normal())
 	btn.add_theme_stylebox_override("hover", small_btn_hover())
 	btn.add_theme_stylebox_override("pressed", small_btn_hover())

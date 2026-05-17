@@ -301,4 +301,4 @@ func _draw() -> void:
 	# 操作提示
 	if _game_active:
 		var hint_y = _grid_origin.y + total + 18
-		draw_string(font, Vector2(_grid_origin.x, hint_y), "方向键滑动", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.3, 0.4, 0.5, 0.3))
+		draw_string(font, Vector2(_grid_origin.x, hint_y), "方向键滑动", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.3, 0.4, 0.5, 0.3))

@@ -15,6 +15,7 @@ var _dir: Vector2i = Vector2i(1, 0)
 var _next_dir: Vector2i = Vector2i(1, 0)
 var _food: Vector2i = Vector2i(-1, -1)
 var _game_active: bool = false
+var _waiting_input: bool = true   # 等待首次操作
 var _result: int = -1
 var _score: int = 0
 var _tick_acc: float = 0.0
@@ -51,7 +52,9 @@ func get_best_score() -> int:
 func auto_play_step() -> void:
 	if not _game_active:
 		return
-	# 首次输入启动游戏
+	# 自玩模式自动跳过等待
+	if _waiting_input:
+		_waiting_input = false
 	if _tick_acc <= 0 and _score == 0:
 		# 蛇的初始方向已经是向右，不需要特殊处理
 		pass
@@ -86,14 +89,26 @@ func _process(delta: float) -> void:
 	_time += delta
 	if _game_active:
 		# 方向输入 (防 180 度转向)
+		var dir_pressed := false
 		if Input.is_action_just_pressed("ui_up") and _dir != Vector2i(0, 1):
 			_next_dir = Vector2i(0, -1)
+			dir_pressed = true
 		elif Input.is_action_just_pressed("ui_down") and _dir != Vector2i(0, -1):
 			_next_dir = Vector2i(0, 1)
+			dir_pressed = true
 		elif Input.is_action_just_pressed("ui_left") and _dir != Vector2i(1, 0):
 			_next_dir = Vector2i(-1, 0)
+			dir_pressed = true
 		elif Input.is_action_just_pressed("ui_right") and _dir != Vector2i(-1, 0):
 			_next_dir = Vector2i(1, 0)
+			dir_pressed = true
+		# 等待首次操作
+		if _waiting_input:
+			if dir_pressed:
+				_waiting_input = false
+			else:
+				queue_redraw()
+				return
 		# 移动节拍
 		_tick_acc += delta
 		if _tick_acc >= _tick_interval:
@@ -111,6 +126,7 @@ func start_game() -> void:
 	_dir = Vector2i(1, 0)
 	_next_dir = Vector2i(1, 0)
 	_game_active = true
+	_waiting_input = true
 	_result = -1
 	_score = 0
 	_tick_acc = 0.0
@@ -248,4 +264,6 @@ func _draw() -> void:
 	# 操作提示
 	if _game_active:
 		var hint_y = _grid_origin.y + grid_size.y + 16
-		draw_string(font, Vector2(_grid_origin.x, hint_y), "方向键控制", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.3, 0.4, 0.5, 0.3))
+		var hint_text = "按方向键开始" if _waiting_input else "方向键控制"
+		var hint_alpha = (sin(_time * 3.0) * 0.15 + 0.45) if _waiting_input else 0.3
+		draw_string(font, Vector2(_grid_origin.x, hint_y), hint_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.3, 0.4, 0.5, hint_alpha))

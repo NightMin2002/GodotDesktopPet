@@ -193,7 +193,7 @@ func _build_speech_label() -> void:
 	_speech_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	_speech_label.offset_top = -28
 	_speech_label.offset_bottom = -8
-	_speech_label.add_theme_font_size_override("font_size", 11)
+	_speech_label.add_theme_font_size_override("font_size", 13)
 	_speech_label.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7, 0.0))
 	_speech_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_speech_label)
