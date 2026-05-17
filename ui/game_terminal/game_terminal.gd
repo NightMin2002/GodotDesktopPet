@@ -47,7 +47,6 @@ var _auto_visible: bool = false       # true=观战模式(面板可见), false=�
 var _auto_timer: Timer = null         # AI 操作定时器
 var _auto_blocker: Control = null     # 观战模式输入拦截层
 const AUTO_PLAY_INTERVAL := 0.4       # AI 操作间隔 (秒)
-const AUTO_CLOSE_DELAY := 3.0         # 后台自玩结束后自动关闭延迟
 
 # ── 围栏 ──
 var _confine_walls: Array[StaticBody2D] = []
@@ -61,7 +60,6 @@ func _ready() -> void:
 	_build_ui()
 	EventBus.show_game_terminal.connect(_on_toggle)
 	EventBus.ui_theme_changed.connect(_on_ui_theme_changed)
-	EventBus.terminal_auto_game.connect(launch_auto_game)
 
 func _calc_panel_size() -> void:
 	var vp = get_viewport().get_visible_rect().size
@@ -1068,9 +1066,6 @@ func _on_game_over(result: int) -> void:
 		if _auto_visible:
 			# 观战模式: 延迟后自动重开继续推演
 			_auto_restart_after_delay()
-		else:
-			# 后台模式: 延迟关闭
-			_auto_finish_and_close()
 
 ## 观战模式: 延迟后自动重开游戏
 func _auto_restart_after_delay() -> void:
@@ -1229,42 +1224,8 @@ func _on_ui_theme_changed(_hue: float) -> void:
 	pass  # frame_drawer 每帧读 EventBus.ui_hue, 自动跟随
 
 # ═══════════════════════════════════════════════
-#  自玩模式 (AI 自主游戏)
+#  委托推演 (观战模式 AI 操作)
 # ═══════════════════════════════════════════════
-
-## 外部入口: 启动终端自玩游戏 (IdleActivities 调用)
-## 不弹出终端面板，在后台运行游戏，纹理供全息屏投影
-func launch_auto_game(game_id: String) -> void:
-	# 已在自玩 / 终端已打开 / 正在游戏中 → 不重复触发
-	if _auto_play or _is_open:
-		return
-	# 查找游戏注册表
-	var entry: Dictionary = {}
-	for e in GAME_REGISTRY:
-		if e.id == game_id:
-			entry = e
-			break
-	if entry.is_empty():
-		return
-
-	_auto_play = true
-
-	# 静默打开终端 (不显示面板，不创建围栏，不拦截输入)
-	panel.visible = true
-	panel.modulate.a = 0.0  # 完全透明 (但 SubViewport 继续渲染)
-	_is_open = true
-	_state = TerminalState.LOBBY
-
-	# 启动游戏
-	_launch_terminal_game(game_id)
-
-	# 启动 AI 操作定时器
-	_auto_start_timer()
-
-	# 激活全息投影
-	_activate_holo_preview()
-
-	print("[GameTerminal] 自玩启动: ", game_id)
 
 ## 启动 AI 操作定时器
 func _auto_start_timer() -> void:
@@ -1315,25 +1276,6 @@ func _hide_auto_blocker() -> void:
 		_auto_blocker.queue_free()
 	_auto_blocker = null
 
-## 自玩结束: 延迟后静默关闭终端
-func _auto_finish_and_close() -> void:
-	_auto_stop_timer()
-	if not is_instance_valid(panel):
-		_auto_cleanup()
-		return
-	# 延迟几秒后关闭 (让全息屏显示结算画面)
-	await get_tree().create_timer(AUTO_CLOSE_DELAY).timeout
-	_auto_cleanup()
-
-## 自玩清理: 关闭游戏 + 隐藏终端
-func _auto_cleanup() -> void:
-	_force_full_cleanup()
-	if is_instance_valid(panel):
-		panel.visible = false
-		panel.modulate.a = 1.0  # 恢复透明度
-	_is_open = false
-	_state = TerminalState.CLOSED
-	print("[GameTerminal] 自玩结束")
 
 # ═══════════════════════════════════════════════
 #  统一清理 + 兜底自检

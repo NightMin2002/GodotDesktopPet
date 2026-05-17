@@ -1,5 +1,6 @@
 # terminal_ttt.gd — 终端原生井字棋 (策略矩阵)
 # 直接在游戏终端内容区渲染，_draw 自绘 + minimax AI
+# 精密仪器风格 (移植自旧版 games/tic_tac_toe)
 # 自包含: 棋盘 + 输入 + AI + 结算覆盖 + 重开按钮
 extends Control
 
@@ -19,6 +20,9 @@ var _grid_size: float = 0.0
 var _grid_origin: Vector2 = Vector2.ZERO
 var _cell_size: float = 0.0
 var _time: float = 0.0
+
+# ── 落子动画 ──
+var _cell_anims: Array[float] = [0.0,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0]  # 每格动画进度 0→1
 
 # ── 结算 UI ──
 var _result_overlay: Control = null
@@ -88,12 +92,18 @@ func _minimax_best_for_player() -> int:
 
 func _process(delta: float) -> void:
 	_time += delta
-	# 胜负线动画 或 hover 时持续重绘
-	if _win_line.size() > 0 or _game_active:
+	# 落子弹射动画
+	var needs_redraw := false
+	for i in range(9):
+		if _cell_anims[i] < 1.0:
+			_cell_anims[i] = minf(_cell_anims[i] + delta * 8.0, 1.0)
+			needs_redraw = true
+	if _win_line.size() > 0 or _game_active or needs_redraw:
 		queue_redraw()
 
 func start_game() -> void:
 	_board = [0,0,0, 0,0,0, 0,0,0]
+	_cell_anims = [0.0,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0]
 	_game_active = true
 	_player_turn = true
 	_hover_cell = -1
@@ -157,6 +167,7 @@ func _on_input(event: InputEvent) -> void:
 
 func _place(idx: int, player: int) -> void:
 	_board[idx] = player
+	_cell_anims[idx] = 0.0  # 触发弹射动画
 	queue_redraw()
 
 # ══════════════════════════════════════════════
@@ -288,20 +299,28 @@ func _show_result() -> void:
 func _draw() -> void:
 	_calc_layout()
 	var hue = EventBus.ui_hue
+	var cw = _cell_size
+	var ch = _cell_size
+	var is_ended = _win_line.size() > 0 or (_board.find(0) == -1 and _win_line.size() == 0)
 
-	# ── 棋盘底色 ──
-	var grid_bg = Color(0.03, 0.05, 0.08, 0.3)
-	draw_rect(Rect2(_grid_origin, Vector2(_grid_size, _grid_size)), grid_bg)
-
-	# ── 网格线 ──
-	var line_c = Color.from_hsv(hue, 0.3, 0.55, 0.35)
+	# ── 网格线: 极细低存在感基准轴 ──
+	var line_color = Color.from_hsv(hue, 0.2, 0.4, 0.15)
+	var cross_color = Color.from_hsv(hue, 0.3, 0.7, 0.4)
 	for i in range(1, 3):
-		var x = _grid_origin.x + i * _cell_size
-		draw_line(Vector2(x, _grid_origin.y + 4), Vector2(x, _grid_origin.y + _grid_size - 4), line_c, 1.5)
-		var y = _grid_origin.y + i * _cell_size
-		draw_line(Vector2(_grid_origin.x + 4, y), Vector2(_grid_origin.x + _grid_size - 4, y), line_c, 1.5)
+		var x = _grid_origin.x + i * cw
+		var y = _grid_origin.y + i * ch
+		draw_line(Vector2(x, _grid_origin.y + ch * 0.1), Vector2(x, _grid_origin.y + _grid_size - ch * 0.1), line_color, 1.0, true)
+		draw_line(Vector2(_grid_origin.x + cw * 0.1, y), Vector2(_grid_origin.x + _grid_size - cw * 0.1, y), line_color, 1.0, true)
 
-	# ── 格位坐标标注 (战术风格) ──
+	# ── 四个十字瞄准节点 ──
+	for gx in range(1, 3):
+		for gy in range(1, 3):
+			var px = _grid_origin.x + cw * gx
+			var py = _grid_origin.y + ch * gy
+			draw_line(Vector2(px - 3, py), Vector2(px + 3, py), cross_color, 1.0, true)
+			draw_line(Vector2(px, py - 3), Vector2(px, py + 3), cross_color, 1.0, true)
+
+	# ── 格位坐标标注 ──
 	var coord_c = Color.from_hsv(hue, 0.2, 0.4, 0.15)
 	var coord_labels = ["A1","A2","A3","B1","B2","B3","C1","C2","C3"]
 	for i in range(9):
@@ -309,52 +328,107 @@ func _draw() -> void:
 		var font = ThemeDB.fallback_font
 		draw_string(font, cr.position + Vector2(4, 13), coord_labels[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, coord_c)
 
-	# ── 悬停高亮 ──
-	if _hover_cell >= 0 and _game_active and _player_turn and _board[_hover_cell] == 0:
-		var hr = _cell_rect(_hover_cell).grow(-2)
-		draw_rect(hr, Color.from_hsv(hue, 0.3, 0.5, 0.06))
-		# 预览 X (虚化)
-		var preview_c = Color.from_hsv(hue, 0.5, 0.8, 0.15)
-		var ctr = _cell_center(_hover_cell)
-		var pad = _cell_size * 0.22
-		var half = _cell_size * 0.5 - pad
-		draw_line(ctr + Vector2(-half, -half), ctr + Vector2(half, half), preview_c, 2.0, true)
-		draw_line(ctr + Vector2(half, -half), ctr + Vector2(-half, half), preview_c, 2.0, true)
+	# ── 悬停: 四角锁定框 [ ] ──
+	if _hover_cell >= 0 and _board[_hover_cell] == 0 and not is_ended:
+		var hcx = _cell_center(_hover_cell).x
+		var hcy = _cell_center(_hover_cell).y
+		var hr = minf(cw, ch) * 0.35
+		var brk = 6.0
+		var c = Color.from_hsv(hue, 0.4, 0.9, 0.3)
+		# 左上
+		draw_line(Vector2(hcx - hr, hcy - hr), Vector2(hcx - hr + brk, hcy - hr), c, 1.2, true)
+		draw_line(Vector2(hcx - hr, hcy - hr), Vector2(hcx - hr, hcy - hr + brk), c, 1.2, true)
+		# 右上
+		draw_line(Vector2(hcx + hr, hcy - hr), Vector2(hcx + hr - brk, hcy - hr), c, 1.2, true)
+		draw_line(Vector2(hcx + hr, hcy - hr), Vector2(hcx + hr, hcy - hr + brk), c, 1.2, true)
+		# 左下
+		draw_line(Vector2(hcx - hr, hcy + hr), Vector2(hcx - hr + brk, hcy + hr), c, 1.2, true)
+		draw_line(Vector2(hcx - hr, hcy + hr), Vector2(hcx - hr, hcy + hr - brk), c, 1.2, true)
+		# 右下
+		draw_line(Vector2(hcx + hr, hcy + hr), Vector2(hcx + hr - brk, hcy + hr), c, 1.2, true)
+		draw_line(Vector2(hcx + hr, hcy + hr), Vector2(hcx + hr, hcy + hr - brk), c, 1.2, true)
 
-	# ── 棋子 ──
-	var pad = _cell_size * 0.22
+	# ── 棋子 (精密仪器风格) ──
 	for i in range(9):
-		if _board[i] == 0: continue
+		if _board[i] == 0:
+			continue
 		var center = _cell_center(i)
-		var half = _cell_size * 0.5 - pad
-		if _board[i] == 1:
-			# X — 玩家 (主题色)
-			var x_c = Color.from_hsv(hue, 0.6, 0.95, 0.9)
-			var x_glow = Color.from_hsv(hue, 0.5, 0.95, 0.15)
-			draw_line(center + Vector2(-half, -half), center + Vector2(half, half), x_glow, 8.0, true)
-			draw_line(center + Vector2(half, -half), center + Vector2(-half, half), x_glow, 8.0, true)
-			draw_line(center + Vector2(-half, -half), center + Vector2(half, half), x_c, 2.5, true)
-			draw_line(center + Vector2(half, -half), center + Vector2(-half, half), x_c, 2.5, true)
-		else:
-			# O — AI (琥珀色)
-			var o_c = Color(0.9, 0.55, 0.3, 0.85)
-			var o_glow = Color(0.9, 0.55, 0.3, 0.12)
-			draw_arc(center, half, 0, TAU, 48, o_glow, 8.0, true)
-			draw_arc(center, half, 0, TAU, 48, o_c, 2.0, true)
+		var anim_t = _cell_anims[i]
+		var scale_t = _ease_out_expo(anim_t)
+		if scale_t < 0.01:
+			continue
 
-	# ── 胜负线 ──
-	if _win_line.size() == 3:
-		var pulse = (sin(_time * 8.0) * 0.3 + 0.7)
-		var wc: Color
-		if _result == 0:
-			wc = Color.from_hsv(hue, 0.5, 1.0, pulse)
+		var is_winning_cell = _win_line.has(i)
+		var dim_alpha = 1.0
+		# 结束后非连线格子变暗
+		if _win_line.size() > 0 and not is_winning_cell:
+			dim_alpha = 0.2
+		# 平局全部变暗
+		if _board.find(0) == -1 and _win_line.size() == 0:
+			dim_alpha = 0.4
+
+		if _board[i] == 1:
+			_draw_precision_x(center, cw, hue, scale_t, dim_alpha)
 		else:
-			wc = Color(0.9, 0.35, 0.3, pulse)
+			_draw_precision_o(center, cw, hue, scale_t, dim_alpha)
+
+	# ── 极简终局判定线 ──
+	if _win_line.size() == 3:
 		var p1 = _cell_center(_win_line[0])
 		var p2 = _cell_center(_win_line[2])
-		draw_line(p1, p2, Color(wc.r, wc.g, wc.b, 0.12), 20.0, true)
-		draw_line(p1, p2, wc, 3.5, true)
+		var line_c = Color.from_hsv(hue, 0.2, 1.0, 0.9)
+		# 锐利实线
+		draw_line(p1, p2, line_c, 2.0, true)
+		# 起止端微小终端框
+		draw_rect(Rect2(p1 - Vector2(3, 3), Vector2(6, 6)), line_c, false, 1.0)
+		draw_rect(Rect2(p2 - Vector2(3, 3), Vector2(6, 6)), line_c, false, 1.0)
 
 	# ── 外框包边 ──
 	var frame_c = Color.from_hsv(hue, 0.4, 0.6, 0.2)
 	draw_rect(Rect2(_grid_origin, Vector2(_grid_size, _grid_size)), frame_c, false, 1.0)
+
+# ══════════════════════════════════════════════
+#  精密仪器棋子渲染 (移植自旧版)
+# ══════════════════════════════════════════════
+
+func _draw_precision_x(center: Vector2, cell_size: float, hue: float, scale_t: float, dim_alpha: float) -> void:
+	var c = Color.from_hsv(hue, 0.3, 0.9, dim_alpha)
+	var gap = cell_size * 0.05
+	var arm = cell_size * 0.25 * scale_t
+
+	# 像两对分离的线段汇聚，中间留空
+	draw_line(center + Vector2(-gap, -gap), center + Vector2(-gap - arm, -gap - arm), c, 1.5, true)
+	draw_line(center + Vector2(gap, gap), center + Vector2(gap + arm, gap + arm), c, 1.5, true)
+	draw_line(center + Vector2(gap, -gap), center + Vector2(gap + arm, -gap - arm), c, 1.5, true)
+	draw_line(center + Vector2(-gap, gap), center + Vector2(-gap - arm, gap + arm), c, 1.5, true)
+
+	# 落子瞬间的极亮中心闪光点
+	if scale_t < 1.0:
+		var flash = Color.from_hsv(hue, 0.1, 1.0, (1.0 - scale_t) * dim_alpha)
+		draw_circle(center, 2.0 + scale_t * 2.0, flash)
+
+func _draw_precision_o(center: Vector2, cell_size: float, hue: float, scale_t: float, dim_alpha: float) -> void:
+	var ai_hue = fmod(hue + 0.45, 1.0)
+	var c = Color.from_hsv(ai_hue, 0.4, 0.95, dim_alpha)
+	var r = cell_size * 0.25 * scale_t
+
+	# 极简锐利圆弧 (留一个小缺口)
+	var start_angle = -PI / 2 + 0.15
+	var end_angle = PI * 1.5 - 0.15
+	draw_arc(center, r, start_angle, end_angle, 32, c, 1.5, true)
+
+	# 圆弧缺口两端的闭合横线 (仪表盘风格)
+	var p1 = center + Vector2(cos(start_angle), sin(start_angle)) * r
+	var p2 = center + Vector2(cos(end_angle), sin(end_angle)) * r
+	var t1 = (p1 - center).normalized().rotated(PI / 2) * 2.0
+	var t2 = (p2 - center).normalized().rotated(PI / 2) * 2.0
+	draw_line(p1 - t1, p1 + t1, c, 1.0, true)
+	draw_line(p2 - t2, p2 + t2, c, 1.0, true)
+
+	# 落子瞬间内部瞄准纹理
+	if scale_t < 1.0:
+		var flash = Color.from_hsv(ai_hue, 0.1, 1.0, (1.0 - scale_t) * dim_alpha)
+		draw_arc(center, r * 0.6, 0, TAU, 16, flash, 1.0, true)
+
+func _ease_out_expo(t: float) -> float:
+	return 1.0 if t == 1.0 else 1.0 - pow(2.0, -10.0 * t)

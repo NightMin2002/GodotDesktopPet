@@ -1,5 +1,5 @@
 # idle_activities.gd — 自主活动调度器 (菜单名: 运行功耗)
-# 管理 idle 状态下的定时自主活动: 空间跳跃 / 浏览全息屏 / 自玩游戏
+# 管理 idle 状态下的定时自主活动: 空间跳跃 / 浏览全息屏
 # 定时器驱动，到时间从池子里随机抽一个执行。三档: 待机(关闭) / 节能(偶尔) / 性能(频繁)
 class_name IdleActivities
 extends RefCounted
@@ -29,9 +29,8 @@ const INTERVAL_RANGE := {
 
 func _init() -> void:
 	# 注册内置活动 (weight 决定抽中概率)
-	register("free_roam", 3.0, _do_free_roam)     # 移动行为, 常见 (50%)
-	register("holo_browse", 2.0, _do_holo_browse)  # 看屏幕, 较常见 (33%)
-	register("auto_game", 1.0, _do_auto_game)      # 稀有事件 (17%)
+	register("free_roam", 3.0, _do_free_roam)     # 移动行为, 常见 (60%)
+	register("holo_browse", 2.0, _do_holo_browse)  # 看屏幕, 较常见 (40%)
 	_roll_next_interval()
 
 # ── 公开接口 ──
@@ -89,8 +88,6 @@ func _can_run(id: String) -> bool:
 	match id:
 		"free_roam":
 			return pet.free_roam_enabled and not pet._roam_active
-		"auto_game":
-			return not pet.gaming.active and not pet.holo_screen._game_locked
 		"holo_browse":
 			return not pet.gaming.active and not pet.holo_screen._game_locked and not pet.holo_screen.visible
 	return true
@@ -117,10 +114,6 @@ func _weighted_pick() -> Dictionary:
 
 func _do_free_roam() -> void:
 	pet._start_free_roam()
-
-func _do_auto_game() -> void:
-	var games = ["ttt", "minesweeper", "2048", "snake"]
-	EventBus.terminal_auto_game.emit(games[randi() % games.size()])
 
 func _do_holo_browse() -> void:
 	# 决定屏幕方向 (和游戏态一样的逻辑)
