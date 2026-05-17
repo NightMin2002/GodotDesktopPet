@@ -6,8 +6,12 @@ extends RefCounted
 var ctx  # ContextMenu 引用
 
 # ── 按钮引用 ──
+var _stack_btn: Button
 var _auto_play_btn: Button
 var _game_container: VBoxContainer
+
+# ── 叠高高状态 ──
+var _stacking: bool = false
 
 func _init(context_menu) -> void:
 	ctx = context_menu
@@ -17,6 +21,10 @@ func build() -> void:
 	var vbox = VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 6)
 	panel.add_child(vbox)
+
+	_stack_btn = ctx._make_menu_btn("叠高高", Color(0.3, 1.0, 0.7, 1))
+	_stack_btn.pressed.connect(_on_stack_pressed)
+	vbox.add_child(_stack_btn)
 
 	_auto_play_btn = ctx._make_menu_btn("自娱指令 [+]", Color(0.3, 1.0, 0.7, 1))
 	vbox.add_child(_auto_play_btn)
@@ -34,6 +42,107 @@ func build() -> void:
 
 	# L3: 自娱指令
 	_build_auto_play_submenu()
+
+# ── 叠高高 ──
+
+const _STACK_REJECT := [
+	"...就我一个，叠什么。",
+	"编队为零。物理学拒绝了你的请求。",
+	"操作对象不足。需要至少一个分身。",
+	"没有可用单元。先部署分身。",
+]
+
+func _on_stack_pressed() -> void:
+	ctx._tooltip.panel.hide()
+	ctx._submenu.hide_all_instant()
+	ctx.hud.hide()
+	ctx._sidebar.panel.hide()
+	ctx.target = null
+	EventBus.context_menu_toggled.emit(false)
+
+	var main = ctx.get_tree().root.get_node_or_null("Main")
+	if not main:
+		return
+	var pets: Array = main.pet_instances
+	var clones := []
+	for p in pets:
+		if is_instance_valid(p) and p.is_clone:
+			clones.append(p)
+
+	if clones.is_empty():
+		EventBus.force_show_bubble.emit(_STACK_REJECT[randi() % _STACK_REJECT.size()])
+		return
+
+	if _stacking:
+		_unstack(main, clones)
+	else:
+		_do_stack(main, clones)
+
+func _do_stack(main: Node, clones: Array) -> void:
+	_stacking = true
+	var origin_pet = main.pet_instances[0]
+
+	# 按克隆体索引排序保证一致性
+	clones.sort_custom(func(a, b): return a.get_meta("pet_index", 0) < b.get_meta("pet_index", 0))
+
+	var diameter = origin_pet.PET_RADIUS * 2.0
+	for i in range(clones.size()):
+		var clone = clones[i]
+		# 把克隆体挪到原体头上
+		var stack_height = (i + 1) * diameter * origin_pet.ag_flip * -1.0
+		clone.set_meta("stack_offset_y", stack_height)
+		clone.set_meta("stack_origin", origin_pet)
+		# 保存原始碰撞配置, 然后关闭碰撞 (避免压住原体)
+		clone.set_meta("stack_col_layer", clone.collision_layer)
+		clone.set_meta("stack_col_mask", clone.collision_mask)
+		clone.collision_layer = 0
+		clone.collision_mask = 0
+		clone.freeze = true
+		clone.global_position = Vector2(origin_pet.global_position.x, origin_pet.global_position.y + stack_height)
+		# 连接 process 跟随
+		if not clone.has_meta("stack_callable"):
+			var c = clone
+			var callable = func():
+				if not is_instance_valid(c) or not c.freeze:
+					return
+				var base = c.get_meta("stack_origin", null)
+				if not is_instance_valid(base):
+					return
+				var off_y: float = c.get_meta("stack_offset_y", 0.0)
+				c.global_position = Vector2(base.global_position.x, base.global_position.y + off_y)
+			c.set_meta("stack_callable", callable)
+			origin_pet.get_tree().process_frame.connect(callable)
+
+	var lines := [
+		"...稳住。别乱动。",
+		"编队堆叠完毕。重心需自行维持。",
+		"塔基是我。动一下试试。",
+	]
+	EventBus.force_show_bubble.emit(lines[randi() % lines.size()])
+
+func _unstack(main: Node, clones: Array) -> void:
+	_stacking = false
+	var origin_pet = main.pet_instances[0]
+
+	for clone in clones:
+		# 恢复碰撞
+		clone.collision_layer = clone.get_meta("stack_col_layer", 1)
+		clone.collision_mask = clone.get_meta("stack_col_mask", 1)
+		clone.remove_meta("stack_col_layer")
+		clone.remove_meta("stack_col_mask")
+		clone.freeze = false
+		# 断开跟随
+		if clone.has_meta("stack_callable"):
+			var callable = clone.get_meta("stack_callable")
+			if origin_pet.get_tree().process_frame.is_connected(callable):
+				origin_pet.get_tree().process_frame.disconnect(callable)
+			clone.remove_meta("stack_callable")
+		clone.remove_meta("stack_offset_y")
+		clone.remove_meta("stack_origin")
+		# 给个小推力让它们散开
+		clone.apply_central_impulse(Vector2(randf_range(-100, 100), -150))
+
+	EventBus.force_show_bubble.emit("解散。各回各位。")
 
 # ── 自娱指令 ──
 

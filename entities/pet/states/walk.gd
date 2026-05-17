@@ -159,6 +159,7 @@ func _find_pets_ahead(dist: float) -> Array[RigidBody2D]:
 		if child == pet or not (child is RigidBody2D): continue
 		if not is_instance_valid(child): continue
 		if not child.has_method("is_mouse_on_pet"): continue
+		if child.freeze: continue  # 跳过冻结的宠物 (叠高高等)
 		var dx = child.global_position.x - pet.global_position.x
 		if _roll_direction > 0 and dx < 0: continue
 		if _roll_direction < 0 and dx > 0: continue
