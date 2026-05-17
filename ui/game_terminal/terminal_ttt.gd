@@ -1,13 +1,74 @@
 # terminal_ttt.gd — 终端原生井字棋 (策略矩阵)
-# 直接在游戏终端内容区渲染，_draw 自绘 + minimax AI
 # 精密仪器风格 (移植自旧版 games/tic_tac_toe)
-# 自包含: 棋盘 + 输入 + AI + 结算覆盖 + 重开按钮
+# 自包含: 棋盘 + 输入 + AI + 话术 + 结算覆盖
 extends Control
 
 signal game_started
 signal game_over(result: int)  # 0=玩家胜, 1=AI胜, 2=平局
 
-# ── 棋盘状态 ──
+# ══════════════════════════════════════════════
+#  话术常量池 (洗牌防重复)
+# ══════════════════════════════════════════════
+
+const _POOL_START := [
+	"对弈协议启动。",
+	"策略矩阵初始化完毕。",
+	"推演开始。先手属于操作员。",
+	"棋盘已就绪。请落子。",
+	"新局。本机已准备完毕。",
+	"决策空间已重置。",
+]
+const _POOL_PLAYER_MOVE := [
+	"...已记录。",
+	"收到。",
+	"标记完成。轮到本机。",
+	"嗯。",
+	"位置已标记。",
+	"...操作员的选择。",
+	"记录在案。",
+	"收到输入。",
+]
+const _POOL_AI_MOVE := [
+	"最优解已计算。",
+	"落子。",
+	"...显而易见的选择。",
+	"推演完成。",
+	"这步不需要思考。",
+	"决策树剪枝完毕。",
+	"...预期之内。",
+]
+const _POOL_AI_WIN := [
+	"预测到的结局。",
+	"推演结果与预期一致。",
+	"胜负已定。这不是炫耀。",
+	"...本机的运算是精确的。",
+	"结果: 符合预期。",
+	"分析完毕。胜者: 本机。",
+	"...这不算欺负你。算法本来就是这样的。",
+]
+const _POOL_PLAYER_WIN := [
+	"...硬件抖动。不算。",
+	"检测到异常分支。请求复盘。",
+	"...这次不计入统计。",
+	"...散热异常导致决策偏差。",
+	"数据波动。建议重赛。",
+	"...不承认这个结果。",
+	"...显然是操作员作弊。无法证实也无法证伪。",
+]
+const _POOL_DRAW := [
+	"收敛于均衡态。符合预期。",
+	"平局。操作员的防御尚可。",
+	"...不负不胜。可接受的结果。",
+	"纳什均衡。双方均无失误。",
+	"平手。本机选择不评价。",
+	"...旗鼓相当。仅此一次。",
+]
+
+# ══════════════════════════════════════════════
+#  状态变量
+# ══════════════════════════════════════════════
+
+# ── 棋盘 ──
 var _board: Array[int] = [0,0,0, 0,0,0, 0,0,0]  # 0=空, 1=玩家(X), 2=AI(O)
 var _game_active: bool = false
 var _player_turn: bool = true
@@ -22,12 +83,22 @@ var _cell_size: float = 0.0
 var _time: float = 0.0
 
 # ── 落子动画 ──
-var _cell_anims: Array[float] = [0.0,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0]  # 每格动画进度 0→1
+var _cell_anims: Array[float] = [0.0,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0]
 
 # ── 结算 UI ──
 var _result_overlay: Control = null
 var _result_label: Label = null
 var _restart_btn: Button = null
+
+# ── 话术 ──
+var _speech_label: Label = null           # 棋盘下方的话术显示
+var _speech_tween: Tween = null           # 淡入淡出动画
+var _q_start: Array = []                  # 洗牌队列
+var _q_player_move: Array = []
+var _q_ai_move: Array = []
+var _q_ai_win: Array = []
+var _q_player_win: Array = []
+var _q_draw: Array = []
 
 # ══════════════════════════════════════════════
 #  生命周期
@@ -37,62 +108,12 @@ func build() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	gui_input.connect(_on_input)
+	_build_speech_label()
 	_build_result_overlay()
 	start_game()
 
-## HUD 协议: 返回当前游戏状态数据
-func get_hud_data() -> Dictionary:
-	var turn_text: String
-	var turn_color: Color
-	if not _game_active:
-		turn_text = "已结束"
-		turn_color = GameTerminalStyles.dim()
-	elif _player_turn:
-		turn_text = "USR"
-		turn_color = GameTerminalStyles.status_active()
-	else:
-		turn_text = "SYS"
-		turn_color = GameTerminalStyles.status_warning()
-	# 统计棋子数
-	var placed := 0
-	for cell in _board:
-		if cell != 0:
-			placed += 1
-	return {
-		"turn": { "label": "回合", "value": turn_text, "color": turn_color },
-		"moves": { "label": "落子", "value": "%d/9" % placed, "color": GameTerminalStyles.dim() },
-	}
-
-## 自玩 AI: 每步操作 (终端骨架通过 Timer 调用)
-func auto_play_step() -> void:
-	if not _game_active or not _player_turn:
-		return
-	# 用 minimax 为“玩家”找最佳位置 (AI 代玩玩家)
-	var best = _minimax_best_for_player()
-	if best >= 0 and _board[best] == 0:
-		_place(best, 1)
-		_check_end()
-		if _game_active:
-			_player_turn = false
-			get_tree().create_timer(0.35).timeout.connect(_ai_move)
-
-## 为玩家方找最佳棋位 (纯 minimax, 玩家希望最小化 AI 得分)
-func _minimax_best_for_player() -> int:
-	var best_score = 999
-	var best_move = -1
-	for i in range(9):
-		if _board[i] == 0:
-			_board[i] = 1
-			var score = _minimax(true, 0)
-			_board[i] = 0
-			if score < best_score:
-				best_score = score
-				best_move = i
-	return best_move
-
 func _process(delta: float) -> void:
 	_time += delta
-	# 落子弹射动画
 	var needs_redraw := false
 	for i in range(9):
 		if _cell_anims[i] < 1.0:
@@ -111,8 +132,97 @@ func start_game() -> void:
 	_result = -1
 	if _result_overlay:
 		_result_overlay.visible = false
+	_say(_pick(_q_start, _POOL_START))
 	game_started.emit()
 	queue_redraw()
+
+## HUD 协议: 返回当前游戏状态数据
+func get_hud_data() -> Dictionary:
+	var turn_text: String
+	var turn_color: Color
+	if not _game_active:
+		turn_text = "已结束"
+		turn_color = GameTerminalStyles.dim()
+	elif _player_turn:
+		turn_text = "USR"
+		turn_color = GameTerminalStyles.status_active()
+	else:
+		turn_text = "SYS"
+		turn_color = GameTerminalStyles.status_warning()
+	var placed := 0
+	for cell in _board:
+		if cell != 0:
+			placed += 1
+	return {
+		"turn": { "label": "回合", "value": turn_text, "color": turn_color },
+		"moves": { "label": "落子", "value": "%d/9" % placed, "color": GameTerminalStyles.dim() },
+	}
+
+## 自玩 AI: 每步操作 (终端骨架通过 Timer 调用)
+func auto_play_step() -> void:
+	if not _game_active or not _player_turn:
+		return
+	var best = _minimax_best_for_player()
+	if best >= 0 and _board[best] == 0:
+		_place(best, 1)
+		_check_end()
+		if _game_active:
+			_player_turn = false
+			get_tree().create_timer(0.35).timeout.connect(_ai_move)
+
+func _minimax_best_for_player() -> int:
+	var best_score = 999
+	var best_move = -1
+	for i in range(9):
+		if _board[i] == 0:
+			_board[i] = 1
+			var score = _minimax(true, 0)
+			_board[i] = 0
+			if score < best_score:
+				best_score = score
+				best_move = i
+	return best_move
+
+# ══════════════════════════════════════════════
+#  话术系统
+# ══════════════════════════════════════════════
+
+func _build_speech_label() -> void:
+	_speech_label = Label.new()
+	_speech_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_speech_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	_speech_label.offset_top = -28
+	_speech_label.offset_bottom = -8
+	_speech_label.add_theme_font_size_override("font_size", 11)
+	_speech_label.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7, 0.0))
+	_speech_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_speech_label)
+
+## 显示一条话术 (淡入 → 持续 → 淡出)
+func _say(text: String) -> void:
+	if not is_instance_valid(_speech_label):
+		return
+	_speech_label.text = text
+	if _speech_tween and _speech_tween.is_valid():
+		_speech_tween.kill()
+	var hue = EventBus.ui_hue
+	var c = Color.from_hsv(hue, 0.15, 0.7, 1.0)
+	_speech_label.add_theme_color_override("font_color", Color(c.r, c.g, c.b, 0.0))
+	_speech_tween = create_tween()
+	_speech_tween.tween_method(func(a: float):
+		_speech_label.add_theme_color_override("font_color", Color(c.r, c.g, c.b, a))
+	, 0.0, 0.8, 0.3)
+	_speech_tween.tween_interval(3.5)
+	_speech_tween.tween_method(func(a: float):
+		_speech_label.add_theme_color_override("font_color", Color(c.r, c.g, c.b, a))
+	, 0.8, 0.0, 1.0)
+
+## 从洗牌队列取一条 (空了就重填+洗牌)
+func _pick(queue: Array, pool: Array) -> String:
+	if queue.is_empty():
+		queue.append_array(pool)
+		queue.shuffle()
+	return queue.pop_back()
 
 # ══════════════════════════════════════════════
 #  布局计算
@@ -124,7 +234,7 @@ func _calc_layout() -> void:
 	_cell_size = _grid_size / 3.0
 	_grid_origin = Vector2(
 		(size.x - _grid_size) * 0.5,
-		(size.y - _grid_size) * 0.5
+		(size.y - _grid_size) * 0.5 - 10  # 上移一点给话术腾空间
 	)
 
 func _cell_rect(idx: int) -> Rect2:
@@ -160,6 +270,7 @@ func _on_input(event: InputEvent) -> void:
 		var cell = _hit_test(event.position)
 		if cell >= 0 and _board[cell] == 0:
 			_place(cell, 1)
+			_say(_pick(_q_player_move, _POOL_PLAYER_MOVE))
 			_check_end()
 			if _game_active:
 				_player_turn = false
@@ -167,7 +278,7 @@ func _on_input(event: InputEvent) -> void:
 
 func _place(idx: int, player: int) -> void:
 	_board[idx] = player
-	_cell_anims[idx] = 0.0  # 触发弹射动画
+	_cell_anims[idx] = 0.0
 	queue_redraw()
 
 # ══════════════════════════════════════════════
@@ -180,7 +291,8 @@ func _ai_move() -> void:
 	var best = _minimax_best()
 	if best >= 0:
 		_place(best, 2)
-		_check_end()
+		if not _check_end():
+			_say(_pick(_q_ai_move, _POOL_AI_MOVE))
 	_player_turn = true
 
 func _minimax_best() -> int:
@@ -240,7 +352,8 @@ func _is_full() -> bool:
 		if cell == 0: return false
 	return true
 
-func _check_end() -> void:
+## 检查并处理终局，返回 true 表示游戏结束
+func _check_end() -> bool:
 	var winner = _check_winner()
 	if winner > 0:
 		_game_active = false
@@ -248,11 +361,14 @@ func _check_end() -> void:
 		_result = 0 if winner == 1 else 1
 		_show_result()
 		game_over.emit(_result)
+		return true
 	elif _is_full():
 		_game_active = false
 		_result = 2
 		_show_result()
 		game_over.emit(_result)
+		return true
+	return false
 
 func _find_win_line(winner: int) -> void:
 	for line in _LINES:
@@ -271,29 +387,26 @@ func _build_result_overlay() -> void:
 	_restart_btn = d.btn
 	add_child(_result_overlay)
 
-var _result_lines_win := ["...算你赢。", "结果在预测范围内。", "数据偏差已记录。"]
-var _result_lines_lose := ["意料之中。", "对局分析完毕。胜率: 100%。", "推演结束。"]
-var _result_lines_draw := ["...势均力敌。", "决策树收敛。", "对称博弈。"]
-
 func _show_result() -> void:
 	if not _result_overlay:
 		return
-	var lines: Array
+	var speech: String
 	var color: Color
 	match _result:
 		0:
-			lines = _result_lines_win
+			speech = _pick(_q_player_win, _POOL_PLAYER_WIN)
 			color = GameTerminalStyles.status_active()
 		1:
-			lines = _result_lines_lose
+			speech = _pick(_q_ai_win, _POOL_AI_WIN)
 			color = Color(0.9, 0.55, 0.3, 0.9)
 		2:
-			lines = _result_lines_draw
+			speech = _pick(_q_draw, _POOL_DRAW)
 			color = GameTerminalStyles.dim()
-	GameTerminalStyles.show_result_overlay(_result_overlay, _result_label, lines[randi() % lines.size()], color)
+	_say(speech)
+	GameTerminalStyles.show_result_overlay(_result_overlay, _result_label, speech, color)
 
 # ══════════════════════════════════════════════
-#  渲染
+#  渲染: 棋盘 + 网格 + 悬停 + 棋子 + 终局线
 # ══════════════════════════════════════════════
 
 func _draw() -> void:
@@ -335,16 +448,12 @@ func _draw() -> void:
 		var hr = minf(cw, ch) * 0.35
 		var brk = 6.0
 		var c = Color.from_hsv(hue, 0.4, 0.9, 0.3)
-		# 左上
 		draw_line(Vector2(hcx - hr, hcy - hr), Vector2(hcx - hr + brk, hcy - hr), c, 1.2, true)
 		draw_line(Vector2(hcx - hr, hcy - hr), Vector2(hcx - hr, hcy - hr + brk), c, 1.2, true)
-		# 右上
 		draw_line(Vector2(hcx + hr, hcy - hr), Vector2(hcx + hr - brk, hcy - hr), c, 1.2, true)
 		draw_line(Vector2(hcx + hr, hcy - hr), Vector2(hcx + hr, hcy - hr + brk), c, 1.2, true)
-		# 左下
 		draw_line(Vector2(hcx - hr, hcy + hr), Vector2(hcx - hr + brk, hcy + hr), c, 1.2, true)
 		draw_line(Vector2(hcx - hr, hcy + hr), Vector2(hcx - hr, hcy + hr - brk), c, 1.2, true)
-		# 右下
 		draw_line(Vector2(hcx + hr, hcy + hr), Vector2(hcx + hr - brk, hcy + hr), c, 1.2, true)
 		draw_line(Vector2(hcx + hr, hcy + hr), Vector2(hcx + hr, hcy + hr - brk), c, 1.2, true)
 
@@ -360,10 +469,8 @@ func _draw() -> void:
 
 		var is_winning_cell = _win_line.has(i)
 		var dim_alpha = 1.0
-		# 结束后非连线格子变暗
 		if _win_line.size() > 0 and not is_winning_cell:
 			dim_alpha = 0.2
-		# 平局全部变暗
 		if _board.find(0) == -1 and _win_line.size() == 0:
 			dim_alpha = 0.4
 
@@ -377,9 +484,7 @@ func _draw() -> void:
 		var p1 = _cell_center(_win_line[0])
 		var p2 = _cell_center(_win_line[2])
 		var line_c = Color.from_hsv(hue, 0.2, 1.0, 0.9)
-		# 锐利实线
 		draw_line(p1, p2, line_c, 2.0, true)
-		# 起止端微小终端框
 		draw_rect(Rect2(p1 - Vector2(3, 3), Vector2(6, 6)), line_c, false, 1.0)
 		draw_rect(Rect2(p2 - Vector2(3, 3), Vector2(6, 6)), line_c, false, 1.0)
 
@@ -388,21 +493,19 @@ func _draw() -> void:
 	draw_rect(Rect2(_grid_origin, Vector2(_grid_size, _grid_size)), frame_c, false, 1.0)
 
 # ══════════════════════════════════════════════
-#  精密仪器棋子渲染 (移植自旧版)
+#  渲染: 精密仪器棋子 (移植自旧版)
 # ══════════════════════════════════════════════
 
 func _draw_precision_x(center: Vector2, cell_size: float, hue: float, scale_t: float, dim_alpha: float) -> void:
 	var c = Color.from_hsv(hue, 0.3, 0.9, dim_alpha)
 	var gap = cell_size * 0.05
 	var arm = cell_size * 0.25 * scale_t
-
-	# 像两对分离的线段汇聚，中间留空
+	# 两对分离线段，中间留空
 	draw_line(center + Vector2(-gap, -gap), center + Vector2(-gap - arm, -gap - arm), c, 1.5, true)
 	draw_line(center + Vector2(gap, gap), center + Vector2(gap + arm, gap + arm), c, 1.5, true)
 	draw_line(center + Vector2(gap, -gap), center + Vector2(gap + arm, -gap - arm), c, 1.5, true)
 	draw_line(center + Vector2(-gap, gap), center + Vector2(-gap - arm, gap + arm), c, 1.5, true)
-
-	# 落子瞬间的极亮中心闪光点
+	# 落子闪光
 	if scale_t < 1.0:
 		var flash = Color.from_hsv(hue, 0.1, 1.0, (1.0 - scale_t) * dim_alpha)
 		draw_circle(center, 2.0 + scale_t * 2.0, flash)
@@ -411,21 +514,18 @@ func _draw_precision_o(center: Vector2, cell_size: float, hue: float, scale_t: f
 	var ai_hue = fmod(hue + 0.45, 1.0)
 	var c = Color.from_hsv(ai_hue, 0.4, 0.95, dim_alpha)
 	var r = cell_size * 0.25 * scale_t
-
-	# 极简锐利圆弧 (留一个小缺口)
+	# 留缺口圆弧
 	var start_angle = -PI / 2 + 0.15
 	var end_angle = PI * 1.5 - 0.15
 	draw_arc(center, r, start_angle, end_angle, 32, c, 1.5, true)
-
-	# 圆弧缺口两端的闭合横线 (仪表盘风格)
+	# 缺口两端闭合横线
 	var p1 = center + Vector2(cos(start_angle), sin(start_angle)) * r
 	var p2 = center + Vector2(cos(end_angle), sin(end_angle)) * r
 	var t1 = (p1 - center).normalized().rotated(PI / 2) * 2.0
 	var t2 = (p2 - center).normalized().rotated(PI / 2) * 2.0
 	draw_line(p1 - t1, p1 + t1, c, 1.0, true)
 	draw_line(p2 - t2, p2 + t2, c, 1.0, true)
-
-	# 落子瞬间内部瞄准纹理
+	# 落子瞄准纹理
 	if scale_t < 1.0:
 		var flash = Color.from_hsv(ai_hue, 0.1, 1.0, (1.0 - scale_t) * dim_alpha)
 		draw_arc(center, r * 0.6, 0, TAU, 16, flash, 1.0, true)

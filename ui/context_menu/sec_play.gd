@@ -19,17 +19,6 @@ func build() -> void:
 	vbox.add_theme_constant_override("separation", 6)
 	panel.add_child(vbox)
 
-	# 游戏终端入口
-	var terminal_btn = ctx._make_menu_btn("游戏终端", Color(0.3, 1.0, 0.7, 1))
-	vbox.add_child(terminal_btn)
-	terminal_btn.pressed.connect(func():
-		ctx._close_hud()
-		EventBus.show_game_terminal.emit()
-	)
-	var tb = terminal_btn
-	terminal_btn.mouse_entered.connect(func(): ctx._tooltip.show_for(tb, "独立游戏运行终端", true))
-	terminal_btn.mouse_exited.connect(func(): ctx._tooltip.show_for(tb, "独立游戏运行终端", false))
-
 	_entertain_btn = ctx._make_menu_btn("娱乐 [+]", Color(0.3, 1.0, 0.7, 1))
 	vbox.add_child(_entertain_btn)
 	ctx._bind_l3_trigger(_entertain_btn, "entertain", "sec_play")

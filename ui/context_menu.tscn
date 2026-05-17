@@ -100,6 +100,15 @@ text = "待办事项"
 flat = true
 alignment = 0
 
+[node name="GameTerminalBtn" type="Button" parent="HUDPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_hover_color = Color(0.3, 1.0, 0.7, 1)
+theme_override_colors/font_color = Color(0.65, 0.75, 0.85, 0.85)
+theme_override_font_sizes/font_size = 20
+text = "游戏终端"
+flat = true
+alignment = 0
+
 [node name="ProfileBtn" type="Button" parent="HUDPanel/Margin/VBox"]
 layout_mode = 2
 theme_override_colors/font_hover_color = Color(0.2, 0.85, 1.0, 1)
