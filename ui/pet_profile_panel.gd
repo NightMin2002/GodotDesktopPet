@@ -42,6 +42,7 @@ func _ready() -> void:
 	EventBus.show_pet_profile.connect(_on_toggle)
 	EventBus.show_pet_profile_reminder.connect(_on_show_reminder_tab)
 	EventBus.ui_theme_changed.connect(_on_ui_theme_changed)
+	EventBus.panel_focus_requested.connect(_on_panel_focus)
 
 func _calc_panel_size() -> void:
 	var vp = get_viewport().get_visible_rect().size
@@ -67,9 +68,24 @@ func _process(delta: float) -> void:
 			_sync_confine_walls()
 		var pet = _get_pet()
 		if pet:
-			pet.overlay_rect = Rect2(panel.position, Vector2(_panel_w, _panel_h))
+			pet.set_overlay_rect("profile", Rect2(panel.position, Vector2(_panel_w, _panel_h)))
 		# 监测分身数量变化, 通知外观主题 Tab 刷新
 		_check_pet_count_change()
+		# 注册面板矩形 (供层级管理用)
+		EventBus._active_panel_rects[_PANEL_ID] = { "rect": Rect2(panel.position, Vector2(_panel_w, _panel_h)), "layer": layer }
+
+func _input(event: InputEvent) -> void:
+	if _is_open and event is InputEventMouseButton and event.pressed:
+		var pos: Vector2 = event.position
+		if Rect2(panel.position, Vector2(_panel_w, _panel_h)).has_point(pos):
+			# 如果我在底层, 检查点击位置是否被更高层面板覆盖
+			if layer < -1:
+				for pid in EventBus._active_panel_rects:
+					if pid != _PANEL_ID:
+						var info = EventBus._active_panel_rects[pid]
+						if info.layer > layer and info.rect.has_point(pos):
+							return  # 被更高层面板覆盖, 跳过
+			_bring_to_front()
 
 # ═══════════════════════════════════════════════
 #  UI 构建
@@ -470,6 +486,24 @@ func _animate_tab_btn(idx: int, is_hovered: bool) -> void:
 	, current_font, target_font, duration).set_trans(Tween.TRANS_SINE)
 
 # ═══════════════════════════════════════════════
+#  面板层级 (点击置顶)
+# ═══════════════════════════════════════════════
+
+const _PANEL_ID := "profile"
+
+func _bring_to_front() -> void:
+	if layer != -1:
+		EventBus.panel_focus_requested.emit(_PANEL_ID)
+
+func _on_panel_focus(panel_id: String) -> void:
+	if not _is_open:
+		return
+	if panel_id == _PANEL_ID:
+		layer = -1   # 置顶
+	else:
+		layer = -2   # 降到后面
+
+# ═══════════════════════════════════════════════
 #  面板开关
 # ═══════════════════════════════════════════════
 
@@ -481,6 +515,7 @@ func _on_toggle() -> void:
 
 func _open_panel() -> void:
 	_is_open = true
+	EventBus.panel_focus_requested.emit(_PANEL_ID)
 	_refresh_data()
 	_update_pet_count_cache()
 	var vp = get_viewport().get_visible_rect().size
@@ -502,9 +537,10 @@ func _close_panel() -> void:
 	_is_open = false
 	_dragging = false
 	_destroy_confine_walls()
+	EventBus._active_panel_rects.erase(_PANEL_ID)
 	var pet = _get_pet()
 	if pet:
-		pet.overlay_rect = Rect2()
+		pet.remove_overlay_rect("profile")
 	# 通知终端配置 Tab 收起全息屏预览
 	if _tab_contents.size() > 7 and is_instance_valid(_tab_contents[7]):
 		var config_tab = _tab_contents[7]

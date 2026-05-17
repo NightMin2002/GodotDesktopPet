@@ -81,14 +81,12 @@ func _collect_hit_regions() -> void:
 		circles.append(pet_pos.y)
 		circles.append(pet_r)
 		
-		# 全局气泡覆盖层: 矩形
-		if p.overlay_rect.size != Vector2.ZERO:
-			var ov = p.overlay_rect
+		# 覆盖层矩形 (多面板独立注册)
+		for ov in p.get_all_overlay_rects():
 			rects.append(ov.position.x)
 			rects.append(ov.position.y)
 			rects.append(ov.size.x)
 			rects.append(ov.size.y)
-		
 		# 本地定向气泡堆栈: 每个气泡独立矩形
 		if p.has_method("get_local_bubble_rects"):
 			for br in p.get_local_bubble_rects():
@@ -235,14 +233,12 @@ func _update_hit_regions_fallback() -> void:
 				rects.append(_q(sr * 2.0))
 				rects.append(_q(sr * 2.0))
 		
-		# 全局气泡
-		if p.overlay_rect.size != Vector2.ZERO:
-			var ov = p.overlay_rect
+		# 覆盖层矩形 (多面板独立注册)
+		for ov in p.get_all_overlay_rects():
 			rects.append(_q(ov.position.x))
 			rects.append(_q(ov.position.y))
 			rects.append(_q(ov.size.x))
 			rects.append(_q(ov.size.y))
-		
 		if p.has_method("get_local_bubble_rects"):
 			for br in p.get_local_bubble_rects():
 				rects.append(_q(br.position.x))

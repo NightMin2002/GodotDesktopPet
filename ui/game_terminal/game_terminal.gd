@@ -60,6 +60,7 @@ func _ready() -> void:
 	_build_ui()
 	EventBus.show_game_terminal.connect(_on_toggle)
 	EventBus.ui_theme_changed.connect(_on_ui_theme_changed)
+	EventBus.panel_focus_requested.connect(_on_panel_focus)
 
 func _calc_panel_size() -> void:
 	var vp = get_viewport().get_visible_rect().size
@@ -85,13 +86,28 @@ func _process(delta: float) -> void:
 			_sync_confine_walls()
 		var pet = _get_pet()
 		if pet:
-			pet.overlay_rect = Rect2(panel.position, Vector2(_panel_w, _panel_h))
+			pet.set_overlay_rect("game_terminal", Rect2(panel.position, Vector2(_panel_w, _panel_h)))
 		# HUD 数据轮询 (PLAYING 状态下每帧从游戏拉取)
 		if _state == TerminalState.PLAYING and _active_game:
 			_update_hud()
+		# 注册面板矩形 (供层级管理用)
+		EventBus._active_panel_rects[_PANEL_ID] = { "rect": Rect2(panel.position, Vector2(_panel_w, _panel_h)), "layer": layer }
 	else:
 		# ── 兜底自检: 面板已关闭但残留未清理 ──
 		_sanity_check()
+
+func _input(event: InputEvent) -> void:
+	if _is_open and event is InputEventMouseButton and event.pressed:
+		var pos: Vector2 = event.position
+		if Rect2(panel.position, Vector2(_panel_w, _panel_h)).has_point(pos):
+			# 如果我在底层, 检查点击位置是否被更高层面板覆盖
+			if layer < -1:
+				for pid in EventBus._active_panel_rects:
+					if pid != _PANEL_ID:
+						var info = EventBus._active_panel_rects[pid]
+						if info.layer > layer and info.rect.has_point(pos):
+							return  # 被更高层面板覆盖, 跳过
+			_bring_to_front()
 
 # ═══════════════════════════════════════════════
 #  UI 构建
@@ -870,6 +886,24 @@ func _build_footer_bar() -> PanelContainer:
 	return bar
 
 # ═══════════════════════════════════════════════
+#  面板层级 (点击置顶)
+# ═══════════════════════════════════════════════
+
+const _PANEL_ID := "game_terminal"
+
+func _bring_to_front() -> void:
+	if layer != -1:
+		EventBus.panel_focus_requested.emit(_PANEL_ID)
+
+func _on_panel_focus(panel_id: String) -> void:
+	if not _is_open:
+		return
+	if panel_id == _PANEL_ID:
+		layer = -1   # 置顶
+	else:
+		layer = -2   # 降到后面
+
+# ═══════════════════════════════════════════════
 #  面板开关
 # ═══════════════════════════════════════════════
 
@@ -881,6 +915,7 @@ func _on_toggle() -> void:
 
 func _open_panel() -> void:
 	_is_open = true
+	EventBus.panel_focus_requested.emit(_PANEL_ID)
 	_state = TerminalState.LOBBY
 	_update_status_display()
 	_update_hud_mode()
@@ -909,6 +944,7 @@ func _close_panel() -> void:
 	_is_open = false
 	_state = TerminalState.CLOSED
 	_dragging = false
+	EventBus._active_panel_rects.erase(_PANEL_ID)
 	_force_full_cleanup()
 	panel.pivot_offset = panel.size / 2.0
 	var tween = create_tween().set_parallel(true)
@@ -1399,7 +1435,7 @@ func _force_full_cleanup() -> void:
 	# DWM 穿透矩形
 	var pet = _get_pet()
 	if pet:
-		pet.overlay_rect = Rect2()
+		pet.remove_overlay_rect("game_terminal")
 	# 拖拽
 	_dragging = false
 
@@ -1423,6 +1459,6 @@ func _sanity_check() -> void:
 		_auto_play = false
 		_auto_visible = false
 		issues.append("auto_play_flag")
-	# 注意: overlay_rect 不在此检查, 可能是其他面板 (装置终端) 设置的
+	# 注意: overlay_rects 由各面板独立管理 (key 注册/注销), 无需在此清理
 	if not issues.is_empty():
 		print("[GameTerminal] 兜底自检修复: ", ", ".join(issues))

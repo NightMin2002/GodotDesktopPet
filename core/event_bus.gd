@@ -28,6 +28,7 @@ signal show_pet_profile_reminder                      # 打开装置终端 + 切
 signal todo_count_changed(pending: int, total: int)   # 待办数量变化 (供宠物主动行为用)
 signal trigger_todo_prompt                            # 调试: 强制触发待办主动提醒
 signal trigger_input_report                           # 调试: 强制生成键鼠输入报告 (写入机体记录)
+signal panel_focus_requested(panel_id: String)          # 面板置顶请求 (点击面板→置顶, 其他面板降级)
 signal trigger_window_report                          # 调试: 强制生成窗口活动报告 (写入机体记录)
 
 # ── 窗口交互模式 ──
@@ -60,3 +61,6 @@ signal close_game_requested  # 游戏面板请求关闭 (由 GameManager 监听)
 
 ## UI 主题色 Hue (全局可读，默认 0.537 ≈ 当前青色)
 var ui_hue: float = 0.537
+
+## 已打开面板的矩形追踪 (面板层级管理用, panel_id -> { "rect": Rect2, "layer": int })
+var _active_panel_rects: Dictionary = {}
