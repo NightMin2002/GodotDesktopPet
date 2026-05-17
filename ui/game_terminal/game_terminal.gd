@@ -32,8 +32,7 @@ var _drag_offset: Vector2 = Vector2.ZERO
 var _is_open: bool = false
 var _state: int = TerminalState.CLOSED
 
-var _frame_drawer: Control
-var _time_passed: float = 0.0
+var _frame_drawer: Control  # GameTerminalFrame 实例
 
 # ── HUD ──
 var _hud_hbox: HBoxContainer        # HUD 内部容器
@@ -85,11 +84,8 @@ func _clamp_pos(pos: Vector2) -> Vector2:
 #  主循环
 # ═══════════════════════════════════════════════
 
-func _process(delta: float) -> void:
-	if panel and _is_open:
-		_time_passed += delta
-		if is_instance_valid(_frame_drawer):
-			_frame_drawer.queue_redraw()
+func _process(_delta: float) -> void:
+	if _is_open:
 		if _confine_walls.size() > 0:
 			_sync_confine_walls()
 		var pet = _get_pet()
@@ -151,11 +147,11 @@ func _build_ui() -> void:
 	_panel_inner.mouse_filter = Control.MOUSE_FILTER_PASS
 	_panel_viewport.add_child(_panel_inner)
 
-	# ── 自定义边框绘制层 ──
-	_frame_drawer = Control.new()
+	# ── 自定义边框绘制层 (独立渲染器) ──
+	var FrameScript = load("res://ui/game_terminal/game_terminal_frame.gd")
+	_frame_drawer = FrameScript.new()
 	_frame_drawer.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_frame_drawer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_frame_drawer.draw.connect(_on_frame_draw)
 	_panel_inner.add_child(_frame_drawer)
 
 	# ── 外边距容器 ──
@@ -1010,99 +1006,7 @@ func _destroy_confine_walls() -> void:
 			wall.queue_free()
 	_confine_walls.clear()
 
-# ═══════════════════════════════════════════════
-#  自定义战术终端边框渲染
-# ═══════════════════════════════════════════════
-
-func _on_frame_draw() -> void:
-	if not _frame_drawer: return
-	var hue = EventBus.ui_hue
-	var w = _frame_drawer.size.x
-	var h = _frame_drawer.size.y
-
-	# 1. 对称八角切角多边形 (四角全切)
-	var c_l = 24.0  # 切角段尺寸
-	var pts = PackedVector2Array()
-	pts.append(Vector2(c_l, 0))           # TL 结束
-	pts.append(Vector2(w - c_l, 0))       # TR 开始
-	pts.append(Vector2(w, c_l))           # TR 结束
-	pts.append(Vector2(w, h - c_l))       # BR 开始
-	pts.append(Vector2(w - c_l, h))       # BR 结束
-	pts.append(Vector2(c_l, h))           # BL 开始
-	pts.append(Vector2(0, h - c_l))       # BL 结束
-	pts.append(Vector2(0, c_l))           # TL 开始
-	pts.append(Vector2(c_l, 0))           # 闭合
-
-	# 2. 深色磨砂背景
-	var bg_c = Color(0.025, 0.04, 0.08, 0.96)
-	_frame_drawer.draw_polygon(pts, PackedColorArray([bg_c]))
-
-	# 3. 主边界线
-	var border_c = Color.from_hsv(hue, 0.45, 0.65, 0.4)
-	_frame_drawer.draw_polyline(pts, border_c, 1.2, true)
-
-	# 4. 四角切角加持 (脉冲呼吸)
-	var pulse = (sin(_time_passed * 3.0) * 0.5 + 0.5) * 0.5 + 0.5  # 0.5 ~ 1.0
-	var corner_c = Color.from_hsv(hue, 0.6, 0.9, 0.7 * pulse)
-	var corner_lw = 2.5
-	# TL 切角
-	_frame_drawer.draw_line(pts[7], pts[0], corner_c, corner_lw, true)
-	# TR 切角
-	_frame_drawer.draw_line(pts[1], pts[2], corner_c, corner_lw, true)
-	# BR 切角
-	_frame_drawer.draw_line(pts[3], pts[4], corner_c, corner_lw, true)
-	# BL 切角
-	_frame_drawer.draw_line(pts[5], pts[6], corner_c, corner_lw, true)
-
-	# 5. 靶向准星 (四角外侧十字线标记)
-	var aim_c = Color.from_hsv(hue, 0.5, 0.85, 0.5 * pulse)
-	var aim_len = 10.0
-	var aim_gap = 4.0
-	# TL 准星
-	var tl = Vector2(0, 0)
-	_frame_drawer.draw_line(tl + Vector2(-aim_gap, c_l * 0.5), tl + Vector2(-aim_gap - aim_len, c_l * 0.5), aim_c, 1.0)
-	_frame_drawer.draw_line(tl + Vector2(c_l * 0.5, -aim_gap), tl + Vector2(c_l * 0.5, -aim_gap - aim_len), aim_c, 1.0)
-	# TR 准星
-	var tr = Vector2(w, 0)
-	_frame_drawer.draw_line(tr + Vector2(aim_gap, c_l * 0.5), tr + Vector2(aim_gap + aim_len, c_l * 0.5), aim_c, 1.0)
-	_frame_drawer.draw_line(tr + Vector2(-c_l * 0.5, -aim_gap), tr + Vector2(-c_l * 0.5, -aim_gap - aim_len), aim_c, 1.0)
-	# BR 准星
-	var br = Vector2(w, h)
-	_frame_drawer.draw_line(br + Vector2(aim_gap, -c_l * 0.5), br + Vector2(aim_gap + aim_len, -c_l * 0.5), aim_c, 1.0)
-	_frame_drawer.draw_line(br + Vector2(-c_l * 0.5, aim_gap), br + Vector2(-c_l * 0.5, aim_gap + aim_len), aim_c, 1.0)
-	# BL 准星
-	var bl = Vector2(0, h)
-	_frame_drawer.draw_line(bl + Vector2(-aim_gap, -c_l * 0.5), bl + Vector2(-aim_gap - aim_len, -c_l * 0.5), aim_c, 1.0)
-	_frame_drawer.draw_line(bl + Vector2(c_l * 0.5, aim_gap), bl + Vector2(c_l * 0.5, aim_gap + aim_len), aim_c, 1.0)
-
-	# 6. 水平扫描线 (从上到下循环扫过)
-	var scan_period = 4.0  # 扫描周期 (秒)
-	var scan_t = fmod(_time_passed, scan_period) / scan_period  # 0~1
-	var scan_y = lerpf(0, h, scan_t)
-	var scan_alpha = 1.0 - absf(scan_t - 0.5) * 2.0  # 中部最亮，两端淡出
-	var scan_c = Color.from_hsv(hue, 0.4, 0.95, 0.12 * scan_alpha)
-	var scan_glow = Color.from_hsv(hue, 0.5, 0.95, 0.04 * scan_alpha)
-	# 泛光 (宽)
-	_frame_drawer.draw_line(Vector2(0, scan_y), Vector2(w, scan_y), scan_glow, 12.0)
-	# 核心 (细)
-	_frame_drawer.draw_line(Vector2(0, scan_y), Vector2(w, scan_y), scan_c, 1.5)
-
-	# 7. 底部居中刻度线
-	var tick_c = Color.from_hsv(hue, 0.4, 0.7, 0.25)
-	var cx = w * 0.5
-	for i in range(-20, 21):
-		var tx = cx + i * 10.0
-		var ty_len = 3.0 if i % 5 != 0 else 6.0
-		if tx > c_l + 4 and tx < w - c_l - 4:
-			_frame_drawer.draw_line(Vector2(tx, h), Vector2(tx, h - ty_len), tick_c, 1.0)
-
-	# 8. 左侧居中刻度线
-	var cy = h * 0.5
-	for i in range(-12, 13):
-		var ty = cy + i * 10.0
-		var tx_len = 3.0 if i % 5 != 0 else 6.0
-		if ty > c_l + 4 and ty < h - c_l - 4:
-			_frame_drawer.draw_line(Vector2(0, ty), Vector2(tx_len, ty), tick_c, 1.0)
+# (边框渲染已提取到 game_terminal_frame.gd)
 
 # ═══════════════════════════════════════════════
 #  游戏生命周期
