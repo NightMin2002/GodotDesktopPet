@@ -36,6 +36,10 @@ const GAP_LERP_SPEED := 5.0  # 平滑过渡速度
 var _texture_provider: Callable = Callable()  # 返回 Texture2D 的回调
 var _game_locked: bool = false                # GAME 模式是否锁定宠物 (游戏终端使用)
 
+# ── 中间缩放视口 (游戏模式用: GPU 预缩小以避免极端下采样模糊) ──
+var _mini_vp: SubViewport = null
+var _mini_rect: TextureRect = null
+
 # ── 模块化渲染器 (字典注册 + 懒加载) ──
 # 新增模式只需: 1) enum 加值  2) 注册表加一行  3) 写渲染器文件
 const _MODE_REGISTRY := {
@@ -129,6 +133,7 @@ func hide() -> void:
 			_deploying = false
 			_texture_provider = Callable()
 			_game_locked = false
+			_cleanup_mini_vp()
 			_unlock_pet()
 			_remove_close_btn()
 		else:
@@ -137,6 +142,7 @@ func hide() -> void:
 			mode = Mode.OFF
 			_deploy_progress = 0.0
 			_texture_provider = Callable()
+			_cleanup_mini_vp()
 			_deploying = false
 			_retracting = false
 		return
@@ -294,8 +300,15 @@ func render() -> void:
 
 	# 动态间距: 根据当前模式自适应平滑调整
 	var gap = _current_gap if _current_gap > 0.01 else pet.PET_RADIUS * GAP_TERMINAL
-	var holo_w: float = pet.PET_RADIUS * 2.0
-	var holo_h: float = pet.PET_RADIUS * 2.5
+	var holo_w: float
+	var holo_h: float
+	if mode == Mode.GAME:
+		# 游戏模式: 匹配宠物体型 + 4:3 宽高比
+		holo_w = pet.PET_RADIUS * 2.5
+		holo_h = pet.PET_RADIUS * 1.9
+	else:
+		holo_w = pet.PET_RADIUS * 2.0
+		holo_h = pet.PET_RADIUS * 2.5
 
 	# 展开动画: 从宠物体表横向展开
 	var anim_w = holo_w * _deploy_progress
@@ -316,12 +329,12 @@ func render() -> void:
 	# 梯形透视: 靠近宠物的边上下收缩，远离的边保持原高
 	var half_w = anim_w / 2.0
 	var half_h = anim_h / 2.0
-	var shrink = 0.15  # 近端收缩比例 (15%)
+	var shrink = 0 # 近端收缩比例 (15%)
 	var near_half_h = half_h * (1.0 - shrink)  # 近端半高 (较短)
 	var far_half_h = half_h                     # 远端半高 (原高)
 
 	# 微后仰: 顶部向远离宠物方向偏移，模拟屏幕微倾
-	var tilt = side * anim_w * 0.16
+	var tilt = side * anim_w * 0
 
 	# 梯形 4 个顶点 (左上→右上→右下→左下)
 	var pts: PackedVector2Array
@@ -356,8 +369,14 @@ func get_screen_rect() -> Rect2:
 	if not visible:
 		return Rect2()
 	var gap_val = _current_gap if _current_gap > 0.01 else pet.PET_RADIUS * GAP_TERMINAL
-	var holo_w: float = pet.PET_RADIUS * 2.0
-	var holo_h: float = pet.PET_RADIUS * 2.5
+	var holo_w: float
+	var holo_h: float
+	if mode == Mode.GAME:
+		holo_w = pet.PET_RADIUS * 2.5
+		holo_h = pet.PET_RADIUS * 1.9
+	else:
+		holo_w = pet.PET_RADIUS * 2.0
+		holo_h = pet.PET_RADIUS * 2.5
 	var cx = side * (gap_val + holo_w * 0.5)
 	var cy = 0.0
 	# 转到屏幕坐标
@@ -514,16 +533,52 @@ func _on_close_pressed() -> void:
 # 内容渲染 (私有)
 # ══════════════════════════════════════
 
-## 游戏模式: 纹理映射到梯形
+## 游戏模式: 通过中间缩放视口映射到梯形
 func _render_game_content(pts: PackedVector2Array, _hue: float) -> void:
 	var viewport_tex: Texture2D = null
 	if _texture_provider.is_valid():
 		viewport_tex = _texture_provider.call()
+	var display_tex = _get_mini_texture(viewport_tex)
 	var uvs = PackedVector2Array([
 		Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)
 	])
-	if viewport_tex:
-		pet.draw_polygon(pts, [Color(1, 1, 1, 0.75)], uvs, viewport_tex)
+	if display_tex:
+		pet.draw_polygon(pts, [Color(1, 1, 1, 0.75)], uvs, display_tex)
+
+## 中间缩放视口: GPU 线性过滤预缩小到接近显示尺寸, 避免 draw_polygon 的极端下采样模糊
+func _get_mini_texture(source_tex: Texture2D) -> Texture2D:
+	if not source_tex:
+		return null
+	var src_w = source_tex.get_width()
+	var src_h = source_tex.get_height()
+	if src_w <= 0:
+		return null
+	# 目标: 显示尺寸的 ~3x (质量/性能折中)
+	var mini_w := 240
+	var mini_h := int(float(mini_w) * float(src_h) / float(src_w))
+	if not is_instance_valid(_mini_vp):
+		_mini_vp = SubViewport.new()
+		_mini_vp.transparent_bg = true
+		_mini_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		_mini_vp.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
+		_mini_vp.gui_disable_input = true
+		_mini_rect = TextureRect.new()
+		_mini_rect.stretch_mode = TextureRect.STRETCH_SCALE
+		_mini_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_mini_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_mini_vp.add_child(_mini_rect)
+		pet.add_child(_mini_vp)
+	_mini_vp.size = Vector2i(mini_w, mini_h)
+	_mini_rect.size = Vector2(mini_w, mini_h)
+	_mini_rect.texture = source_tex
+	return _mini_vp.get_texture()
+
+## 清理中间缩放视口
+func _cleanup_mini_vp() -> void:
+	if is_instance_valid(_mini_vp):
+		_mini_vp.queue_free()
+	_mini_vp = null
+	_mini_rect = null
 
 # ══════════════════════════════════════
 # 渲染器懒加载 (注册表驱动)
@@ -580,5 +635,6 @@ func _map_uv(pts: PackedVector2Array, u: float, v: float) -> Vector2:
 
 ## 清理当前活跃模式的所有资源 (踏板/按钮/解锁)
 func _cleanup_active_mode() -> void:
+	_cleanup_mini_vp()
 	_unlock_pet()
 	_remove_close_btn()
