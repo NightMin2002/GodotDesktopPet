@@ -40,9 +40,9 @@ func _ready() -> void:
 
 func _calc_sizes() -> void:
 	var vp := get_viewport().get_visible_rect().size
-	_panel_w = clampf(vp.x * 0.82, 1000, 1600)
+	_panel_w = clampf(vp.x * 0.88, 1100, 1800)
 	_panel_h = clampf(vp.y * 0.82, 580, 900)
-	var scale := minf(_panel_w / 1300.0, _panel_h / 680.0)
+	var scale := minf(_panel_w / 1500.0, _panel_h / 680.0)
 	_key_w = 50.0 * scale
 	_key_h = 46.0 * scale
 	_key_gap = 4.0 * scale
@@ -54,6 +54,10 @@ func _process(delta: float) -> void:
 		_time_passed += delta
 		if is_instance_valid(_frame_drawer):
 			_frame_drawer.queue_redraw()
+		# 精确区域穿透 (不阻塞面板外的桌面交互)
+		var pet = _get_pet()
+		if pet and is_instance_valid(_panel):
+			pet.set_overlay_rect("heatmap", Rect2(_panel.position, Vector2(_panel_w, _panel_h)))
 
 func _build_ui() -> void:
 	_panel = PanelContainer.new()
@@ -221,7 +225,6 @@ func set_data(key_data: Dictionary, mouse_data: Dictionary) -> void:
 
 func open_panel() -> void:
 	_is_open = true
-	EventBus.context_menu_toggled.emit(true)
 	var vp := get_viewport().get_visible_rect().size
 	_panel.position = Vector2((vp.x - _panel_w) * 0.5, (vp.y - _panel_h) * 0.5)
 	_panel.pivot_offset = Vector2(_panel_w * 0.5, _panel_h * 0.5)
@@ -234,7 +237,9 @@ func open_panel() -> void:
 
 func close_panel() -> void:
 	_is_open = false
-	EventBus.context_menu_toggled.emit(false)
+	var pet = _get_pet()
+	if pet:
+		pet.remove_overlay_rect("heatmap")
 	_panel.pivot_offset = _panel.size / 2.0
 	var tween := create_tween().set_parallel(true)
 	tween.tween_property(_panel, "modulate:a", 0.0, 0.1)
@@ -386,7 +391,98 @@ func _build_layout() -> void:
 		_canvas.add_child(kn)
 		_key_nodes.append(kn)
 	
-	var mouse_ox := nav_ox + 4 * (_key_w + _key_gap) + 40
+	# ── 小键盘区 (Numpad) ──
+	var num_ox := nav_ox + 3.5 * (_key_w + _key_gap) + 10
+	var num_label_oy := nav_label_oy
+	_add_label("NUMPAD // 数值输入", num_ox, num_label_oy, Color.from_hsv(EventBus.ui_hue, 0.25, 0.55, 0.40))
+	var num_oy := num_label_oy + 16
+	
+	# 小键盘布局: 5行 x 4列
+	# Row 0: NumLock  Num/  Num*  Num-
+	# Row 1: Num7     Num8  Num9  Num+ (2行高)
+	# Row 2: Num4     Num5  Num6
+	# Row 3: Num1     Num2  Num3  NumEnter (2行高)
+	# Row 4: Num0 (2列宽)   Num.
+	
+	var nk_w := _key_w * 0.9
+	var nk_h := _key_h * 0.9
+	var nk_gap := _key_gap
+	
+	# Row 0
+	var num_row0 := [["NLk", "NumLock"], ["/", "Num/"], ["*", "Num*"], ["-", "Num-"]]
+	for i in range(num_row0.size()):
+		var kn = CyberKey.new()
+		kn._init_key(num_row0[i][0], num_row0[i][1])
+		kn.position = Vector2(num_ox + i * (nk_w + nk_gap), num_oy)
+		kn.size = Vector2(nk_w, nk_h)
+		_canvas.add_child(kn)
+		_key_nodes.append(kn)
+	num_oy += nk_h + nk_gap
+	
+	# Row 1: 7, 8, 9 + Num+ (spans 2 rows)
+	var num_row1 := [["7", "Num7"], ["8", "Num8"], ["9", "Num9"]]
+	for i in range(num_row1.size()):
+		var kn = CyberKey.new()
+		kn._init_key(num_row1[i][0], num_row1[i][1])
+		kn.position = Vector2(num_ox + i * (nk_w + nk_gap), num_oy)
+		kn.size = Vector2(nk_w, nk_h)
+		_canvas.add_child(kn)
+		_key_nodes.append(kn)
+	# Num+ (2行高)
+	var plus_kn = CyberKey.new()
+	plus_kn._init_key("+", "Num+")
+	plus_kn.position = Vector2(num_ox + 3 * (nk_w + nk_gap), num_oy)
+	plus_kn.size = Vector2(nk_w, nk_h * 2 + nk_gap)
+	_canvas.add_child(plus_kn)
+	_key_nodes.append(plus_kn)
+	num_oy += nk_h + nk_gap
+	
+	# Row 2: 4, 5, 6
+	var num_row2 := [["4", "Num4"], ["5", "Num5"], ["6", "Num6"]]
+	for i in range(num_row2.size()):
+		var kn = CyberKey.new()
+		kn._init_key(num_row2[i][0], num_row2[i][1])
+		kn.position = Vector2(num_ox + i * (nk_w + nk_gap), num_oy)
+		kn.size = Vector2(nk_w, nk_h)
+		_canvas.add_child(kn)
+		_key_nodes.append(kn)
+	num_oy += nk_h + nk_gap
+	
+	# Row 3: 1, 2, 3 + NumEnter (2行高)
+	var num_row3 := [["1", "Num1"], ["2", "Num2"], ["3", "Num3"]]
+	for i in range(num_row3.size()):
+		var kn = CyberKey.new()
+		kn._init_key(num_row3[i][0], num_row3[i][1])
+		kn.position = Vector2(num_ox + i * (nk_w + nk_gap), num_oy)
+		kn.size = Vector2(nk_w, nk_h)
+		_canvas.add_child(kn)
+		_key_nodes.append(kn)
+	# NumEnter (2行高) — data_key 用 "Enter" 因为 C# 里 Numpad Enter 也是 0x0D
+	var enter_kn = CyberKey.new()
+	enter_kn._init_key("Ent", "Enter")
+	enter_kn.position = Vector2(num_ox + 3 * (nk_w + nk_gap), num_oy)
+	enter_kn.size = Vector2(nk_w, nk_h * 2 + nk_gap)
+	_canvas.add_child(enter_kn)
+	_key_nodes.append(enter_kn)
+	num_oy += nk_h + nk_gap
+	
+	# Row 4: Num0 (2列宽) + Num.
+	var zero_kn = CyberKey.new()
+	zero_kn._init_key("0", "Num0")
+	zero_kn.position = Vector2(num_ox, num_oy)
+	zero_kn.size = Vector2(nk_w * 2 + nk_gap, nk_h)
+	_canvas.add_child(zero_kn)
+	_key_nodes.append(zero_kn)
+	
+	var dot_kn = CyberKey.new()
+	dot_kn._init_key(".", "Num.")
+	dot_kn.position = Vector2(num_ox + 2 * (nk_w + nk_gap), num_oy)
+	dot_kn.size = Vector2(nk_w, nk_h)
+	_canvas.add_child(dot_kn)
+	_key_nodes.append(dot_kn)
+	
+	# ── 鼠标 (IO_DEVICE) ── 放在小键盘右侧
+	var mouse_ox := num_ox + 4.5 * (nk_w + nk_gap) + 10
 	var mouse_oy := _header_h
 	_add_label("IO_DEVICE // 定位装置", mouse_ox, mouse_oy, Color.from_hsv(EventBus.ui_hue, 0.25, 0.55, 0.40))
 	mouse_oy += 16
@@ -481,3 +577,9 @@ func _on_draw() -> void:
 	if _delta_mode:
 		note = "-- 基准偏差模式: 偏蓝 = 低于均值, 偏橙 = 高于均值。不关我事。 --"
 	_canvas.draw_string(font, Vector2(ox, oy + 44), note, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.40, 0.45, 0.55, 0.40))
+
+func _get_pet() -> Node:
+	var main_node = get_tree().root.get_node_or_null("Main")
+	if main_node and "pet_instance" in main_node:
+		return main_node.pet_instance
+	return null
