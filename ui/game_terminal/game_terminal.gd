@@ -48,6 +48,13 @@ var _auto_timer: Timer = null         # AI 操作定时器
 var _auto_blocker: Control = null     # 观战模式输入拦截层
 const AUTO_PLAY_INTERVAL := 0.4       # AI 操作间隔 (秒)
 
+# ── 大厅预览 (主从布局) ──
+var _lobby_selected: int = 0          # 当前选中的游戏索引
+var _lobby_preview_icon: Control = null  # 右侧预览图标实例
+var _lobby_preview_box: VBoxContainer = null  # 右侧预览容器
+var _lobby_list_items: Array[PanelContainer] = []  # 左侧列表项引用
+var _lobby_list_styles: Array[StyleBoxFlat] = []   # 列表项样式引用
+
 # ── 围栏 ──
 var _confine_walls: Array[StaticBody2D] = []
 
@@ -456,111 +463,252 @@ func _build_content_area() -> PanelContainer:
 func _build_lobby_placeholder() -> Control:
 	var outer = MarginContainer.new()
 	outer.set_anchors_preset(Control.PRESET_FULL_RECT)
-	outer.add_theme_constant_override("margin_left", 8)
-	outer.add_theme_constant_override("margin_right", 8)
+	outer.add_theme_constant_override("margin_left", 6)
+	outer.add_theme_constant_override("margin_right", 6)
 	outer.add_theme_constant_override("margin_top", 4)
 	outer.add_theme_constant_override("margin_bottom", 4)
 	outer.mouse_filter = Control.MOUSE_FILTER_PASS
 
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 10)
-	vbox.mouse_filter = Control.MOUSE_FILTER_PASS
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var root = VBoxContainer.new()
+	root.add_theme_constant_override("separation", 6)
+	root.mouse_filter = Control.MOUSE_FILTER_PASS
+	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	root.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	# ── 终端标识行 ──
 	var header = HBoxContainer.new()
 	header.add_theme_constant_override("separation", 8)
 	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
 	var line_l = HSeparator.new()
 	line_l.add_theme_stylebox_override("separator", GameTerminalStyles.separator_style())
 	line_l.add_theme_constant_override("separation", 1)
 	line_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	line_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	header.add_child(line_l)
-
 	var logo_label = Label.new()
 	logo_label.text = "GAME TERMINAL"
 	logo_label.add_theme_font_size_override("font_size", 17)
 	logo_label.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.3, 0.65, 0.3))
 	logo_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	header.add_child(logo_label)
-
 	var line_r = HSeparator.new()
 	line_r.add_theme_stylebox_override("separator", GameTerminalStyles.separator_style())
 	line_r.add_theme_constant_override("separation", 1)
 	line_r.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	line_r.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	header.add_child(line_r)
+	root.add_child(header)
 
-	vbox.add_child(header)
+	# ── 主从布局 (左列表 + 右预览) ──
+	var split = HBoxContainer.new()
+	split.add_theme_constant_override("separation", 10)
+	split.mouse_filter = Control.MOUSE_FILTER_PASS
+	split.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
-	# ── 可滚动卡片区域 ──
-	var scroll = ScrollContainer.new()
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	# 隐藏滚动条 (保持终端美感，鼠标滚轮可滚动)
-	scroll.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
-	var vscroll = scroll.get_v_scroll_bar()
-	if vscroll:
-		vscroll.add_theme_stylebox_override("scroll", StyleBoxEmpty.new())
-		vscroll.add_theme_stylebox_override("grabber", StyleBoxEmpty.new())
-		vscroll.add_theme_stylebox_override("grabber_highlight", StyleBoxEmpty.new())
-		vscroll.add_theme_stylebox_override("grabber_pressed", StyleBoxEmpty.new())
-		vscroll.custom_minimum_size.x = 0
+	# ──── 左侧: 游戏列表 ────
+	var left_panel = VBoxContainer.new()
+	left_panel.add_theme_constant_override("separation", 0)
+	left_panel.mouse_filter = Control.MOUSE_FILTER_PASS
+	left_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left_panel.size_flags_stretch_ratio = 0.38
 
-	# ── 游戏卡片网格 (动态列数) ──
-	var grid = GridContainer.new()
-	var count = _game_registry.size()
-	grid.columns = 3 if count >= 5 else (2 if count >= 2 else 1)
-	grid.add_theme_constant_override("h_separation", 10)
-	grid.add_theme_constant_override("v_separation", 10)
-	grid.mouse_filter = Control.MOUSE_FILTER_PASS
-	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var list_scroll = ScrollContainer.new()
+	list_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	list_scroll.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	var ls_bar = list_scroll.get_v_scroll_bar()
+	if ls_bar:
+		ls_bar.add_theme_stylebox_override("scroll", StyleBoxEmpty.new())
+		ls_bar.add_theme_stylebox_override("grabber", StyleBoxEmpty.new())
+		ls_bar.add_theme_stylebox_override("grabber_highlight", StyleBoxEmpty.new())
+		ls_bar.add_theme_stylebox_override("grabber_pressed", StyleBoxEmpty.new())
+		ls_bar.custom_minimum_size.x = 0
 
-	for entry in _game_registry:
-		var card = _build_game_card(entry, func(): _launch_terminal_game(entry.id))
-		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		card.size_flags_vertical = Control.SIZE_FILL
-		grid.add_child(card)
+	var list_vbox = VBoxContainer.new()
+	list_vbox.add_theme_constant_override("separation", 2)
+	list_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
-	scroll.add_child(grid)
-	vbox.add_child(scroll)
+	_lobby_list_items.clear()
+	_lobby_list_styles.clear()
+	for i in range(_game_registry.size()):
+		var item = _build_list_item(i)
+		list_vbox.add_child(item)
 
-	# ── 底部状态提示 ──
-	var hint = Label.new()
-	hint.text = "选择目标开始推演 // %d 项可用" % _game_registry.size()
-	hint.add_theme_font_size_override("font_size", 14)
-	hint.add_theme_color_override("font_color", Color(0.30, 0.40, 0.50, 0.3))
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(hint)
+	list_scroll.add_child(list_vbox)
+	left_panel.add_child(list_scroll)
 
-	outer.add_child(vbox)
+	# 左侧底部: 游戏数量
+	var count_lbl = Label.new()
+	count_lbl.text = "%d 项可用" % _game_registry.size()
+	count_lbl.add_theme_font_size_override("font_size", 12)
+	count_lbl.add_theme_color_override("font_color", Color(0.3, 0.4, 0.5, 0.3))
+	count_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	left_panel.add_child(count_lbl)
+
+	split.add_child(left_panel)
+
+	# ──── 中间: 竖分隔线 ────
+	var divider = VSeparator.new()
+	divider.add_theme_stylebox_override("separator", GameTerminalStyles.separator_style())
+	divider.add_theme_constant_override("separation", 1)
+	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	split.add_child(divider)
+
+	# ──── 右侧: 预览面板 ────
+	var right_panel = PanelContainer.new()
+	var rp_style = StyleBoxFlat.new()
+	rp_style.bg_color = Color(0.025, 0.035, 0.06, 0.4)
+	rp_style.set_border_width_all(1)
+	rp_style.border_color = Color.from_hsv(EventBus.ui_hue, 0.25, 0.4, 0.12)
+	rp_style.set_corner_radius_all(0)
+	rp_style.content_margin_left = 16; rp_style.content_margin_right = 16
+	rp_style.content_margin_top = 12; rp_style.content_margin_bottom = 12
+	right_panel.add_theme_stylebox_override("panel", rp_style)
+	right_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_panel.size_flags_stretch_ratio = 0.62
+	right_panel.mouse_filter = Control.MOUSE_FILTER_PASS
+
+	_lobby_preview_box = VBoxContainer.new()
+	_lobby_preview_box.add_theme_constant_override("separation", 8)
+	_lobby_preview_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_lobby_preview_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right_panel.add_child(_lobby_preview_box)
+
+	GameTerminalStyles.add_tech_brackets(right_panel, 5.0, 0.0)
+	split.add_child(right_panel)
+
+	root.add_child(split)
+	outer.add_child(root)
+
+	# 初始选中第一个
+	if _game_registry.size() > 0:
+		_lobby_select_game(0)
+
 	return outer
 
-## 构建大厅游戏卡片 (网格版)
-func _build_game_card(entry: Dictionary, on_press: Callable) -> PanelContainer:
-	var card = PanelContainer.new()
-	var cs = StyleBoxFlat.new()
-	cs.bg_color = Color(0.04, 0.06, 0.11, 0.55)
-	cs.set_border_width_all(1)
-	cs.border_color = Color.from_hsv(EventBus.ui_hue, 0.25, 0.45, 0.2)
-	cs.set_corner_radius_all(0)
-	cs.content_margin_left = 14; cs.content_margin_right = 14
-	cs.content_margin_top = 14; cs.content_margin_bottom = 14
-	card.add_theme_stylebox_override("panel", cs)
-	card.mouse_filter = Control.MOUSE_FILTER_PASS
+## 构建左侧列表条目
+func _build_list_item(index: int) -> PanelContainer:
+	var entry = _game_registry[index]
+	var item = PanelContainer.new()
+	var s = StyleBoxFlat.new()
+	s.bg_color = Color(0.03, 0.04, 0.08, 0.3)
+	s.set_border_width_all(0)
+	s.border_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.7, 0.0)
+	s.set_corner_radius_all(0)
+	s.content_margin_left = 10; s.content_margin_right = 10
+	s.content_margin_top = 7; s.content_margin_bottom = 7
+	item.add_theme_stylebox_override("panel", s)
+	item.mouse_filter = Control.MOUSE_FILTER_STOP
+	item.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 
-	var vb = VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 6)
-	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	card.add_child(vb)
+	_lobby_list_items.append(item)
+	_lobby_list_styles.append(s)
 
-	# ── 图标区 (优先从游戏文件夹加载 icon.gd) ──
+	var hb = HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 8)
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# 选中指示符
+	var indicator = Label.new()
+	indicator.text = ">"
+	indicator.name = "indicator"
+	indicator.add_theme_font_size_override("font_size", 16)
+	indicator.add_theme_color_override("font_color", GameTerminalStyles.accent())
+	indicator.visible = false
+	indicator.custom_minimum_size.x = 12
+	hb.add_child(indicator)
+
+	var info = VBoxContainer.new()
+	info.add_theme_constant_override("separation", 1)
+	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var name_lbl = Label.new()
+	name_lbl.text = entry.name
+	name_lbl.add_theme_font_size_override("font_size", 16)
+	name_lbl.add_theme_color_override("font_color", GameTerminalStyles.bright())
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info.add_child(name_lbl)
+
+	var desc_lbl = Label.new()
+	desc_lbl.text = entry.desc
+	desc_lbl.add_theme_font_size_override("font_size", 12)
+	desc_lbl.add_theme_color_override("font_color", GameTerminalStyles.dim())
+	desc_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info.add_child(desc_lbl)
+
+	hb.add_child(info)
+	item.add_child(hb)
+
+	# hover → 选中此游戏
+	var idx = index
+	item.mouse_entered.connect(func(): _lobby_select_game(idx))
+	# 点击 → 启动游戏
+	item.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			var pet = _get_pet()
+			if pet and pet.is_mouse_on_pet():
+				return
+			_launch_terminal_game(entry.id)
+	)
+
+	return item
+
+## 切换大厅选中的游戏 (更新左侧高亮 + 右侧预览)
+func _lobby_select_game(index: int) -> void:
+	if index < 0 or index >= _game_registry.size():
+		return
+	_lobby_selected = index
+	var hue = EventBus.ui_hue
+
+	# 更新左侧列表高亮
+	for i in range(_lobby_list_items.size()):
+		var item = _lobby_list_items[i]
+		var s = _lobby_list_styles[i]
+		if not is_instance_valid(item):
+			continue
+		var indicator = item.get_node_or_null("indicator")
+		if not indicator:
+			# indicator 在 HBox 里
+			var hb = item.get_child(0)
+			if hb and hb.get_child_count() > 0:
+				indicator = hb.get_child(0)
+		if i == index:
+			s.bg_color = Color(0.06, 0.08, 0.16, 0.6)
+			s.set_border_width_all(1)
+			s.border_color = Color.from_hsv(hue, 0.5, 0.8, 0.4)
+			if indicator and indicator is Label:
+				indicator.visible = true
+		else:
+			s.bg_color = Color(0.03, 0.04, 0.08, 0.3)
+			s.set_border_width_all(0)
+			s.border_color = Color.from_hsv(hue, 0.4, 0.7, 0.0)
+			if indicator and indicator is Label:
+				indicator.visible = false
+
+	# 重建右侧预览
+	_rebuild_preview(index)
+
+## 重建右侧预览面板内容
+func _rebuild_preview(index: int) -> void:
+	if not is_instance_valid(_lobby_preview_box):
+		return
+	var entry = _game_registry[index]
+	var hue = EventBus.ui_hue
+
+	# 清空旧内容
+	for c in _lobby_preview_box.get_children():
+		c.queue_free()
+	_lobby_preview_icon = null
+
+	# ── 图标预览区 ──
+	var icon_holder = CenterContainer.new()
+	icon_holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	icon_holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	icon_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
 	var icon_area: Control
 	var icon_path = entry.get("folder", "") + "icon.gd" if entry.has("folder") else ""
 	if icon_path != "" and ResourceLoader.exists(icon_path):
@@ -569,101 +717,99 @@ func _build_game_card(entry: Dictionary, on_press: Callable) -> PanelContainer:
 	else:
 		icon_area = _LobbyIcon.new()
 		icon_area.game_id = entry.id
-	icon_area.custom_minimum_size = Vector2(0, 100)
-	icon_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	icon_area._hovered = true  # 预览区始终显示高亮状态
+	icon_area.custom_minimum_size = Vector2(220, 180)
 	icon_area.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vb.add_child(icon_area)
+	_lobby_preview_icon = icon_area
+	icon_holder.add_child(icon_area)
+	_lobby_preview_box.add_child(icon_holder)
 
-	# ── 标题 ──
-	var t = Label.new()
-	t.text = entry.name
-	t.add_theme_font_size_override("font_size", 21)
-	t.add_theme_color_override("font_color", GameTerminalStyles.bright())
-	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vb.add_child(t)
+	# ── 分隔线 ──
+	var sep = HSeparator.new()
+	sep.add_theme_stylebox_override("separator", GameTerminalStyles.separator_style())
+	sep.add_theme_constant_override("separation", 1)
+	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_lobby_preview_box.add_child(sep)
+
+	# ── 游戏名称 ──
+	var title = Label.new()
+	title.text = entry.name
+	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_color_override("font_color", GameTerminalStyles.bright())
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_lobby_preview_box.add_child(title)
 
 	# ── 描述 ──
-	var d = Label.new()
-	d.text = entry.desc
-	d.add_theme_font_size_override("font_size", 15)
-	d.add_theme_color_override("font_color", GameTerminalStyles.dim())
-	d.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	d.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vb.add_child(d)
+	var desc = Label.new()
+	desc.text = entry.desc
+	desc.add_theme_font_size_override("font_size", 14)
+	desc.add_theme_color_override("font_color", GameTerminalStyles.dim())
+	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_lobby_preview_box.add_child(desc)
 
-	# ── 战绩角标 ──
+	# ── 战绩 ──
 	var record = _get_record_summary(entry.id)
 	if record != "":
 		var rec_lbl = Label.new()
-		rec_lbl.text = record.replace("// ", "")
-		rec_lbl.add_theme_font_size_override("font_size", 14)
-		rec_lbl.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.3, 0.7, 0.35))
+		rec_lbl.text = record
+		rec_lbl.add_theme_font_size_override("font_size", 13)
+		rec_lbl.add_theme_color_override("font_color", Color.from_hsv(hue, 0.3, 0.7, 0.4))
 		rec_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		rec_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		vb.add_child(rec_lbl)
+		_lobby_preview_box.add_child(rec_lbl)
 
-	# ── 委托推演按钮 (支持自玩的游戏) ──
+	# ── 操作按钮行 ──
+	var btn_row = HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 10)
+	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	btn_row.mouse_filter = Control.MOUSE_FILTER_PASS
+
+	# 启动推演
+	var gid = entry.id
+	var launch_btn = _make_lobby_btn("[ 启动推演 ]", true)
+	launch_btn.pressed.connect(func(): _launch_terminal_game(gid))
+	btn_row.add_child(launch_btn)
+
+	# 委托推演 (仅支持自玩的游戏)
 	if entry.get("auto", false):
-		var auto_btn = Button.new()
-		auto_btn.text = "[ 委托推演 ]"
-		auto_btn.add_theme_font_size_override("font_size", 14)
-		auto_btn.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.25, 0.6, 0.45))
-		auto_btn.add_theme_color_override("font_hover_color", Color.from_hsv(EventBus.ui_hue, 0.45, 0.85, 0.8))
-		auto_btn.add_theme_color_override("font_pressed_color", Color.from_hsv(EventBus.ui_hue, 0.5, 1.0, 0.9))
-		# 极简样式: 透明背景
-		var ab_normal = StyleBoxFlat.new()
-		ab_normal.bg_color = Color(0.04, 0.06, 0.12, 0.3)
-		ab_normal.set_border_width_all(1)
-		ab_normal.border_color = Color.from_hsv(EventBus.ui_hue, 0.2, 0.4, 0.15)
-		ab_normal.set_corner_radius_all(0)
-		ab_normal.content_margin_left = 6; ab_normal.content_margin_right = 6
-		ab_normal.content_margin_top = 2; ab_normal.content_margin_bottom = 2
-		auto_btn.add_theme_stylebox_override("normal", ab_normal)
-		var ab_hover = ab_normal.duplicate()
-		ab_hover.bg_color = Color(0.06, 0.08, 0.16, 0.5)
-		ab_hover.border_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.7, 0.3)
-		auto_btn.add_theme_stylebox_override("hover", ab_hover)
-		auto_btn.add_theme_stylebox_override("pressed", ab_hover)
-		auto_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-		auto_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-		auto_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		# 居中
-		var btn_center = CenterContainer.new()
-		btn_center.mouse_filter = Control.MOUSE_FILTER_PASS
-		btn_center.add_child(auto_btn)
-		vb.add_child(btn_center)
-		# 点击: 启动可见自玩
-		var gid = entry.id
+		var auto_btn = _make_lobby_btn("[ 委托推演 ]", false)
 		auto_btn.pressed.connect(func(): _launch_visible_auto_game(gid))
+		btn_row.add_child(auto_btn)
 
-	# ── hover 效果 ──
-	card.mouse_entered.connect(func():
-		cs.bg_color = Color(0.07, 0.09, 0.16, 0.65)
-		cs.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.45)
-		if is_instance_valid(icon_area):
-			icon_area._hovered = true
-			icon_area.queue_redraw()
-	)
-	card.mouse_exited.connect(func():
-		cs.bg_color = Color(0.04, 0.06, 0.11, 0.55)
-		cs.border_color = Color.from_hsv(EventBus.ui_hue, 0.25, 0.45, 0.2)
-		if is_instance_valid(icon_area):
-			icon_area._hovered = false
-			icon_area.queue_redraw()
-	)
+	_lobby_preview_box.add_child(btn_row)
 
-	# ── 点击 ──
-	card.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-			var pet = _get_pet()
-			if pet and pet.is_mouse_on_pet():
-				return
-			on_press.call()
-	)
-
-	GameTerminalStyles.add_tech_brackets(card, 4.0, 0.0)
-	return card
+## 大厅按钮工厂
+func _make_lobby_btn(text: String, primary: bool) -> Button:
+	var btn = Button.new()
+	btn.text = text
+	btn.add_theme_font_size_override("font_size", 15)
+	var hue = EventBus.ui_hue
+	if primary:
+		btn.add_theme_color_override("font_color", Color.from_hsv(hue, 0.45, 0.9, 0.8))
+		btn.add_theme_color_override("font_hover_color", Color.from_hsv(hue, 0.55, 1.0, 1.0))
+	else:
+		btn.add_theme_color_override("font_color", Color.from_hsv(hue, 0.25, 0.6, 0.5))
+		btn.add_theme_color_override("font_hover_color", Color.from_hsv(hue, 0.45, 0.85, 0.8))
+	btn.add_theme_color_override("font_pressed_color", Color.from_hsv(hue, 0.5, 1.0, 0.9))
+	var ns = StyleBoxFlat.new()
+	ns.bg_color = Color(0.04, 0.06, 0.12, 0.4)
+	ns.set_border_width_all(1)
+	ns.border_color = Color.from_hsv(hue, 0.3, 0.5, 0.2)
+	ns.set_corner_radius_all(0)
+	ns.content_margin_left = 12; ns.content_margin_right = 12
+	ns.content_margin_top = 4; ns.content_margin_bottom = 4
+	btn.add_theme_stylebox_override("normal", ns)
+	var hs = ns.duplicate()
+	hs.bg_color = Color(0.06, 0.08, 0.16, 0.6)
+	hs.border_color = Color.from_hsv(hue, 0.5, 0.8, 0.4)
+	btn.add_theme_stylebox_override("hover", hs)
+	btn.add_theme_stylebox_override("pressed", hs)
+	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	return btn
 
 ## 可见自玩: 面板保持打开, AI 在终端内自动操作 (观战模式)
 func _launch_visible_auto_game(game_id: String) -> void:
