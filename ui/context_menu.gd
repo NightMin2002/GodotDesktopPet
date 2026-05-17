@@ -246,7 +246,6 @@ func _refresh_submenu_states() -> void:
 	_submenu.refresh_toggle("shockwave", SettingsManager.get_bool("shockwave", true), "撞击冲击波 [●]", "撞击冲击波 [○]")
 	_submenu.refresh_toggle("trail_fx", SettingsManager.get_bool("trail_fx", true), "粒子尾流 [●]", "粒子尾流 [○]")
 	_submenu.refresh_toggle("arc_fx", SettingsManager.get_bool("arc_fx", true), "静电弧 [●]", "静电弧 [○]")
-	_submenu.refresh_toggle("stroll", SettingsManager.get_bool("stroll", true), "自主巡航 [●]", "自主巡航 [○]")
 	_submenu.refresh_toggle("eye_track", SettingsManager.get_bool("eye_track", true), "指针跟踪 [●]", "指针跟踪 [○]")
 	_submenu.refresh_toggle("anti_gravity", SettingsManager.get_bool("anti_gravity", false), "反重力 [●]", "反重力 [○]")
 	_submenu.refresh_toggle("free_roam", SettingsManager.get_bool("free_roam", false), "空间跳跃 [●]", "空间跳跃 [○]")

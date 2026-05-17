@@ -6,7 +6,6 @@ extends RefCounted
 var ctx  # ContextMenu 引用
 
 # ── 按钮引用 ──
-var _entertain_btn: Button
 var _auto_play_btn: Button
 var _game_container: VBoxContainer
 
@@ -18,10 +17,6 @@ func build() -> void:
 	var vbox = VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 6)
 	panel.add_child(vbox)
-
-	_entertain_btn = ctx._make_menu_btn("娱乐 [+]", Color(0.3, 1.0, 0.7, 1))
-	vbox.add_child(_entertain_btn)
-	ctx._bind_l3_trigger(_entertain_btn, "entertain", "sec_play")
 
 	_auto_play_btn = ctx._make_menu_btn("自娱指令 [+]", Color(0.3, 1.0, 0.7, 1))
 	vbox.add_child(_auto_play_btn)
@@ -36,11 +31,6 @@ func build() -> void:
 	panel.mouse_exited.connect(func(): ctx._submenu.on_panel_exit())
 	ctx.add_child(panel)
 	ctx._submenu.panels["sec_play"] = panel
-
-	# L3: 娱乐
-	ctx._submenu.create_toggle("entertain", [
-		{"id": "stroll", "on": "自主巡航 [●]", "off": "自主巡航 [○]", "key": "stroll", "default": true},
-	], 3, "sec_play")
 
 	# L3: 自娱指令
 	_build_auto_play_submenu()

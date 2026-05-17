@@ -11,7 +11,7 @@ var current_state: PetState
 var current_state_name: String = ""
 var speed: float = 200.0            # 移动速度基数
 var move_style: int = 0              # 步态风格: 0=蹦跳为主, 1=滚动为主, 2=混合平衡
-var stroll_enabled: bool = true      # 自主巡航特殊事件开关 (独立于步态)
+var stroll_enabled: bool = false     # 自主巡航 (已弃用, 保留变量避免状态机报错)
 var free_roam_enabled: bool = false   # 空间跳跃开关 (透明踏板攀升)
 var anti_gravity: bool = false       # 反重力模式
 var gravity_sign: float = 1.0        # 重力方向符号 (1.0=正常, -1.0=反转)
@@ -189,7 +189,7 @@ func _ready() -> void:
 	pet_effects.arc_enabled = SettingsManager.get_bool("arc_fx", true)
 	pet_effects.effect_color_mode = SettingsManager.get_int("effect_color_mode", 0)
 	move_style = SettingsManager.get_int("move_style", 0)
-	stroll_enabled = SettingsManager.get_bool("stroll", true)
+	stroll_enabled = SettingsManager.get_bool("stroll", false)
 	free_roam_enabled = SettingsManager.get_bool("free_roam", false)
 	var ag = SettingsManager.get_bool("anti_gravity", false)
 	_set_anti_gravity(ag)
