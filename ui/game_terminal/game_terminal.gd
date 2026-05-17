@@ -664,177 +664,24 @@ func _launch_visible_auto_game(game_id: String) -> void:
 # ═══════════════════════════════════════════════
 
 class _LobbyIcon extends Control:
+	## 兜底图标: 只有问号 (所有游戏都应该有自己的 icon.gd)
 	var game_id: String = ""
 	var _hovered: bool = false
 	var _time: float = 0.0
-	# ── Snake demo ──
-	var _s_pos: float = 0.0
-	var _s_len: int = 4
-	var _s_food: float = -1.0
-	var _s_growing: bool = true
 
 	func _process(delta: float) -> void:
 		_time += delta
-		if game_id == "snake":
-			_s_pos += delta * 80.0
 		queue_redraw()
 
 	func _draw() -> void:
 		var hue = EventBus.ui_hue
-		var w = size.x
-		var h = size.y
-		var cx = w * 0.5
-		var cy = h * 0.5
-		var alpha_base = 0.55 if _hovered else 0.35
+		var cx = size.x * 0.5
+		var cy = size.y * 0.5
 		var alpha_hi = 0.9 if _hovered else 0.6
-		var line_c = Color.from_hsv(hue, 0.4, 0.75, alpha_base)
 		var accent_c = Color.from_hsv(hue, 0.55, 0.9, alpha_hi)
-		var t = _time
-
-		match game_id:
-			"2048":
-				# ── 2048: 2x2 矩阵 + 高级数字 + 发光顶块 ──
-				var gs = minf(w, h) * 0.65
-				var cs = gs * 0.45
-				var gap = gs * 0.06
-				var ox = cx - gs * 0.5
-				var oy = cy - gs * 0.5
-				var tiles = [2, 64, 256, 2048]
-				var colors = [
-					Color(0.14, 0.20, 0.32, 0.55),
-					Color(0.68, 0.22, 0.14, 0.7),
-					Color(0.68, 0.58, 0.12, 0.75),
-					Color(0.82, 0.78, 0.22, 0.85),
-				]
-				var font = ThemeDB.fallback_font
-				for row in range(2):
-					for col in range(2):
-						var idx = row * 2 + col
-						var rx = ox + col * (cs + gap)
-						var ry = oy + row * (cs + gap)
-						# 2048 块发光动画
-						if tiles[idx] == 2048:
-							var glow = sin(t * 2.0) * 0.1 + 0.15
-							draw_rect(Rect2(rx - 2, ry - 2, cs + 4, cs + 4), Color(0.9, 0.85, 0.3, glow))
-						draw_rect(Rect2(rx, ry, cs, cs), colors[idx])
-						var txt = str(tiles[idx])
-						var fs = 16 if tiles[idx] < 100 else (13 if tiles[idx] < 1000 else 11)
-						var ts = font.get_string_size(txt, HORIZONTAL_ALIGNMENT_CENTER, -1, fs)
-						draw_string(font, Vector2(rx + (cs - ts.x) * 0.5, ry + cs * 0.5 + ts.y * 0.35), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.85, 0.9, 0.95, alpha_hi))
-				# 外框
-				var total = cs * 2 + gap
-				draw_rect(Rect2(ox - 1, oy - 1, total + 2, total + 2), Color.from_hsv(hue, 0.3, 0.55, 0.15), false, 1.0)
-
-			"snake":
-				# ── 贪吃蛇: 沿卡片边缘巡航 + 交替伸缩 ──
-				var margin = 3.0
-				var pw = w - margin * 2
-				var ph = h - margin * 2
-				var perim = 2.0 * (pw + ph)
-				var seg_gap = 14.0
-				# 食物初始化
-				if _s_food < 0:
-					_s_food = fmod(_s_pos + perim * 0.4, perim)
-				# 吃食检测
-				var head_p = fmod(_s_pos, perim)
-				var d2f = absf(head_p - _s_food)
-				d2f = minf(d2f, perim - d2f)
-				if d2f < seg_gap * 0.8:
-					if _s_growing:
-						_s_len += 1
-						if _s_len >= 18:
-							_s_growing = false
-					else:
-						_s_len -= 1
-						if _s_len <= 3:
-							_s_growing = true
-					_s_food = fmod(head_p + perim * randf_range(0.2, 0.45), perim)
-				# 绘制蛇身
-				var s = 12.0
-				for i in range(_s_len):
-					var sp = fmod(_s_pos - float(i) * seg_gap + perim * 999.0, perim)
-					var pt = _perim_pt(sp, margin, pw, ph, perim)
-					var a_val = lerpf(0.15, alpha_hi, 1.0 - float(i) / float(_s_len))
-					if i == 0:
-						# 蛇头泛光
-						draw_rect(Rect2(pt.x - s * 0.5 - 1.5, pt.y - s * 0.5 - 1.5, s + 3, s + 3), Color.from_hsv(hue, 0.35, 0.8, 0.12))
-						draw_rect(Rect2(pt.x - s * 0.5, pt.y - s * 0.5, s, s), accent_c)
-					else:
-						draw_rect(Rect2(pt.x - s * 0.5, pt.y - s * 0.5, s, s), Color.from_hsv(hue, 0.4, 0.7, a_val))
-				# 食物脉冲
-				var fpt = _perim_pt(_s_food, margin, pw, ph, perim)
-				var pulse = sin(t * 4.0) * 0.2 + 0.8
-				draw_circle(fpt, 4.5 * pulse, Color(0.9, 0.55, 0.3, 0.12), true, -1.0, true)
-				draw_circle(fpt, 3.5 * pulse, Color(0.9, 0.55, 0.3, alpha_hi), true, -1.0, true)
-
-			"tetris":
-				# ── 俄罗斯方块: 底部堆叠 + 下落 T 块 + ghost ──
-				var gs = minf(w, h) * 0.75
-				var cols_n = 6
-				var rows_n = 8
-				var cs = gs / maxf(cols_n, rows_n)
-				var ox = cx - cols_n * cs * 0.5
-				var oy = cy - rows_n * cs * 0.5 + cs
-				# 预设底部堆叠 (3 行残留)
-				var stack = [
-					[1,1,0,0,1,1],
-					[1,1,1,0,1,1],
-					[1,1,1,1,1,1],  # 满行 (闪烁)
-				]
-				var stack_colors = ["S", "J", "L", "T", "Z", "I"]
-				for row_i in range(stack.size()):
-					var ry = rows_n - stack.size() + row_i
-					for col_i in range(cols_n):
-						if stack[row_i][col_i] == 1:
-							var bx = ox + col_i * cs
-							var by = oy + ry * cs
-							var is_full_row = (row_i == stack.size() - 1)
-							var flash = sin(t * 4.0) * 0.2 + 0.8 if is_full_row else 1.0
-							var pc = Color.from_hsv(fmod(hue + col_i * 0.08, 1.0), 0.35, 0.6 * flash, alpha_base * flash)
-							draw_rect(Rect2(bx, by, cs - 1, cs - 1), pc)
-				# 下落 T 块 (脉冲)
-				var t_cells = [Vector2i(1,0), Vector2i(0,1), Vector2i(1,1), Vector2i(2,1)]
-				var fall_y = fmod(t * 0.6, 1.0) * (rows_n - 4)  # 循环下落
-				var t_pulse = sin(t * 3.0) * 0.1 + 0.9
-				for c in t_cells:
-					var bx = ox + (c.x + 1) * cs
-					var by = oy + (c.y + fall_y) * cs
-					# ghost (底部投影)
-					var ghost_y = oy + (c.y + rows_n - 4) * cs
-					draw_rect(Rect2(bx, ghost_y, cs - 1, cs - 1), Color.from_hsv(hue, 0.3, 0.6, 0.08))
-					# 活动块
-					var ac = Color.from_hsv(fmod(hue + 0.16, 1.0), 0.55, 0.9 * t_pulse, alpha_hi)
-					draw_rect(Rect2(bx, by, cs - 1, cs - 1), ac)
-				# 网格点
-				var grid_c = Color.from_hsv(hue, 0.2, 0.5, 0.08)
-				for gx in range(1, cols_n):
-					for gy in range(1, rows_n):
-						draw_circle(Vector2(ox + gx * cs, oy + gy * cs), 0.6, grid_c, true, -1.0, true)
-				# 外框
-				draw_rect(Rect2(ox, oy, cols_n * cs, rows_n * cs), Color.from_hsv(hue, 0.4, 0.6, 0.15), false, 1.0)
-
-			_:
-				# 默认: 问号
-				var font = ThemeDB.fallback_font
-				draw_string(font, Vector2(cx - 8, cy + 10), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 28, accent_c)
-
-		# 底部薄分隔线
-		draw_line(Vector2(8, h - 1), Vector2(w - 8, h - 1), Color.from_hsv(hue, 0.3, 0.5, 0.1), 1.0)
-
-	## 周长坐标 → 2D 坐标 (矩形路径: 右→下→左→上)
-	func _perim_pt(p: float, m: float, pw: float, ph: float, perim: float) -> Vector2:
-		var pp = fmod(p, perim)
-		if pp < 0: pp += perim
-		if pp < pw:
-			return Vector2(m + pp, m)
-		pp -= pw
-		if pp < ph:
-			return Vector2(m + pw, m + pp)
-		pp -= ph
-		if pp < pw:
-			return Vector2(m + pw - pp, m + ph)
-		pp -= pw
-		return Vector2(m, m + ph - pp)
+		var font = ThemeDB.fallback_font
+		draw_string(font, Vector2(cx - 8, cy + 10), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 28, accent_c)
+		draw_line(Vector2(8, size.y - 1), Vector2(size.x - 8, size.y - 1), Color.from_hsv(hue, 0.3, 0.5, 0.1), 1.0)
 
 # ═══════════════════════════════════════════════
 #  底部操作栏
@@ -1106,55 +953,36 @@ func _on_frame_draw() -> void:
 #  游戏生命周期
 # ═══════════════════════════════════════════════
 
-# ── 游戏注册表 (自动扫描 games/ 子目录 + 兼容旧版平铺文件) ──
+# ── 游戏注册表 (自动扫描 games/ 子目录) ──
 var _game_registry: Array[Dictionary] = []
-
-## 旧版平铺文件兼容 (未迁移到 games/ 文件夹的游戏)
-const _LEGACY_GAMES := [
-	{ "id": "2048", "name": "矩阵叠加", "desc": "4x4 数值融合", "auto": true,
-	  "script": preload("res://ui/game_terminal/terminal_2048.gd") },
-	{ "id": "snake", "name": "路径规划", "desc": "15x15 线性延伸", "auto": true,
-	  "script": preload("res://ui/game_terminal/terminal_snake.gd") },
-	{ "id": "tetris", "name": "结构堆叠", "desc": "10x20 方块序列", "auto": true,
-	  "script": preload("res://ui/game_terminal/terminal_tetris.gd") },
-]
 
 func _scan_games() -> void:
 	_game_registry.clear()
-	var scanned_ids: Dictionary = {}  # 防重复
-
-	# ── Phase 1: 扫描 games/ 子目录 ──
 	var base_path = "res://ui/game_terminal/games/"
 	var dir = DirAccess.open(base_path)
-	if dir:
-		dir.list_dir_begin()
-		var folder = dir.get_next()
-		while folder != "":
-			if dir.current_is_dir() and not folder.begins_with("."):
-				var game_path = base_path + folder + "/game.gd"
-				if ResourceLoader.exists(game_path):
-					var script = load(game_path)
-					var tmp = script.new()
-					var gid = tmp.get_game_id() if tmp.has_method("get_game_id") else folder
-					var entry := {
-						"id": gid,
-						"name": tmp.get_game_name() if tmp.has_method("get_game_name") else folder,
-						"desc": tmp.get_game_desc() if tmp.has_method("get_game_desc") else "",
-						"auto": tmp.supports_auto_play() if tmp.has_method("supports_auto_play") else false,
-						"script": script,
-						"folder": base_path + folder + "/",
-					}
-					tmp.queue_free()
-					_game_registry.append(entry)
-					scanned_ids[gid] = true
-			folder = dir.get_next()
-		dir.list_dir_end()
-
-	# ── Phase 2: 兼容旧版平铺文件 (跳过已扫描到的) ──
-	for legacy in _LEGACY_GAMES:
-		if legacy.id not in scanned_ids:
-			_game_registry.append(legacy.duplicate())
-
+	if not dir:
+		return
+	dir.list_dir_begin()
+	var folder = dir.get_next()
+	while folder != "":
+		if dir.current_is_dir() and not folder.begins_with("."):
+			var game_path = base_path + folder + "/game.gd"
+			if ResourceLoader.exists(game_path):
+				var script = load(game_path)
+				var tmp = script.new()
+				var gid = tmp.get_game_id() if tmp.has_method("get_game_id") else folder
+				var entry := {
+					"id": gid,
+					"name": tmp.get_game_name() if tmp.has_method("get_game_name") else folder,
+					"desc": tmp.get_game_desc() if tmp.has_method("get_game_desc") else "",
+					"auto": tmp.supports_auto_play() if tmp.has_method("supports_auto_play") else false,
+					"script": script,
+					"folder": base_path + folder + "/",
+				}
+				tmp.queue_free()
+				_game_registry.append(entry)
+		folder = dir.get_next()
+	dir.list_dir_end()
 	# 按 id 排序保证稳定顺序
 	_game_registry.sort_custom(func(a, b): return a.id < b.id)
 

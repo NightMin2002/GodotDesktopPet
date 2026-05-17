@@ -1,9 +1,11 @@
-# terminal_tetris.gd — 终端原生俄罗斯方块 (结构堆叠)
+# game.gd — 终端俄罗斯方块 (结构堆叠)
 # _draw 自绘 10x20 场地 + 侧栏 (NEXT/HOLD) + SRS 旋转 + 7-bag + 锁定延迟 + 消行动画
-extends Control
+extends TerminalGameBase
 
-signal game_started
-signal game_over(result: int)  # 0=胜 (达到等级上限), 1=负 (溢出)
+func get_game_id() -> String: return "tetris"
+func get_game_name() -> String: return "结构堆叠"
+func get_game_desc() -> String: return "10x20 方块序列"
+func supports_auto_play() -> bool: return true
 
 # ══════════════════════════════════════════════
 #  常量

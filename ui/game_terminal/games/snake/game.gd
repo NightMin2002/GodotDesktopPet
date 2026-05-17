@@ -1,9 +1,11 @@
-# terminal_snake.gd — 终端原生贪吃蛇 (路径规划)
+# game.gd — 终端贪吃蛇 (路径规划)
 # _draw 自绘 + 键盘方向键
-extends Control
+extends TerminalGameBase
 
-signal game_started
-signal game_over(result: int)  # 1=负 (蛇没有胜利条件)
+func get_game_id() -> String: return "snake"
+func get_game_name() -> String: return "路径规划"
+func get_game_desc() -> String: return "15x15 线性延伸"
+func supports_auto_play() -> bool: return true
 
 const COLS := 15
 const ROWS := 15

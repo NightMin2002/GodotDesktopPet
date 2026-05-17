@@ -1,9 +1,11 @@
-# terminal_2048.gd — 终端原生 2048 (矩阵叠加)
+# game.gd — 终端 2048 (矩阵叠加)
 # _draw 自绘 + 键盘方向键滑动
-extends Control
+extends TerminalGameBase
 
-signal game_started
-signal game_over(result: int)  # 0=胜(达到2048), 1=负(无法移动)
+func get_game_id() -> String: return "2048"
+func get_game_name() -> String: return "矩阵叠加"
+func get_game_desc() -> String: return "4x4 数值融合"
+func supports_auto_play() -> bool: return true
 
 const GRID := 4
 const WIN_VAL := 2048
