@@ -29,6 +29,8 @@ func exit() -> void:
 			pet.idle_behaviors.cancel()
 
 func process(delta: float) -> void:
+	# freeze 状态 (叠高高等): 跳过所有逻辑, 位置由外部控制
+	if pet.freeze: return
 	idle_timer += delta
 	
 	# ── 游戏态 / 全息屏活跃: 锁定 idle，不做任何转换/触发 ──
@@ -83,6 +85,7 @@ func process(delta: float) -> void:
 
 func physics_process(delta: float) -> void:
 	if not pet: return
+	if pet.freeze: return
 	
 	# 空间跳跃活跃时由 roam 系统完全接管，跳过所有辅助行为
 	if pet._roam_active:
