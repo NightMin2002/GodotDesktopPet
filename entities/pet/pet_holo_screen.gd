@@ -3,7 +3,7 @@
 # Phase 2: 支持多显示模式 (游戏 / 待机屏保)
 class_name PetHoloScreen extends RefCounted
 
-enum Mode { OFF, GAME, IDLE, LOADING, BATTERY, DONE, MAIL, ERROR, WARNING, QUERY, ALARM, CLEANUP, GLOBE, SYNC, LOCK, DESKTOP }
+enum Mode { OFF, GAME, IDLE, LOADING, BATTERY, DONE, MAIL, ERROR, WARNING, QUERY, ALARM, CLEANUP, GLOBE, SYNC, LOCK, DESKTOP, RECYCLE }
 
 var pet: RigidBody2D  # 由 pet.gd 注入
 
@@ -57,6 +57,7 @@ const _MODE_REGISTRY := {
 	Mode.SYNC:    {"class": "HoloModeSync",    "label": "网络通信"},
 	Mode.LOCK:    {"class": "HoloModeLock",    "label": "终端锁定"},
 	Mode.DESKTOP: {"class": "HoloModeDesktop", "label": "桌面监控"},
+	Mode.RECYCLE: {"class": "HoloModeRecycle", "label": "回收归档"},
 }
 var _renderers: Dictionary = {}  # Mode -> RefCounted 实例缓存
 
@@ -232,6 +233,10 @@ func show_lock(screen_side: float, duration: float = 0.0) -> void:
 ## 显示桌面监控 (实时屏幕捕捉)
 func show_desktop(screen_side: float, duration: float = 0.0) -> void:
 	_show_terminal(Mode.DESKTOP, screen_side, duration)
+
+## 显示回收归档 (文件移入回收站)
+func show_recycle(screen_side: float, duration: float = 0.0) -> void:
+	_show_terminal(Mode.RECYCLE, screen_side, duration)
 
 ## 通用终端模式启动 (注册表驱动)
 func _show_terminal(m: Mode, screen_side: float, duration: float = 0.0) -> void:
@@ -623,6 +628,7 @@ func _resolve_mode_class(cls: String) -> GDScript:
 		"HoloModeSync": HoloModeSync,
 		"HoloModeLock": HoloModeLock,
 		"HoloModeDesktop": HoloModeDesktop,
+		"HoloModeRecycle": HoloModeRecycle,
 	}
 	return map.get(cls, null)
 # ══════════════════════════════════════

@@ -192,7 +192,7 @@ func _do_recycle(file_drop, paths: PackedStringArray) -> void:
 	
 	if fail == 0:
 		pet.show_local_bubble("已移入回收站。可从回收站恢复。")
-		_show_holo(pet, "CLEANUP", 2.5)
+		_show_holo(pet, "RECYCLE", 2.5)
 	else:
 		pet.show_local_bubble("回收失败。%s" % err)
 		_show_holo(pet, "ERROR", 2.0)
@@ -226,19 +226,19 @@ func _do_shred(file_drop, paths: PackedStringArray) -> void:
 		pet.show_local_bubble("粉碎失败。%s" % err)
 		_show_holo(pet, "ERROR", 2.0)
 
-## 全息屏动画 (通用)
+## 全息屏动画 (通用分发)
 func _show_holo(pet: Node2D, mode_name: String, duration: float) -> void:
-	if not pet.holo_screen or not pet.holo_screen.has_method("show_terminal"):
+	var hs = pet.holo_screen
+	if not hs:
 		return
-	var mode_val = pet.holo_screen.Mode.get(mode_name, -1)
-	if mode_val < 0:
-		return
-	pet.holo_screen.show_terminal(mode_val)
-	var tree = pet.get_tree()
-	if tree:
-		await tree.create_timer(duration).timeout
-		if is_instance_valid(pet) and pet.holo_screen.visible:
-			pet.holo_screen.hide_terminal()
+	var side = hs.side  # 复用当前方向，默认 1.0 (右侧)
+	match mode_name:
+		"CLEANUP": hs.show_cleanup(side, duration)
+		"RECYCLE": hs.show_recycle(side, duration)
+		"ERROR": hs.show_error(side, duration)
+		"DONE": hs.show_done(side, duration)
+		"QUERY": hs.show_query(side, duration)
+		"WARNING": hs.show_warning(side, duration)
 
 # ══════════════════════════════════════
 #  按钮工厂
