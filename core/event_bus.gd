@@ -9,9 +9,6 @@ signal drag_ended
 # ── 状态变化 ──
 signal pet_state_changed(old_state: String, new_state: String)
 
-# ── IPC 相关 (预留) ──
-signal ipc_message_received(data: Dictionary)
-signal task_completed(task_name: String)
 
 # ── UI 相关 ──
 signal show_context_menu(target_node: Node2D)
@@ -19,7 +16,6 @@ signal context_menu_toggled(is_open: bool)
 signal setting_toggled(setting_id: String, is_on: bool)
 
 # ── 系统功能 ──
-signal autostart_toggled(is_on: bool)
 signal show_reminder_bubble(message: String)
 signal force_show_bubble(message: String)  # 强制显示: 中断当前气泡+清空队列+立即播放
 signal show_todo_panel                                # 打开/关闭待办事项面板

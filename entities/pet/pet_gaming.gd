@@ -167,10 +167,6 @@ func _remove_close_btn() -> void:
 	_close_btn = null
 
 func _on_close_pressed() -> void:
-	# 走游戏的正规关闭流程 (处理自玩状态/战绩/退场动画)
-	# _close_game() 内部会发射 close_game_requested，由 GameManager 最终清理
-	if game and not game._game_over:
-		game._close_game()
-	else:
-		# 游戏已结束但未清理: 直接通知 GameManager
-		EventBus.close_game_requested.emit()
+	# [待接入] 新游戏系统规划后在此处理关闭流程
+	# 旧接口 (BaseGame._close_game / close_game_requested) 已随 games/ 目录删除
+	pass
