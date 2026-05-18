@@ -629,6 +629,9 @@ func _draw() -> void:
 	# ── 右侧聊天气泡 ──
 	if font and _chat_log.size() > 0:
 		var bubble_y = _grid_origin.y + _grid_px
+		# 重开按钮可见时，气泡起点上移避免重叠
+		if is_instance_valid(_restart_btn) and _restart_btn.visible:
+			bubble_y -= 36.0
 		var fs = 12
 		for i in range(_chat_log.size()):
 			var msg = _chat_log[i]

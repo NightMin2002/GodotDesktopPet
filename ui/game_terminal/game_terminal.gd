@@ -230,7 +230,7 @@ func _build_title_bar() -> Control:
 	_title_label = Label.new()
 	_title_label.text = "游戏终端"
 	_title_label.add_theme_font_size_override("font_size", 24)
-	_title_label.add_theme_color_override("font_color", Color(0.70, 0.80, 0.92, 0.9))
+	_title_label.add_theme_color_override("font_color", GameTerminalStyles.bright())
 	_title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(_title_label)
 
@@ -252,8 +252,8 @@ func _build_title_bar() -> Control:
 	theme_btn.text = "风格: 复古"
 	theme_btn.focus_mode = Control.FOCUS_NONE
 	theme_btn.add_theme_font_size_override("font_size", 13)
-	theme_btn.add_theme_color_override("font_color", Color(0.6, 0.7, 0.8, 0.8))
-	theme_btn.add_theme_color_override("font_hover_color", Color(0.8, 0.9, 1.0, 1.0))
+	theme_btn.add_theme_color_override("font_color", GameTerminalStyles.dim())
+	theme_btn.add_theme_color_override("font_hover_color", GameTerminalStyles.bright())
 	theme_btn.add_theme_stylebox_override("normal", GameTerminalStyles.small_btn_normal())
 	theme_btn.add_theme_stylebox_override("hover", GameTerminalStyles.small_btn_hover())
 	theme_btn.add_theme_stylebox_override("pressed", GameTerminalStyles.small_btn_hover())
@@ -426,7 +426,7 @@ func _build_lobby_placeholder() -> Control:
 	var logo_label = Label.new()
 	logo_label.text = "GAME TERMINAL"
 	logo_label.add_theme_font_size_override("font_size", 17)
-	logo_label.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.3, 0.65, 0.3))
+	logo_label.add_theme_color_override("font_color", GameTerminalStyles.hint_color())
 	logo_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	header.add_child(logo_label)
 	var line_r = HSeparator.new()
@@ -481,7 +481,7 @@ func _build_lobby_placeholder() -> Control:
 	var count_lbl = Label.new()
 	count_lbl.text = "%d 项可用" % _game_registry.size()
 	count_lbl.add_theme_font_size_override("font_size", 12)
-	count_lbl.add_theme_color_override("font_color", Color(0.3, 0.4, 0.5, 0.3))
+	count_lbl.add_theme_color_override("font_color", GameTerminalStyles.hint_color())
 	count_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	left_panel.add_child(count_lbl)
 
@@ -496,14 +496,7 @@ func _build_lobby_placeholder() -> Control:
 
 	# ──── 右侧: 预览面板 ────
 	var right_panel = PanelContainer.new()
-	var rp_style = StyleBoxFlat.new()
-	rp_style.bg_color = Color(0.025, 0.035, 0.06, 0.4)
-	rp_style.set_border_width_all(1)
-	rp_style.border_color = Color.from_hsv(EventBus.ui_hue, 0.25, 0.4, 0.12)
-	rp_style.set_corner_radius_all(0)
-	rp_style.content_margin_left = 16; rp_style.content_margin_right = 16
-	rp_style.content_margin_top = 12; rp_style.content_margin_bottom = 12
-	right_panel.add_theme_stylebox_override("panel", rp_style)
+	right_panel.add_theme_stylebox_override("panel", GameTerminalStyles.preview_panel_bg())
 	right_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right_panel.size_flags_stretch_ratio = 0.62
 	right_panel.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -530,13 +523,7 @@ func _build_lobby_placeholder() -> Control:
 func _build_list_item(index: int) -> PanelContainer:
 	var entry = _game_registry[index]
 	var item = PanelContainer.new()
-	var s = StyleBoxFlat.new()
-	s.bg_color = Color(0.03, 0.04, 0.08, 0.3)
-	s.set_border_width_all(0)
-	s.border_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.7, 0.0)
-	s.set_corner_radius_all(0)
-	s.content_margin_left = 10; s.content_margin_right = 10
-	s.content_margin_top = 7; s.content_margin_bottom = 7
+	var s = GameTerminalStyles.list_item_normal()
 	item.add_theme_stylebox_override("panel", s)
 	item.mouse_filter = Control.MOUSE_FILTER_STOP
 	item.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
@@ -599,32 +586,7 @@ func _lobby_select_game(index: int) -> void:
 	if index < 0 or index >= _game_registry.size():
 		return
 	_lobby_selected = index
-	var hue = EventBus.ui_hue
-
-	# 更新左侧列表高亮
-	for i in range(_lobby_list_items.size()):
-		var item = _lobby_list_items[i]
-		var s = _lobby_list_styles[i]
-		if not is_instance_valid(item):
-			continue
-		var indicator = item.get_node_or_null("indicator")
-		if not indicator:
-			# indicator 在 HBox 里
-			var hb = item.get_child(0)
-			if hb and hb.get_child_count() > 0:
-				indicator = hb.get_child(0)
-		if i == index:
-			s.bg_color = Color(0.06, 0.08, 0.16, 0.6)
-			s.set_border_width_all(1)
-			s.border_color = Color.from_hsv(hue, 0.5, 0.8, 0.4)
-			if indicator and indicator is Label:
-				indicator.visible = true
-		else:
-			s.bg_color = Color(0.03, 0.04, 0.08, 0.3)
-			s.set_border_width_all(0)
-			s.border_color = Color.from_hsv(hue, 0.4, 0.7, 0.0)
-			if indicator and indicator is Label:
-				indicator.visible = false
+	_apply_list_highlight()
 
 	# 重建右侧预览
 	_rebuild_preview(index)
@@ -693,7 +655,7 @@ func _rebuild_preview(index: int) -> void:
 		var rec_lbl = Label.new()
 		rec_lbl.text = record
 		rec_lbl.add_theme_font_size_override("font_size", 13)
-		rec_lbl.add_theme_color_override("font_color", Color.from_hsv(hue, 0.3, 0.7, 0.4))
+		rec_lbl.add_theme_color_override("font_color", GameTerminalStyles.hint_color())
 		rec_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		rec_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_lobby_preview_box.add_child(rec_lbl)
@@ -724,27 +686,16 @@ func _make_lobby_btn(text: String, primary: bool) -> Button:
 	btn.text = text
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.add_theme_font_size_override("font_size", 15)
-	var hue = EventBus.ui_hue
 	if primary:
-		btn.add_theme_color_override("font_color", Color.from_hsv(hue, 0.45, 0.9, 0.8))
-		btn.add_theme_color_override("font_hover_color", Color.from_hsv(hue, 0.55, 1.0, 1.0))
+		btn.add_theme_color_override("font_color", GameTerminalStyles.accent())
+		btn.add_theme_color_override("font_hover_color", GameTerminalStyles.bright())
 	else:
-		btn.add_theme_color_override("font_color", Color.from_hsv(hue, 0.25, 0.6, 0.5))
-		btn.add_theme_color_override("font_hover_color", Color.from_hsv(hue, 0.45, 0.85, 0.8))
-	btn.add_theme_color_override("font_pressed_color", Color.from_hsv(hue, 0.5, 1.0, 0.9))
-	var ns = StyleBoxFlat.new()
-	ns.bg_color = Color(0.04, 0.06, 0.12, 0.4)
-	ns.set_border_width_all(1)
-	ns.border_color = Color.from_hsv(hue, 0.3, 0.5, 0.2)
-	ns.set_corner_radius_all(0)
-	ns.content_margin_left = 12; ns.content_margin_right = 12
-	ns.content_margin_top = 4; ns.content_margin_bottom = 4
-	btn.add_theme_stylebox_override("normal", ns)
-	var hs = ns.duplicate()
-	hs.bg_color = Color(0.06, 0.08, 0.16, 0.6)
-	hs.border_color = Color.from_hsv(hue, 0.5, 0.8, 0.4)
-	btn.add_theme_stylebox_override("hover", hs)
-	btn.add_theme_stylebox_override("pressed", hs)
+		btn.add_theme_color_override("font_color", GameTerminalStyles.dim())
+		btn.add_theme_color_override("font_hover_color", GameTerminalStyles.accent())
+	btn.add_theme_color_override("font_pressed_color", GameTerminalStyles.accent())
+	btn.add_theme_stylebox_override("normal", GameTerminalStyles.lobby_btn_normal())
+	btn.add_theme_stylebox_override("hover", GameTerminalStyles.lobby_btn_hover())
+	btn.add_theme_stylebox_override("pressed", GameTerminalStyles.lobby_btn_hover())
 	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
@@ -1000,7 +951,12 @@ func _scan_games() -> void:
 					"auto": tmp.supports_auto_play() if tmp.has_method("supports_auto_play") else false,
 					"script": script,
 					"folder": base_path + folder + "/",
+					"theme_script": null,  # 游戏专属主题 (可选)
 				}
+				# 探测游戏专属主题
+				var theme_path = base_path + folder + "/theme.gd"
+				if ResourceLoader.exists(theme_path):
+					entry.theme_script = load(theme_path)
 				tmp.queue_free()
 				_game_registry.append(entry)
 		folder = dir.get_next()
@@ -1032,9 +988,14 @@ func _launch_terminal_game(game_id: String) -> void:
 	_active_game_name = entry.name
 	_active_game_id = entry.id
 
-	# 先挂树再 build (build 中可能调用 grab_focus 等需要 in-tree 的操作)
+	# 先挂树再 build (建构 UI 时可能调用 grab_focus 等需要 in-tree 的操作)
 	_lobby_placeholder.visible = false
 	_content_stack.add_child(_active_game)
+
+	# 推入游戏专属主题覆写 (必须在 build 之前，因为 build 中会读取色值)
+	if entry.get("theme_script"):
+		GameTerminalStyles.push_game_override(entry.theme_script.new())
+
 	game.build()
 
 	# 更新终端显示
@@ -1079,6 +1040,8 @@ func _on_game_restarted() -> void:
 func _cleanup_active_game() -> void:
 	# 断开全息投影
 	_deactivate_holo_preview()
+	# 移除游戏专属主题覆写
+	GameTerminalStyles.pop_game_override()
 	if _active_game and is_instance_valid(_active_game):
 		_active_game.queue_free()
 	_active_game = null
@@ -1156,27 +1119,17 @@ func _update_footer_for_game() -> void:
 	var game_hint = GameTerminalStyles.dim_label(mode_hint, 13)
 	_footer_hbox.add_child(game_hint)
 
-## 底栏按钮工厂 (避免重复样式代码)
+## 底栏按钮工厂
 func _make_footer_btn(text: String, on_press: Callable) -> Button:
 	var btn = Button.new()
 	btn.text = text
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.add_theme_font_size_override("font_size", 14)
-	btn.add_theme_color_override("font_color", Color(0.6, 0.5, 0.4, 0.7))
-	btn.add_theme_color_override("font_hover_color", Color(0.9, 0.5, 0.35, 1.0))
-	var bs = StyleBoxFlat.new()
-	bs.bg_color = Color(0.1, 0.08, 0.06, 0.3)
-	bs.set_corner_radius_all(0)
-	bs.set_border_width_all(1)
-	bs.border_color = Color(0.4, 0.3, 0.2, 0.2)
-	bs.content_margin_left = 8; bs.content_margin_right = 8
-	bs.content_margin_top = 2; bs.content_margin_bottom = 2
-	btn.add_theme_stylebox_override("normal", bs)
-	var bh = bs.duplicate()
-	bh.bg_color = Color(0.15, 0.1, 0.08, 0.5)
-	bh.border_color = Color(0.6, 0.35, 0.25, 0.4)
-	btn.add_theme_stylebox_override("hover", bh)
-	btn.add_theme_stylebox_override("pressed", bh)
+	btn.add_theme_color_override("font_color", GameTerminalStyles.footer_btn_color())
+	btn.add_theme_color_override("font_hover_color", GameTerminalStyles.footer_btn_hover_color())
+	btn.add_theme_stylebox_override("normal", GameTerminalStyles.footer_btn_normal())
+	btn.add_theme_stylebox_override("hover", GameTerminalStyles.footer_btn_hover())
+	btn.add_theme_stylebox_override("pressed", GameTerminalStyles.footer_btn_hover())
 	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	btn.mouse_filter = Control.MOUSE_FILTER_PASS
 	btn.gui_input.connect(func(event: InputEvent):
@@ -1218,35 +1171,37 @@ func _reapply_styles() -> void:
 		_content_area.add_theme_stylebox_override("panel", GameTerminalStyles.content_area_bg())
 	if is_instance_valid(_footer_bar):
 		_footer_bar.add_theme_stylebox_override("panel", GameTerminalStyles.status_bar_bg())
-	
+
 	# 刷新左侧大厅列表
-	for i in range(_lobby_list_items.size()):
-		if is_instance_valid(_lobby_list_items[i]):
-			var s = _lobby_list_styles[i]
-			var indicator = _lobby_list_items[i].get_node_or_null("indicator")
-			if not indicator:
-				var hb = _lobby_list_items[i].get_child(0)
-				if hb and hb.get_child_count() > 0:
-					indicator = hb.get_child(0)
-			
-			if _lobby_selected == i:
-				s.bg_color = Color(0.06, 0.08, 0.16, 0.6)
-				s.set_border_width_all(1)
-				s.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.4)
-			else:
-				s.bg_color = Color(0.03, 0.04, 0.08, 0.3)
-				s.set_border_width_all(0)
-				s.border_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.7, 0.0)
-	
+	_apply_list_highlight()
+
 	# 重建当前选中的大厅右侧预览（这样按钮也会重新生成）
 	if _state == TerminalState.LOBBY:
 		_rebuild_preview(_lobby_selected)
-	
+
 	# 重建底栏按钮
 	if _state == TerminalState.PLAYING:
 		_update_footer_for_game()
 	elif _state == TerminalState.LOBBY:
 		_update_footer_for_lobby()
+
+## 列表高亮刷新 (选中/取消 + 主题切换共用)
+func _apply_list_highlight() -> void:
+	for i in range(_lobby_list_items.size()):
+		var item = _lobby_list_items[i]
+		if not is_instance_valid(item):
+			continue
+		var selected = (i == _lobby_selected)
+		var s = GameTerminalStyles.list_item_selected() if selected else GameTerminalStyles.list_item_normal()
+		item.add_theme_stylebox_override("panel", s)
+		_lobby_list_styles[i] = s
+		# indicator 显隐
+		var indicator: Node = null
+		var hb = item.get_child(0) if item.get_child_count() > 0 else null
+		if hb and hb.get_child_count() > 0:
+			indicator = hb.get_child(0)
+		if indicator and indicator is Label:
+			indicator.visible = selected
 
 # ═══════════════════════════════════════════════
 #  委托推演 (观战模式 AI 操作)
