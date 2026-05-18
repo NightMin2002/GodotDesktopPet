@@ -14,6 +14,7 @@ var boundary_size: Vector2  # 实际使用的边界尺寸 (视口坐标系)
 # -- 双端架构 C# 桥接 --
 var win_manager: Node
 var input_monitor: Node  # InputMonitor (C# 键鼠采集)
+var file_ops: Node       # FileOperations (C# 文件操作)
 
 # ── 共享状态 (被子管理器读写) ──
 var window_mode: int = 0  # 0=FREE, 1=CONFINED, 2=REPELLED
@@ -102,6 +103,7 @@ func _ready() -> void:
 	_setup_system_tray()
 	_setup_update_checker()
 	_setup_input_monitor()
+	_setup_file_operations()
 
 # ── 子管理器初始化 ──
 
@@ -462,6 +464,29 @@ func _setup_input_monitor() -> void:
 	if EventBus.has_signal("trigger_window_report"):
 		EventBus.trigger_window_report.connect(_on_trigger_window_report)
 	print("[InputMonitor] 键鼠+窗口采集系统已挂载")
+
+# ── 文件拖放操作桥接 ──
+
+func _setup_file_operations() -> void:
+	if not ResourceLoader.exists("res://interop/FileOperations.cs"):
+		print("[FileOps] C# 脚本不存在, 跳过")
+		return
+	file_ops = load("res://interop/FileOperations.cs").new()
+	add_child(file_ops)
+	print("[FileOps] 文件操作桥接已加载")
+	
+	# 监听文件拖放事件
+	get_window().files_dropped.connect(_on_files_dropped)
+	print("[FileOps] 文件拖放监听已注册")
+
+func _on_files_dropped(paths: PackedStringArray) -> void:
+	if paths.is_empty():
+		return
+	# 只有拖到原体宠物身上才触发
+	if pet_instance and is_instance_valid(pet_instance) and pet_instance.is_mouse_on_pet():
+		if pet_instance.file_drop:
+			pet_instance.file_drop.receive(paths)
+			print("[FileOps] 接收拖放文件: %d 个" % paths.size())
 
 func _on_trigger_input_report() -> void:
 	if not input_monitor or not input_monitor.has_method("GetFullSnapshot"):

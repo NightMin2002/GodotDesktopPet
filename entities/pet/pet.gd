@@ -106,6 +106,9 @@ var gaming: PetGaming
 # ── 全息屏控制器 (委托给 PetHoloScreen) ──
 var holo_screen: PetHoloScreen
 
+# ── 文件拖放交互系统 ──
+var file_drop  # RefCounted (file_drop.gd)
+
 func _ready() -> void:
 	# 初始化调色板 (必须在所有子系统之前)
 	if palette == null:
@@ -181,6 +184,12 @@ func _ready() -> void:
 	# 初始化统一 HUD 面板 (时钟+WiFi+未来组件)
 	hud_panel = HudPanel.new()
 	hud_panel.init(self)
+	
+	# 初始化文件拖放交互系统
+	var FileDrop = preload("res://entities/pet/file_drop/file_drop.gd")
+	file_drop = FileDrop.new()
+	file_drop.pet = self
+	file_drop.init()
 	
 	# 从持久化存储恢复设置 (不依赖信号时序)
 	eye_behavior.tracking_enabled = SettingsManager.get_bool("eye_track", true)
@@ -487,6 +496,10 @@ func _process(delta: float) -> void:
 	idle_activities.update(delta)
 	_roam_update(delta)
 	var squash_changed = squash.update(delta)
+	
+	# 文件投喂菜单: 跟随宠物位置
+	if file_drop:
+		file_drop.update(delta)
 	
 	# 屏幕穿越: 传送 + 幽灵偏移计算
 	if screen_wrap and not freeze:
