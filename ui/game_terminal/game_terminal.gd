@@ -95,7 +95,18 @@ func _process(_delta: float) -> void:
 		_sanity_check()
 
 func _input(event: InputEvent) -> void:
-	if _is_open and event is InputEventMouseButton and event.pressed:
+	if not _is_open:
+		return
+	# ── 宠物优先: 面板 GUI 会吞掉鼠标事件, 导致宠物的 _unhandled_input 收不到 ──
+	if event is InputEventMouseButton or event is InputEventMouseMotion:
+		var mouse_pos: Vector2 = event.position
+		if Rect2(panel.position, Vector2(_panel_w, _panel_h)).has_point(mouse_pos):
+			var pet_hit = _find_pet_at_mouse()
+			if pet_hit:
+				pet_hit._unhandled_input(event)
+				get_viewport().set_input_as_handled()
+				return
+	if event is InputEventMouseButton and event.pressed:
 		var pos: Vector2 = event.position
 		if Rect2(panel.position, Vector2(_panel_w, _panel_h)).has_point(pos):
 			# 如果我在底层, 检查点击位置是否被更高层面板覆盖
@@ -106,6 +117,16 @@ func _input(event: InputEvent) -> void:
 						if info.layer > layer and info.rect.has_point(pos):
 							return  # 被更高层面板覆盖, 跳过
 			_bring_to_front()
+
+## 检测鼠标下是否有宠物 (遍历所有宠物实例)
+func _find_pet_at_mouse() -> Node:
+	var main_node = _get_main_node()
+	if not main_node or not "pet_instances" in main_node:
+		return null
+	for p in main_node.pet_instances:
+		if is_instance_valid(p) and p.is_mouse_on_pet():
+			return p
+	return null
 
 # ═══════════════════════════════════════════════
 #  UI 构建
