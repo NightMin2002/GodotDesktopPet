@@ -518,21 +518,17 @@ func _draw() -> void:
 	# ── 棋盘网格 ──
 	var line_c = GameTerminalStyles.border_base()
 	line_c.a *= 0.5
-	var aa = GameTerminalStyles.get_current_theme_id() != "retro"
 	for i in range(SIZE):
 		var offset = i * _cell_size
-		draw_line(_grid_origin + Vector2(0, offset), _grid_origin + Vector2(_grid_px, offset), line_c, 1.0, aa)
-		draw_line(_grid_origin + Vector2(offset, 0), _grid_origin + Vector2(offset, _grid_px), line_c, 1.0, aa)
+		draw_line(_grid_origin + Vector2(0, offset), _grid_origin + Vector2(_grid_px, offset), line_c, 1.0, true)
+		draw_line(_grid_origin + Vector2(offset, 0), _grid_origin + Vector2(offset, _grid_px), line_c, 1.0, true)
 
 	# ── 星位 ──
 	var star_r = maxf(2.0, _cell_size * 0.1)
 	var star_c = line_c
 	star_c.a += 0.3
 	for sp in [Vector2i(3,3), Vector2i(3,11), Vector2i(11,3), Vector2i(11,11), Vector2i(7,7)]:
-		if aa:
-			draw_circle(_grid_origin + Vector2(sp.x * _cell_size, sp.y * _cell_size), star_r, star_c, true, -1.0, true)
-		else:
-			draw_rect(Rect2(_grid_origin + Vector2(sp.x * _cell_size - star_r, sp.y * _cell_size - star_r), Vector2(star_r*2, star_r*2)), star_c)
+		draw_circle(_grid_origin + Vector2(sp.x * _cell_size, sp.y * _cell_size), star_r, star_c, true, -1.0, true)
 
 	# ── 悬停指示 ──
 	if _hover.x >= 0 and _game_active and _player_turn:
@@ -540,18 +536,7 @@ func _draw() -> void:
 			var hp = _grid_origin + Vector2(_hover.x * _cell_size, _hover.y * _cell_size)
 			var hr = _cell_size * 0.4
 			var hc = GameTerminalStyles.dim()
-			if aa:
-				draw_circle(hp, hr*0.5, hc, true, -1.0, true)
-			else:
-				var hl = 6.0
-				draw_line(hp - Vector2(hr, hr), hp - Vector2(hr - hl, hr), hc, 2)
-				draw_line(hp - Vector2(hr, hr), hp - Vector2(hr, hr - hl), hc, 2)
-				draw_line(hp + Vector2(hr, -hr), hp + Vector2(hr - hl, -hr), hc, 2)
-				draw_line(hp + Vector2(hr, -hr), hp + Vector2(hr, -hr + hl), hc, 2)
-				draw_line(hp + Vector2(-hr, hr), hp + Vector2(-hr + hl, hr), hc, 2)
-				draw_line(hp + Vector2(-hr, hr), hp + Vector2(-hr, hr - hl), hc, 2)
-				draw_line(hp + Vector2(hr, hr), hp + Vector2(hr - hl, hr), hc, 2)
-				draw_line(hp + Vector2(hr, hr), hp + Vector2(hr, hr - hl), hc, 2)
+			draw_circle(hp, hr*0.5, hc, true, -1.0, true)
 
 	# ── 威胁标记 (脉冲警告) ──
 	if _threat_cells.size() > 0 and _game_active:
@@ -560,18 +545,13 @@ func _draw() -> void:
 		var tr = _cell_size * 0.42
 		for tc in _threat_cells:
 			var tp = _grid_origin + Vector2(tc.x * _cell_size, tc.y * _cell_size)
-			if aa:
-				draw_arc(tp, tr, 0, TAU, 20, warn_c, 1.5, true)
-			else:
-				draw_rect(Rect2(tp - Vector2(tr, tr), Vector2(tr*2, tr*2)), warn_c, false, 2.0)
+			draw_arc(tp, tr, 0, TAU, 20, warn_c, 1.5, true)
 			var cross = _cell_size * 0.15
-			draw_line(tp - Vector2(cross, 0), tp + Vector2(cross, 0), warn_c, 2.0, aa)
-			draw_line(tp - Vector2(0, cross), tp + Vector2(0, cross), warn_c, 2.0, aa)
+			draw_line(tp - Vector2(cross, 0), tp + Vector2(cross, 0), warn_c, 2.0, true)
+			draw_line(tp - Vector2(0, cross), tp + Vector2(0, cross), warn_c, 2.0, true)
 
-	# ── 棋子 (带弹出动画) ──
 	var stone_half = _cell_size * 0.38
 	var ai_hue = fmod(hue + 0.45, 1.0)
-	var is_retro = GameTerminalStyles.get_current_theme_id() == "retro"
 	for y in range(SIZE):
 		for x in range(SIZE):
 			var v = _board[y * SIZE + x]
@@ -591,24 +571,10 @@ func _draw() -> void:
 			var final_c = base_c
 			final_c.a = 1.0 if is_win else 0.75
 			
-			# 绘制本体
-			if is_retro:
-				# 实心方块像素风
-				var rect = Rect2(pos - Vector2(cur_s, cur_s), Vector2(cur_s * 2, cur_s * 2))
-				draw_rect(rect, final_c)
-				# 加一点内圈高对比度刻画
-				if cur_s > 4.0:
-					draw_rect(Rect2(pos - Vector2(cur_s-3, cur_s-3), Vector2((cur_s-3)*2, (cur_s-3)*2)), GameTerminalStyles.bg_deep())
-					draw_rect(Rect2(pos - Vector2(2, 2), Vector2(4, 4)), final_c)
-				# 最后一手闪光框
-				if is_last and t >= 1.0:
-					var lr = Rect2(pos - Vector2(cur_s+2, cur_s+2), Vector2((cur_s+2)*2, (cur_s+2)*2))
-					draw_rect(lr, GameTerminalStyles.bright(), false, 2.0)
-			else:
-				# 极简圆润风格
-				draw_circle(pos, cur_s, final_c, true, -1.0, true)
-				if is_last and t >= 1.0:
-					draw_arc(pos, cur_s + 2.0, 0, TAU, 20, Color(1,1,1,0.6), 1.5, true)
+			# 极简圆润风格
+			draw_circle(pos, cur_s, final_c, true, -1.0, true)
+			if is_last and t >= 1.0:
+				draw_arc(pos, cur_s + 2.0, 0, TAU, 20, Color(1,1,1,0.6), 1.5, true)
 			
 			# 落点涟漪
 			if t < 1.0:
@@ -616,15 +582,12 @@ func _draw() -> void:
 				var flash_r = cur_s + (1.0 - t) * cur_s
 				var flash_c = base_c
 				flash_c.a = flash_a
-				if is_retro:
-					draw_rect(Rect2(pos - Vector2(flash_r, flash_r), Vector2(flash_r * 2, flash_r * 2)), flash_c, false, 2.0)
-				else:
-					draw_arc(pos, flash_r, 0, TAU, 20, flash_c, 1.5, true)
+				draw_arc(pos, flash_r, 0, TAU, 20, flash_c, 1.5, true)
 
 	# ── 外框 ──
 	var frame_pad = 6.0
 	draw_rect(Rect2(_grid_origin - Vector2(frame_pad, frame_pad), Vector2(_grid_px + frame_pad*2, _grid_px + frame_pad*2)),
-		GameTerminalStyles.border_base(), false, 2.0 if is_retro else 1.0)
+		GameTerminalStyles.border_base(), false, 1.0)
 
 	# ── 右侧聊天气泡 ──
 	if font and _chat_log.size() > 0:
@@ -652,7 +615,7 @@ func _draw() -> void:
 			draw_rect(bg, fill_c)
 			var bc = GameTerminalStyles.border_base()
 			bc.a = a
-			draw_rect(bg, bc, false, 2.0 if is_retro else 1.0)
+			draw_rect(bg, bc, false, 1.0)
 			
 			var tc = GameTerminalStyles.bright()
 			tc.a = a

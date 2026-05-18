@@ -1,6 +1,6 @@
 # terminal_theme_base.gd — 游戏终端主题基类
 # 定义终端全局主题的完整接口契约和中性默认实现
-# 子类 (theme_retro / theme_minimal) 按需覆写各方法实现风格差异
+# 子类 (theme_minimal / 未来扩展) 按需覆写各方法实现风格差异
 class_name TerminalThemeBase
 extends RefCounted
 
