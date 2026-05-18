@@ -1,7 +1,0 @@
-{
-    "id": "tetris",
-    "name": "结构堆叠",
-    "desc": "方块序列优化。消除即正义。",
-    "version": "1.0.0",
-    "script": "res://games/tetris/game.gd"
-}

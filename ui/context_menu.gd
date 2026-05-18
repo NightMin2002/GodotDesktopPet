@@ -328,7 +328,6 @@ func _on_show_context_menu(target_node: Node2D) -> void:
 
 	EventBus.context_menu_toggled.emit(true)
 	_sec_pet.update_clone_label()
-	_sec_play.update_game_list()
 
 	var pet_pos = target.get_global_transform_with_canvas().get_origin()
 	var vp = get_viewport().get_visible_rect().size

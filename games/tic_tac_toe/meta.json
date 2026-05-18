@@ -1,8 +1,0 @@
-{
-	"id": "tic_tac_toe",
-	"name": "策略矩阵",
-	"desc": "3x3 决策推演。本机不会输。",
-	"version": "1.0.0",
-	"author": "NightMin",
-	"script": "res://games/tic_tac_toe/game.gd"
-}

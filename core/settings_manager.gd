@@ -44,43 +44,9 @@ func set_int(key: String, value: int) -> void:
 	_config.set_value(SECTION_INT, key, value)
 	_config.save(SETTINGS_PATH)
 
-## ── 游戏熟练度系统 ──
-
-const LEVEL_XP := [0, 50, 120, 220, 350, 500, 700, 1000, 1400, 2000]
-const MAX_LEVEL := 10
-
-func get_gaming_xp() -> int:
-	return get_int("gaming_xp", 0)
-
-func add_gaming_xp(amount: int) -> int:
-	## 返回新等级 (如果升级了与旧等级不同)
-	var old_level = get_gaming_level()
-	set_int("gaming_xp", get_gaming_xp() + amount)
-	return get_gaming_level()
-
-func get_gaming_level() -> int:
-	var xp = get_gaming_xp()
-	var level = 1
-	for i in range(LEVEL_XP.size()):
-		if xp >= LEVEL_XP[i]:
-			level = i + 1
-	return mini(level, MAX_LEVEL)
-
-func get_gaming_mistake_rate() -> float:
-	## Lv.1=10% → Lv.10=0%
-	var level = get_gaming_level()
-	return 0.10 * (1.0 - float(level - 1) / float(MAX_LEVEL - 1))
-
-func get_gaming_level_progress() -> Dictionary:
-	## 返回 {level, xp, xp_cur, xp_next, progress, rate}
-	var xp = get_gaming_xp()
-	var level = get_gaming_level()
-	var cur = LEVEL_XP[level - 1]
-	var nxt = LEVEL_XP[mini(level, MAX_LEVEL - 1)] if level < MAX_LEVEL else LEVEL_XP[MAX_LEVEL - 1]
-	var prog := 1.0
-	if level < MAX_LEVEL and nxt > cur:
-		prog = float(xp - cur) / float(nxt - cur)
-	return {level = level, xp = xp, xp_cur = cur, xp_next = nxt, progress = prog, rate = get_gaming_mistake_rate()}
+## ── 游戏熟练度系统 [已清理] ──
+## 能力成长系统待重新规划，相关 API 已移除。
+## 引用此 API 的 games/base_game.gd 属于冻结代码，不受影响。
 
 ## 提醒数据存取
 ## 提醒格式: [{"time": "09:00", "msg": "该休息了", "on": true, "once": false}, ...]

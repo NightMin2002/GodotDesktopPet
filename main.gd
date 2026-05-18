@@ -25,7 +25,6 @@ var ghost_wall_mgr: Node
 var hit_region_mgr: Node
 var clone_mgr: Node
 var farewell_mgr: Node
-var game_mgr: CanvasLayer
 
 
 func _ready() -> void:
@@ -85,7 +84,6 @@ func _ready() -> void:
 	_setup_todo_system()
 	_setup_pet_chatter()
 	_setup_platform_style_panel()
-	_setup_game_system()
 	_setup_pet_profile_panel()
 	_setup_game_terminal()
 	
@@ -402,23 +400,6 @@ func _setup_pet_chatter() -> void:
 			chatter_node.link_pet(pet_instance)
 		print("[DesktopPet] 宠物碎碎念系统已启动 (30分钟间隔)")
 
-# ── 游戏系统 ──
-
-func _setup_game_system() -> void:
-	var gm_script = load("res://core/game_manager.gd")
-	if gm_script:
-		game_mgr = CanvasLayer.new()
-		game_mgr.set_script(gm_script)
-		add_child(game_mgr)
-		EventBus.launch_game.connect(func(game_id: String):
-			if game_mgr and game_mgr.has_method("launch_game"):
-				game_mgr.launch_game(game_id, pet_instance)
-		)
-		EventBus.launch_game_auto.connect(func(game_id: String):
-			if game_mgr and game_mgr.has_method("launch_game_auto"):
-				game_mgr.launch_game_auto(game_id, pet_instance)
-		)
-		print("[DesktopPet] 游戏系统已就绪 (", game_mgr.get_installed_games().size(), " 个游戏)")
 
 # ── 宠物档案面板 ──
 

@@ -1,4 +1,5 @@
-# profile_tab_ability.gd — 能力数据 Tab (等级/经验/控制/互动)
+# profile_tab_ability.gd — 能力数据 Tab
+# [占位符状态] 能力成长系统待规划，当前展示结构骨架
 extends HBoxContainer
 
 var _level_label: Label
@@ -35,7 +36,6 @@ func build() -> void:
 	var vbox = ProfileStyles.make_tab_vbox(16)
 	card.add_child(vbox)
 
-	var lv_info = SettingsManager.get_gaming_level_progress()
 	var accent = ProfileStyles.accent()
 	var dim = ProfileStyles.dim()
 	var val_col = ProfileStyles.val_color()
@@ -66,22 +66,21 @@ func build() -> void:
 	var lv_tag = ProfileStyles.label_dim("SYS_OVERALL_LEVEL", 10)
 	lv_tag.add_theme_color_override("font_color", Color(accent.r, accent.g, accent.b, 0.6))
 	lv_vbox.add_child(lv_tag)
-	_level_label = ProfileStyles.make_label(str(lv_info.level), 46, accent)
+	_level_label = ProfileStyles.make_label("—", 46, Color(accent.r, accent.g, accent.b, 0.4))
 	lv_vbox.add_child(_level_label)
 	lv_panel.add_child(lv_vbox)
 	top_display.add_child(lv_panel)
 
-	# 右侧：数据块列 (EXP / ERR_RATE)
+	# 右侧：数据块列 (占位)
 	var stats_grid = HBoxContainer.new()
 	stats_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	stats_grid.add_theme_constant_override("separation", 10)
 	top_display.add_child(stats_grid)
 
-	var xp_txt = "%d / %d" % [lv_info.xp, lv_info.xp_next] if lv_info.level < SettingsManager.MAX_LEVEL else "数据已满 (MAX)"
-	_xp_label = _add_stat_cell(stats_grid, "积累承载量", xp_txt, val_col)
-	_rate_label = _add_stat_cell(stats_grid, "推算偏差概率", "%.1f%%" % (lv_info.rate * 100.0), dim)
+	_xp_label = _add_stat_cell(stats_grid, "积累承载量", "—", Color(val_col.r, val_col.g, val_col.b, 0.4))
+	_rate_label = _add_stat_cell(stats_grid, "推算偏差概率", "—", Color(dim.r, dim.g, dim.b, 0.4))
 
-	# ── 3. 护甲包裹式的进度条 ──
+	# ── 3. 护甲包裹式的进度条 (空进度) ──
 	var bar_shell = PanelContainer.new()
 	var bc_s = StyleBoxFlat.new()
 	bc_s.bg_color = Color(0, 0, 0, 0)
@@ -100,12 +99,13 @@ func build() -> void:
 	_level_bar_bg.add_theme_stylebox_override("panel", bar_bg_s)
 	bar_shell.add_child(_level_bar_bg)
 
+	# 进度条填充为空 (anchor_right = 0)
 	_level_bar_fill = Panel.new()
 	var bar_fill_s = StyleBoxFlat.new()
-	bar_fill_s.bg_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.85, 0.9)
+	bar_fill_s.bg_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.85, 0.3)
 	_level_bar_fill.add_theme_stylebox_override("panel", bar_fill_s)
 	_level_bar_fill.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_level_bar_fill.anchor_right = clampf(lv_info.progress, 0, 1)
+	_level_bar_fill.anchor_right = 0.0 # 占位：无进度
 	_level_bar_bg.add_child(_level_bar_fill)
 
 	# ── 4. 终端返回式日志说明 ──
@@ -117,7 +117,7 @@ func build() -> void:
 	n_s.content_margin_left = 8
 	note_pnl.add_theme_stylebox_override("panel", n_s)
 	
-	var note = ProfileStyles.label_dim("> SYS_REPORT: 熟练度参数将随全局策略推演自动积累更新。执行模型阈值突破后，系统自主操控的容错率与精准度自动同步提升。", 12)
+	var note = ProfileStyles.label_dim("> SYS_REPORT: 能力成长系统待规划。当前模块为结构占位符，数据接入后自动激活。", 12)
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note_pnl.add_child(note)
 	vbox.add_child(note_pnl)
@@ -127,32 +127,34 @@ func build() -> void:
 	sep.add_theme_stylebox_override("separator", ProfileStyles.separator_style())
 	vbox.add_child(sep)
 
-	# ── 5. 底层人工干预终端 (Control Row) ──
+	# ── 5. 底层干预终端 (Control Row) [占位，按钮不执行操作] ──
 	var ctrl_row = HBoxContainer.new()
 	ctrl_row.add_theme_constant_override("separation", 24)
 	ctrl_row.alignment = BoxContainer.ALIGNMENT_BEGIN
 	vbox.add_child(ctrl_row)
 
-	# 干预面板左侧 (等级覆写)
 	var override_box = HBoxContainer.new()
 	override_box.add_theme_constant_override("separation", 10)
 	ctrl_row.add_child(override_box)
 	
-	override_box.add_child(ProfileStyles.label_dim("底层覆写协议 [权限: 操作员]", 12))
+	override_box.add_child(ProfileStyles.label_dim("底层覆写协议 [权限: 操作员] [未激活]", 12))
 
 	var btn_n = ProfileStyles.small_btn_normal()
-	var btn_h = ProfileStyles.small_btn_hover()
+	# 复用样式但降低透明度表示不可用
+	var btn_disabled = btn_n.duplicate() as StyleBoxFlat
+	btn_disabled.bg_color = Color(btn_disabled.bg_color.r, btn_disabled.bg_color.g, btn_disabled.bg_color.b, 0.2)
+	btn_disabled.border_color = Color(btn_disabled.border_color.r, btn_disabled.border_color.g, btn_disabled.border_color.b, 0.2)
 
-	for item in [{"label": "-", "action": "down"}, {"label": "∝", "action": "reset"}, {"label": "+", "action": "up"}]:
+	for item in [{"label": "-"}, {"label": "∝"}, {"label": "+"}]:
 		var btn = Button.new()
 		btn.text = item.label
 		btn.add_theme_font_size_override("font_size", 16)
-		btn.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9, 0.8))
-		btn.add_theme_stylebox_override("normal", btn_n)
-		btn.add_theme_stylebox_override("hover", btn_h)
-		btn.add_theme_stylebox_override("pressed", btn_h)
-		var action = item.action
-		btn.pressed.connect(func(): _on_level_action(action))
+		btn.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9, 0.25))
+		btn.add_theme_stylebox_override("normal", btn_disabled)
+		btn.add_theme_stylebox_override("hover", btn_disabled)
+		btn.add_theme_stylebox_override("pressed", btn_disabled)
+		btn.mouse_default_cursor_shape = Control.CURSOR_ARROW
+		# [占位] 系统未激活，按钮不绑定任何操作
 		override_box.add_child(btn)
 
 	var spacer = Control.new()
@@ -184,7 +186,7 @@ func _add_stat_cell(parent: Control, lbl: String, val: String, val_color: Color)
 	s.bg_color = Color(0.01, 0.02, 0.05, 0.3)
 	s.border_width_left = 2
 	s.border_width_bottom = 1
-	s.border_color = Color(val_color.r, val_color.g, val_color.b, maxf(val_color.a, 0.5))
+	s.border_color = Color(val_color.r, val_color.g, val_color.b, maxf(val_color.a, 0.3))
 	s.content_margin_left = 12; s.content_margin_right = 12
 	s.content_margin_top = 6; s.content_margin_bottom = 6
 	pnl.add_theme_stylebox_override("panel", s)
@@ -200,36 +202,6 @@ func _add_stat_cell(parent: Control, lbl: String, val: String, val_color: Color)
 	parent.add_child(pnl)
 	
 	return val_label
-
-# ── 等级控制 ──
-
-func _on_level_action(action: String) -> void:
-	var pet = _get_pet()
-	var level = SettingsManager.get_gaming_level()
-	if action == "up":
-		if level >= SettingsManager.MAX_LEVEL:
-			if pet: pet.show_local_bubble("...已是最高等级。")
-			return
-		var target_xp = SettingsManager.LEVEL_XP[mini(level, SettingsManager.MAX_LEVEL - 1)]
-		SettingsManager.set_int("gaming_xp", target_xp)
-		if pet: pet.show_local_bubble("...后台训练模块的数据已同步。Lv.%d。" % SettingsManager.get_gaming_level())
-	elif action == "down":
-		if level <= 1:
-			if pet: pet.show_local_bubble("...已经 Lv.1。没有可回退的数据。")
-			return
-		var target_xp = SettingsManager.LEVEL_XP[level - 2]
-		SettingsManager.set_int("gaming_xp", target_xp)
-		if pet: pet.show_local_bubble("训练数据回退。Lv.%d。...不太理解目的。" % SettingsManager.get_gaming_level())
-	elif action == "reset":
-		SettingsManager.set_int("gaming_xp", 0)
-		if pet: pet.show_local_bubble("检测到用户越权清除训练数据。...已批准。")
-	refresh()
-
-func _on_level_change(diff: int) -> void:
-	var lv_info = SettingsManager.get_gaming_level_progress()
-	lv_info.level += diff
-	SettingsManager.set_gaming_level(lv_info.level)
-	refresh()
 
 func _get_pet() -> Node:
 	return ProfileStyles.get_pet(get_tree())
