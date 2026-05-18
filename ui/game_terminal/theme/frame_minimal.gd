@@ -1,6 +1,5 @@
-# game_terminal_frame.gd — 战术终端边框渲染器
+# game_terminal_frame_minimal.gd — 战术终端边框渲染器
 # 对称八角切角 + 脉冲角标 + 靶向准星 + 扫描线 + 刻度线
-# class_name GameTerminalFrame
 extends Control
 
 var _time: float = 0.0
@@ -46,24 +45,20 @@ func _draw() -> void:
 	var aim_c = Color.from_hsv(hue, 0.5, 0.85, 0.5 * pulse)
 	var aim_len = 10.0
 	var aim_gap = 4.0
-	# TL
 	var tl = Vector2(0, 0)
 	draw_line(tl + Vector2(-aim_gap, c_l * 0.5), tl + Vector2(-aim_gap - aim_len, c_l * 0.5), aim_c, 1.0)
 	draw_line(tl + Vector2(c_l * 0.5, -aim_gap), tl + Vector2(c_l * 0.5, -aim_gap - aim_len), aim_c, 1.0)
-	# TR
 	var tr = Vector2(w, 0)
 	draw_line(tr + Vector2(aim_gap, c_l * 0.5), tr + Vector2(aim_gap + aim_len, c_l * 0.5), aim_c, 1.0)
 	draw_line(tr + Vector2(-c_l * 0.5, -aim_gap), tr + Vector2(-c_l * 0.5, -aim_gap - aim_len), aim_c, 1.0)
-	# BR
 	var br = Vector2(w, h)
 	draw_line(br + Vector2(aim_gap, -c_l * 0.5), br + Vector2(aim_gap + aim_len, -c_l * 0.5), aim_c, 1.0)
 	draw_line(br + Vector2(-c_l * 0.5, aim_gap), br + Vector2(-c_l * 0.5, aim_gap + aim_len), aim_c, 1.0)
-	# BL
 	var bl = Vector2(0, h)
 	draw_line(bl + Vector2(-aim_gap, -c_l * 0.5), bl + Vector2(-aim_gap - aim_len, -c_l * 0.5), aim_c, 1.0)
 	draw_line(bl + Vector2(c_l * 0.5, aim_gap), bl + Vector2(c_l * 0.5, aim_gap + aim_len), aim_c, 1.0)
 
-	# 6. 水平扫描线 (从上到下循环扫过)
+	# 6. 水平扫描线
 	var scan_period = 4.0
 	var scan_t = fmod(_time, scan_period) / scan_period
 	var scan_y = lerpf(0, h, scan_t)

@@ -64,6 +64,18 @@ func _ready() -> void:
 	EventBus.show_game_terminal.connect(_on_toggle)
 	EventBus.ui_theme_changed.connect(_on_ui_theme_changed)
 	EventBus.panel_focus_requested.connect(_on_panel_focus)
+	_apply_current_frame()
+
+func _apply_current_frame() -> void:
+	if _frame_drawer and is_instance_valid(_frame_drawer):
+		_frame_drawer.queue_free()
+	var FrameScript = GameTerminalStyles._get_theme().get_frame_script()
+	_frame_drawer = FrameScript.new()
+	_frame_drawer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_frame_drawer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_panel_inner.add_child(_frame_drawer)
+	_panel_inner.move_child(_frame_drawer, 0)
+
 
 func _calc_panel_size() -> void:
 	var vp = get_viewport().get_visible_rect().size
@@ -162,12 +174,8 @@ func _build_ui() -> void:
 	_panel_inner.mouse_filter = Control.MOUSE_FILTER_PASS
 	_panel_viewport.add_child(_panel_inner)
 
-	# ── 自定义边框绘制层 (独立渲染器) ──
-	var FrameScript = load("res://ui/game_terminal/theme/frame.gd")
-	_frame_drawer = FrameScript.new()
-	_frame_drawer.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_frame_drawer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_panel_inner.add_child(_frame_drawer)
+	# ── 自定义边框绘制层 (独立渲染器，这将在 _apply_current_frame 重绘) ──
+
 
 	# ── 外边距容器 ──
 	var margin = MarginContainer.new()
@@ -238,6 +246,28 @@ func _build_title_bar() -> Control:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(spacer)
+
+	# 风格切换按钮
+	var theme_btn = Button.new()
+	theme_btn.text = "风格: 复古"
+	theme_btn.focus_mode = Control.FOCUS_NONE
+	theme_btn.add_theme_font_size_override("font_size", 13)
+	theme_btn.add_theme_color_override("font_color", Color(0.6, 0.7, 0.8, 0.8))
+	theme_btn.add_theme_color_override("font_hover_color", Color(0.8, 0.9, 1.0, 1.0))
+	theme_btn.add_theme_stylebox_override("normal", GameTerminalStyles.small_btn_normal())
+	theme_btn.add_theme_stylebox_override("hover", GameTerminalStyles.small_btn_hover())
+	theme_btn.add_theme_stylebox_override("pressed", GameTerminalStyles.small_btn_hover())
+	theme_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	theme_btn.mouse_filter = Control.MOUSE_FILTER_PASS
+	theme_btn.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			var pet = _get_pet()
+			if pet and pet.is_mouse_on_pet(): return
+			GameTerminalStyles.toggle_theme()
+			theme_btn.text = "风格: 复古" if GameTerminalStyles.get_current_theme_id() == "retro" else "风格: 现代"
+			_apply_current_frame()
+	)
+	bar.add_child(theme_btn)
 
 	# 关闭按钮
 	var close_btn = Button.new()
@@ -518,14 +548,14 @@ func _build_list_item(index: int) -> PanelContainer:
 	hb.add_theme_constant_override("separation", 8)
 	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	# 选中指示符
+	# 选中指示符 (硬闪烁效果由 _process 驱动或单独脚本，但此处用复古像素块取代 > )
 	var indicator = Label.new()
-	indicator.text = ">"
+	indicator.text = "■"
 	indicator.name = "indicator"
 	indicator.add_theme_font_size_override("font_size", 16)
 	indicator.add_theme_color_override("font_color", GameTerminalStyles.accent())
 	indicator.visible = false
-	indicator.custom_minimum_size.x = 12
+	indicator.custom_minimum_size.x = 16
 	hb.add_child(indicator)
 
 	var info = VBoxContainer.new()
@@ -748,10 +778,28 @@ class _LobbyIcon extends Control:
 		var cx = size.x * 0.5
 		var cy = size.y * 0.5
 		var alpha_hi = 0.9 if _hovered else 0.6
-		var accent_c = Color.from_hsv(hue, 0.55, 0.9, alpha_hi)
-		var font = ThemeDB.fallback_font
-		draw_string(font, Vector2(cx - 8, cy + 10), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 28, accent_c)
-		draw_line(Vector2(8, size.y - 1), Vector2(size.x - 8, size.y - 1), Color.from_hsv(hue, 0.3, 0.5, 0.1), 1.0)
+		var accent_c = Color.from_hsv(hue, 0.7, 1.0, alpha_hi)
+		
+		# 画一个像素感十足の占位网格点阵代替问号
+		var blz = 8.0
+		var r_count = 6
+		var c_count = 6
+		var blink = int(_time * 4.0) % 2 == 0
+		var ofs_x = cx - (c_count * blz * 1.5) / 2
+		var ofs_y = cy - (r_count * blz * 1.5) / 2
+		
+		for r in range(r_count):
+			for c in range(c_count):
+				# 简单的像素随机点阵效果 (基于固定随机种子或伪随机图案)
+				var is_on = (r * 7 + c * 3) % 4 == 0
+				if r == c or c == c_count - r - 1:
+					is_on = blink # 叉形状闪烁
+				
+				if is_on:
+					draw_rect(Rect2(ofs_x + c * blz * 1.5, ofs_y + r * blz * 1.5, blz, blz), accent_c)
+
+		# 底部厚重的垫线
+		draw_rect(Rect2(8, size.y - 4, size.x - 16, 4), Color.from_hsv(hue, 0.4, 0.5, 0.5))
 
 # ═══════════════════════════════════════════════
 #  底部操作栏
@@ -1162,7 +1210,43 @@ func _update_footer_for_lobby() -> void:
 # ═══════════════════════════════════════════════
 
 func _on_ui_theme_changed(_hue: float) -> void:
-	pass  # frame_drawer 每帧读 EventBus.ui_hue, 自动跟随
+	_reapply_styles()
+
+func _reapply_styles() -> void:
+	# 刷新主要背景面板
+	if is_instance_valid(_content_area):
+		_content_area.add_theme_stylebox_override("panel", GameTerminalStyles.content_area_bg())
+	if is_instance_valid(_footer_bar):
+		_footer_bar.add_theme_stylebox_override("panel", GameTerminalStyles.status_bar_bg())
+	
+	# 刷新左侧大厅列表
+	for i in range(_lobby_list_items.size()):
+		if is_instance_valid(_lobby_list_items[i]):
+			var s = _lobby_list_styles[i]
+			var indicator = _lobby_list_items[i].get_node_or_null("indicator")
+			if not indicator:
+				var hb = _lobby_list_items[i].get_child(0)
+				if hb and hb.get_child_count() > 0:
+					indicator = hb.get_child(0)
+			
+			if _lobby_selected == i:
+				s.bg_color = Color(0.06, 0.08, 0.16, 0.6)
+				s.set_border_width_all(1)
+				s.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.4)
+			else:
+				s.bg_color = Color(0.03, 0.04, 0.08, 0.3)
+				s.set_border_width_all(0)
+				s.border_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.7, 0.0)
+	
+	# 重建当前选中的大厅右侧预览（这样按钮也会重新生成）
+	if _state == TerminalState.LOBBY:
+		_rebuild_preview(_lobby_selected)
+	
+	# 重建底栏按钮
+	if _state == TerminalState.PLAYING:
+		_update_footer_for_game()
+	elif _state == TerminalState.LOBBY:
+		_update_footer_for_lobby()
 
 # ═══════════════════════════════════════════════
 #  委托推演 (观战模式 AI 操作)

@@ -436,22 +436,10 @@ func _build_restart_btn() -> void:
 	_restart_btn.focus_mode = Control.FOCUS_NONE
 	_restart_btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	_restart_btn.add_theme_font_size_override("font_size", 12)
-	var hue = EventBus.ui_hue
-	_restart_btn.add_theme_color_override("font_color", Color.from_hsv(hue, 0.3, 0.8, 0.7))
-	_restart_btn.add_theme_color_override("font_hover_color", Color.from_hsv(hue, 0.4, 1.0, 0.95))
-	var sn = StyleBoxFlat.new()
-	sn.bg_color = Color(0.06, 0.08, 0.14, 0.7)
-	sn.set_border_width_all(1)
-	sn.border_color = Color.from_hsv(hue, 0.3, 0.5, 0.25)
-	sn.set_corner_radius_all(0)
-	sn.content_margin_left = 8; sn.content_margin_right = 8
-	sn.content_margin_top = 4; sn.content_margin_bottom = 4
-	_restart_btn.add_theme_stylebox_override("normal", sn)
-	var sh = sn.duplicate()
-	sh.bg_color = Color(0.10, 0.14, 0.22, 0.8)
-	sh.border_color = Color.from_hsv(hue, 0.4, 0.8, 0.4)
-	_restart_btn.add_theme_stylebox_override("hover", sh)
-	_restart_btn.add_theme_stylebox_override("pressed", sh)
+	_restart_btn.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
+	_restart_btn.add_theme_stylebox_override("normal", GameTerminalStyles.small_btn_normal())
+	_restart_btn.add_theme_stylebox_override("hover", GameTerminalStyles.small_btn_hover())
+	_restart_btn.add_theme_stylebox_override("pressed", GameTerminalStyles.small_btn_hover())
 	_restart_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	_restart_btn.pressed.connect(start_game)
 	_restart_btn.visible = false
@@ -462,23 +450,11 @@ func _build_undo_btn() -> void:
 	_undo_btn.text = "悔棋 (Ctrl+Z)"
 	_undo_btn.focus_mode = Control.FOCUS_NONE
 	_undo_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-	_undo_btn.add_theme_font_size_override("font_size", 11)
-	var hue = EventBus.ui_hue
-	_undo_btn.add_theme_color_override("font_color", Color.from_hsv(hue, 0.2, 0.65, 0.6))
-	_undo_btn.add_theme_color_override("font_hover_color", Color.from_hsv(hue, 0.4, 1.0, 0.9))
-	var sn = StyleBoxFlat.new()
-	sn.bg_color = Color(0.05, 0.07, 0.12, 0.5)
-	sn.set_border_width_all(1)
-	sn.border_color = Color.from_hsv(hue, 0.2, 0.4, 0.2)
-	sn.set_corner_radius_all(0)
-	sn.content_margin_left = 6; sn.content_margin_right = 6
-	sn.content_margin_top = 3; sn.content_margin_bottom = 3
-	_undo_btn.add_theme_stylebox_override("normal", sn)
-	var sh = sn.duplicate()
-	sh.bg_color = Color(0.08, 0.12, 0.20, 0.7)
-	sh.border_color = Color.from_hsv(hue, 0.3, 0.7, 0.3)
-	_undo_btn.add_theme_stylebox_override("hover", sh)
-	_undo_btn.add_theme_stylebox_override("pressed", sh)
+	_undo_btn.add_theme_font_size_override("font_size", 12)
+	_undo_btn.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
+	_undo_btn.add_theme_stylebox_override("normal", GameTerminalStyles.small_btn_normal())
+	_undo_btn.add_theme_stylebox_override("hover", GameTerminalStyles.small_btn_hover())
+	_undo_btn.add_theme_stylebox_override("pressed", GameTerminalStyles.small_btn_hover())
 	_undo_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	_undo_btn.pressed.connect(_undo)
 	_undo_btn.visible = false
@@ -514,69 +490,88 @@ func _draw() -> void:
 
 	# ── 设置菜单 (聊天区顶部) ──
 	if font:
-		var menu_fs = 11
-		var menu_y = _grid_origin.y - 10.0
-		var btn_text = "⚙ 设置"
-		var btn_c = Color.from_hsv(hue, 0.2, 0.6, 0.5 if not _menu_open else 0.8)
+		var menu_fs = 12
+		var menu_y = _grid_origin.y - 12.0
+		var btn_text = "⚙ 部署配置"
+		var btn_c = GameTerminalStyles.bright() if _menu_open else GameTerminalStyles.dim()
 		draw_string(font, Vector2(_chat_area_x, menu_y), btn_text, HORIZONTAL_ALIGNMENT_LEFT, -1, menu_fs, btn_c)
 		_menu_btn_rect = Rect2(_chat_area_x - 2, menu_y - 14, _chat_area_w, 18)
-		# 展开面板
 		if _menu_open:
 			var panel_y = menu_y + 4
-			var row_h = 22
+			var row_h = 24
 			var panel_h = _menu_items.size() * row_h + 8
 			var panel_rect = Rect2(_chat_area_x - 2, panel_y, _chat_area_w + 4, panel_h)
 			_menu_full_rect = _menu_btn_rect.merge(panel_rect)
-			draw_rect(panel_rect, Color(0.04, 0.06, 0.10, 0.85))
-			draw_rect(panel_rect, Color.from_hsv(hue, 0.25, 0.5, 0.25), false, 1.0)
+			draw_rect(panel_rect, GameTerminalStyles.bg_deep())
+			draw_rect(panel_rect, GameTerminalStyles.border_base(), false, 2.0)
 			_menu_item_rects.clear()
 			for i in range(_menu_items.size()):
 				var item = _menu_items[i]
 				var iy = panel_y + 4 + i * row_h
 				var ir = Rect2(_chat_area_x - 2, iy, _chat_area_w + 4, row_h)
 				_menu_item_rects.append(ir)
-				var check = "[x]" if item.enabled else "[ ]"
-				var ic = Color.from_hsv(hue, 0.3, 0.8, 0.75) if item.enabled else Color.from_hsv(hue, 0.1, 0.5, 0.4)
-				draw_string(font, Vector2(_chat_area_x + 2, iy + 15), check + " " + item.label,
+				var check = "[■]" if item.enabled else "[ ]"
+				var ic = GameTerminalStyles.accent() if item.enabled else GameTerminalStyles.dim()
+				draw_string(font, Vector2(_chat_area_x + 6, iy + 17), check + " " + item.label,
 					HORIZONTAL_ALIGNMENT_LEFT, -1, menu_fs, ic)
 
 	# ── 棋盘网格 ──
-	var line_c = Color.from_hsv(hue, 0.15, 0.4, 0.25)
+	var line_c = GameTerminalStyles.border_base()
+	line_c.a *= 0.5
+	var aa = GameTerminalStyles.get_current_theme_id() != "retro"
 	for i in range(SIZE):
 		var offset = i * _cell_size
-		draw_line(_grid_origin + Vector2(0, offset), _grid_origin + Vector2(_grid_px, offset), line_c, 1.0, true)
-		draw_line(_grid_origin + Vector2(offset, 0), _grid_origin + Vector2(offset, _grid_px), line_c, 1.0, true)
+		draw_line(_grid_origin + Vector2(0, offset), _grid_origin + Vector2(_grid_px, offset), line_c, 1.0, aa)
+		draw_line(_grid_origin + Vector2(offset, 0), _grid_origin + Vector2(offset, _grid_px), line_c, 1.0, aa)
 
-	# 星位
+	# ── 星位 ──
 	var star_r = maxf(2.0, _cell_size * 0.1)
-	var star_c = Color.from_hsv(hue, 0.2, 0.5, 0.35)
+	var star_c = line_c
+	star_c.a += 0.3
 	for sp in [Vector2i(3,3), Vector2i(3,11), Vector2i(11,3), Vector2i(11,11), Vector2i(7,7)]:
-		draw_circle(_grid_origin + Vector2(sp.x * _cell_size, sp.y * _cell_size), star_r, star_c, true, -1.0, true)
+		if aa:
+			draw_circle(_grid_origin + Vector2(sp.x * _cell_size, sp.y * _cell_size), star_r, star_c, true, -1.0, true)
+		else:
+			draw_rect(Rect2(_grid_origin + Vector2(sp.x * _cell_size - star_r, sp.y * _cell_size - star_r), Vector2(star_r*2, star_r*2)), star_c)
 
 	# ── 悬停指示 ──
 	if _hover.x >= 0 and _game_active and _player_turn:
 		if _board[_hover.y * SIZE + _hover.x] == 0:
 			var hp = _grid_origin + Vector2(_hover.x * _cell_size, _hover.y * _cell_size)
-			var hr = _cell_size * 0.38
-			draw_circle(hp, hr, Color.from_hsv(hue, 0.4, 0.9, 0.15), true, -1.0, true)
-			draw_arc(hp, hr, 0, TAU, 24, Color.from_hsv(hue, 0.4, 0.9, 0.3), 1.0, true)
+			var hr = _cell_size * 0.4
+			var hc = GameTerminalStyles.dim()
+			if aa:
+				draw_circle(hp, hr*0.5, hc, true, -1.0, true)
+			else:
+				var hl = 6.0
+				draw_line(hp - Vector2(hr, hr), hp - Vector2(hr - hl, hr), hc, 2)
+				draw_line(hp - Vector2(hr, hr), hp - Vector2(hr, hr - hl), hc, 2)
+				draw_line(hp + Vector2(hr, -hr), hp + Vector2(hr - hl, -hr), hc, 2)
+				draw_line(hp + Vector2(hr, -hr), hp + Vector2(hr, -hr + hl), hc, 2)
+				draw_line(hp + Vector2(-hr, hr), hp + Vector2(-hr + hl, hr), hc, 2)
+				draw_line(hp + Vector2(-hr, hr), hp + Vector2(-hr, hr - hl), hc, 2)
+				draw_line(hp + Vector2(hr, hr), hp + Vector2(hr - hl, hr), hc, 2)
+				draw_line(hp + Vector2(hr, hr), hp + Vector2(hr, hr - hl), hc, 2)
 
 	# ── 威胁标记 (脉冲警告) ──
 	if _threat_cells.size() > 0 and _game_active:
-		var pulse = sin(_time * 4.0) * 0.15 + 0.55
-		var warn_c = Color(0.95, 0.35, 0.25, pulse)
+		var warn_c = GameTerminalStyles.status_warning()
+		warn_c.a = sin(_time * 4.0) * 0.3 + 0.5
 		var tr = _cell_size * 0.42
 		for tc in _threat_cells:
 			var tp = _grid_origin + Vector2(tc.x * _cell_size, tc.y * _cell_size)
-			draw_arc(tp, tr, 0, TAU, 20, warn_c, 1.5, true)
-			# 十字瞄准
+			if aa:
+				draw_arc(tp, tr, 0, TAU, 20, warn_c, 1.5, true)
+			else:
+				draw_rect(Rect2(tp - Vector2(tr, tr), Vector2(tr*2, tr*2)), warn_c, false, 2.0)
 			var cross = _cell_size * 0.15
-			draw_line(tp - Vector2(cross, 0), tp + Vector2(cross, 0), warn_c, 1.0, true)
-			draw_line(tp - Vector2(0, cross), tp + Vector2(0, cross), warn_c, 1.0, true)
+			draw_line(tp - Vector2(cross, 0), tp + Vector2(cross, 0), warn_c, 2.0, aa)
+			draw_line(tp - Vector2(0, cross), tp + Vector2(0, cross), warn_c, 2.0, aa)
 
 	# ── 棋子 (带弹出动画) ──
-	var stone_r = _cell_size * 0.4
+	var stone_half = _cell_size * 0.38
 	var ai_hue = fmod(hue + 0.45, 1.0)
+	var is_retro = GameTerminalStyles.get_current_theme_id() == "retro"
 	for y in range(SIZE):
 		for x in range(SIZE):
 			var v = _board[y * SIZE + x]
@@ -584,28 +579,52 @@ func _draw() -> void:
 			var pos = _grid_origin + Vector2(x * _cell_size, y * _cell_size)
 			var is_win = Vector2i(x, y) in _win_cells
 			var is_last = Vector2i(x, y) == _last_move
-			var ch = hue if v == 1 else ai_hue
-			var sat = 0.5 if v == 1 else 0.45
-			# 动画缩放
+			
+			# 颜色与透明度
+			var base_c = GameTerminalStyles.accent() if v == 1 else Color.from_hsv(ai_hue, 0.6, 0.9)
 			var age = _time - _stone_births[y * SIZE + x]
 			var t = clampf(age / 0.18, 0.0, 1.0)
-			var ease_t = 1.0 - pow(1.0 - t, 3.0)  # ease-out cubic
-			var r = stone_r * ease_t
-			if r < 0.5: continue
-			var ca = (0.9 if is_win else 0.7) * ease_t
-			draw_circle(pos, r, Color.from_hsv(ch, sat, 0.95, ca), true, -1.0, true)
-			# 落点闪光涟漪
+			var ease_t = 1.0 - pow(1.0 - t, 3.0)
+			var cur_s = stone_half * ease_t
+			if cur_s < 0.5: continue
+			
+			var final_c = base_c
+			final_c.a = 1.0 if is_win else 0.75
+			
+			# 绘制本体
+			if is_retro:
+				# 实心方块像素风
+				var rect = Rect2(pos - Vector2(cur_s, cur_s), Vector2(cur_s * 2, cur_s * 2))
+				draw_rect(rect, final_c)
+				# 加一点内圈高对比度刻画
+				if cur_s > 4.0:
+					draw_rect(Rect2(pos - Vector2(cur_s-3, cur_s-3), Vector2((cur_s-3)*2, (cur_s-3)*2)), GameTerminalStyles.bg_deep())
+					draw_rect(Rect2(pos - Vector2(2, 2), Vector2(4, 4)), final_c)
+				# 最后一手闪光框
+				if is_last and t >= 1.0:
+					var lr = Rect2(pos - Vector2(cur_s+2, cur_s+2), Vector2((cur_s+2)*2, (cur_s+2)*2))
+					draw_rect(lr, GameTerminalStyles.bright(), false, 2.0)
+			else:
+				# 极简圆润风格
+				draw_circle(pos, cur_s, final_c, true, -1.0, true)
+				if is_last and t >= 1.0:
+					draw_arc(pos, cur_s + 2.0, 0, TAU, 20, Color(1,1,1,0.6), 1.5, true)
+			
+			# 落点涟漪
 			if t < 1.0:
 				var flash_a = (1.0 - t) * 0.5
-				var flash_r = stone_r * (1.0 + (1.0 - t) * 0.8)
-				draw_arc(pos, flash_r, 0, TAU, 20, Color.from_hsv(ch, 0.2, 1.0, flash_a), 1.5, true)
-			# 最后一手标记
-			if is_last and t >= 1.0:
-				draw_arc(pos, stone_r + 1.5, 0, TAU, 20, Color.from_hsv(ch, 0.3, 1.0, 0.4), 1.5, true)
+				var flash_r = cur_s + (1.0 - t) * cur_s
+				var flash_c = base_c
+				flash_c.a = flash_a
+				if is_retro:
+					draw_rect(Rect2(pos - Vector2(flash_r, flash_r), Vector2(flash_r * 2, flash_r * 2)), flash_c, false, 2.0)
+				else:
+					draw_arc(pos, flash_r, 0, TAU, 20, flash_c, 1.5, true)
 
 	# ── 外框 ──
-	draw_rect(Rect2(_grid_origin - Vector2(4, 4), Vector2(_grid_px + 8, _grid_px + 8)),
-		Color.from_hsv(hue, 0.3, 0.5, 0.15), false, 1.0)
+	var frame_pad = 6.0
+	draw_rect(Rect2(_grid_origin - Vector2(frame_pad, frame_pad), Vector2(_grid_px + frame_pad*2, _grid_px + frame_pad*2)),
+		GameTerminalStyles.border_base(), false, 2.0 if is_retro else 1.0)
 
 	# ── 右侧聊天气泡 ──
 	if font and _chat_log.size() > 0:
@@ -621,22 +640,29 @@ func _draw() -> void:
 			else: continue
 			var text_size = font.get_multiline_string_size(msg.text, HORIZONTAL_ALIGNMENT_LEFT, _chat_area_w - 12, fs)
 			var bubble_h = text_size.y + 10
-			bubble_y -= bubble_h + 4
+			bubble_y -= bubble_h + 6
 			var bg = Rect2(_chat_area_x, bubble_y, _chat_area_w, bubble_h)
-			draw_rect(bg, Color(0.05, 0.07, 0.12, 0.65 * a))
-			draw_rect(bg, Color.from_hsv(hue, 0.25, 0.5, 0.15 * a), false, 1.0)
+			
+			# 使用 GameTerminalStyles 来决定底色
+			var fill_c = GameTerminalStyles.bg_deep()
+			fill_c.a = 0.8 * a
+			draw_rect(bg, fill_c)
+			var bc = GameTerminalStyles.border_base()
+			bc.a = a
+			draw_rect(bg, bc, false, 2.0 if is_retro else 1.0)
+			
+			var tc = GameTerminalStyles.bright()
+			tc.a = a
 			draw_multiline_string(font, Vector2(_chat_area_x + 6, bubble_y + fs + 2), msg.text,
-				HORIZONTAL_ALIGNMENT_LEFT, _chat_area_w - 12, fs, -1, Color.from_hsv(hue, 0.12, 0.75, 0.85 * a))
+				HORIZONTAL_ALIGNMENT_LEFT, _chat_area_w - 12, fs, -1, tc)
 
 	# ── 按钮定位 ──
-	# 悔棋按钮: 设置菜单下方
 	if is_instance_valid(_undo_btn):
-		_undo_btn.position = Vector2(_chat_area_x, _grid_origin.y + 20)
+		_undo_btn.position = Vector2(_chat_area_x, _grid_origin.y + 24)
 		_undo_btn.size = Vector2(_chat_area_w, 24)
-	# 重开按钮: 棋盘底部下方
 	if is_instance_valid(_restart_btn) and _restart_btn.visible:
-		_restart_btn.position = Vector2(_chat_area_x, _grid_origin.y + _grid_px + 6)
-		_restart_btn.size = Vector2(_chat_area_w, 26)
+		_restart_btn.position = Vector2(_chat_area_x, _grid_origin.y + _grid_px - 26)
+		_restart_btn.size = Vector2(_chat_area_w, 28)
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not _game_active:
