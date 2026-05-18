@@ -8,12 +8,12 @@ class_name GameTerminalStyles
 # ══════════════════════════════════════════════
 
 static var _current_theme: TerminalThemeBase = null
-static var _current_theme_id: String = "retro"
+static var _current_theme_id: String = "minimal"
 static var _game_override: GameThemeOverride = null
 
 static func _get_theme() -> TerminalThemeBase:
 	if _current_theme == null:
-		_current_theme = load("res://ui/game_terminal/theme/theme_retro.gd").new()
+		_current_theme = load("res://ui/game_terminal/theme/theme_minimal.gd").new()
 	return _current_theme
 
 # ══════════════════════════════════════════════
@@ -23,14 +23,9 @@ static func _get_theme() -> TerminalThemeBase:
 static func get_current_theme_id() -> String:
 	return _current_theme_id
 
+## 主题切换已移除，仅保留极简主题
 static func toggle_theme() -> void:
-	if _current_theme_id == "retro":
-		_current_theme_id = "minimal"
-		_current_theme = load("res://ui/game_terminal/theme/theme_minimal.gd").new()
-	else:
-		_current_theme_id = "retro"
-		_current_theme = load("res://ui/game_terminal/theme/theme_retro.gd").new()
-	EventBus.ui_theme_changed.emit(EventBus.ui_hue)
+	pass  # 只有一个主题，无需切换
 
 # ══════════════════════════════════════════════
 #  游戏专属主题覆写层

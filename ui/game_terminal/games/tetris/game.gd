@@ -661,15 +661,12 @@ func _draw() -> void:
 						draw_rect(rect, cell_color.darkened(0.4), false, 1.0)
 				else:
 					var rect = Rect2(cx, cy, _cell_size, _cell_size)
-					draw_rect(rect, cell_color)
-					draw_rect(rect, cell_color.darkened(0.4), false, 1.0)
+					_draw_block(rect, cell_color)
 
 	# ── Ghost piece ──
 	if _current_type != "" and _game_active and _clear_timer < 0.0:
 		var ghost_pos = _get_ghost_pos()
 		if ghost_pos != _current_pos:
-			var ghost_color = _get_piece_color(_current_type, true)
-			ghost_color.a = 0.15
 			for cell in _get_cells(_current_type, _current_rot, ghost_pos):
 				if cell.y >= 0:
 					var rect = Rect2(
@@ -677,8 +674,10 @@ func _draw() -> void:
 						_field_origin.y + cell.y * _cell_size,
 						_cell_size, _cell_size
 					)
-					draw_rect(rect, ghost_color)
-					draw_rect(rect, ghost_color.lightened(0.3), false, 1.0)
+					# Ghost: 只画边框轮廓，不填充
+					var ghost_color = _get_piece_color(_current_type, true)
+					draw_rect(rect, Color(ghost_color.r, ghost_color.g, ghost_color.b, 0.0))
+					draw_rect(rect, Color(ghost_color.r, ghost_color.g, ghost_color.b, 0.30), false, 1.0)
 
 	# ── 当前活动方块 ──
 	if _current_type != "" and _game_active and _clear_timer < 0.0:
@@ -690,8 +689,7 @@ func _draw() -> void:
 					_field_origin.y + cell.y * _cell_size,
 					_cell_size, _cell_size
 				)
-				draw_rect(rect, active_color)
-				draw_rect(rect, active_color.darkened(0.3), false, 1.0)
+				_draw_block(rect, active_color)
 
 	# ── 场地边框 ──
 	draw_rect(Rect2(_field_origin, Vector2(field_w, field_h)),
@@ -699,48 +697,47 @@ func _draw() -> void:
 
 	# ── 右侧栏: NEXT / HOLD ──
 	if font:
-		var label_c = Color.from_hsv(hue, 0.3, 0.7, 0.5)
+		var label_c = Color.from_hsv(hue, 0.3, 0.65, 0.5)
 		var sidebar_cell = _cell_size * 0.65
+		var preview_box_w = sidebar_cell * 4.0 + 8.0
+		var preview_box_h = sidebar_cell * 3.0 + 22.0
 
 		# NEXT
-		draw_string(font, Vector2(_sidebar_x, _field_origin.y + 12.0), "NEXT",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, label_c)
-		_draw_piece_preview(_next_type, _sidebar_x, _field_origin.y + 18.0, sidebar_cell)
+		var next_box_y = _field_origin.y
+		_draw_sidebar_box(_sidebar_x, next_box_y, preview_box_w, preview_box_h, "NEXT", hue, label_c, font)
+		_draw_piece_preview(_next_type, _sidebar_x + 4, next_box_y + 16.0, sidebar_cell)
 
 		# HOLD
-		var hold_y = _field_origin.y + _cell_size * 5.0
-		draw_string(font, Vector2(_sidebar_x, hold_y), "HOLD",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, label_c)
-		_draw_piece_preview(_hold_type, _sidebar_x, hold_y + 6.0, sidebar_cell)
+		var hold_box_y = next_box_y + preview_box_h + 4.0
+		_draw_sidebar_box(_sidebar_x, hold_box_y, preview_box_w, preview_box_h, "HOLD", hue, label_c, font)
+		_draw_piece_preview(_hold_type, _sidebar_x + 4, hold_box_y + 16.0, sidebar_cell)
 
-	# ── 左侧栏: SCORE / LEVEL / LINES ──
+	# ── 左侧栏: SCORE / LEVEL / LINES (分组框) ──
 	if font:
-		var lbl_c = Color.from_hsv(hue, 0.3, 0.7, 0.5)
-		var val_c = Color.from_hsv(hue, 0.4, 0.9, 0.8)
+		var lbl_c = Color.from_hsv(hue, 0.3, 0.65, 0.5)
 		var lx = _left_sidebar_x
-		var ly = _field_origin.y + 12.0
-		var gap = _cell_size * 3.2
+		var side_w = _field_origin.x - lx - 4.0
+		var box_h = 34.0
+		var gap = 4.0
+		var ly = _field_origin.y
 
 		# SCORE
-		draw_string(font, Vector2(lx, ly), "SCORE",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lbl_c)
-		draw_string(font, Vector2(lx, ly + 18.0), str(_score),
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, GameTerminalStyles.bright())
+		_draw_sidebar_box(lx, ly, side_w, box_h, "SCORE", hue, lbl_c, font)
+		draw_string(font, Vector2(lx + 4, ly + 28.0), str(_score),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, GameTerminalStyles.bright())
 
 		# LEVEL
-		ly += gap
+		ly += box_h + gap
 		var lv_c = GameTerminalStyles.status_warning() if _level >= 10 else GameTerminalStyles.status_active()
-		draw_string(font, Vector2(lx, ly), "LEVEL",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lbl_c)
-		draw_string(font, Vector2(lx, ly + 18.0), str(_level),
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, lv_c)
+		_draw_sidebar_box(lx, ly, side_w, box_h, "LEVEL", hue, lbl_c, font)
+		draw_string(font, Vector2(lx + 4, ly + 28.0), str(_level),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, lv_c)
 
 		# LINES
-		ly += gap
-		draw_string(font, Vector2(lx, ly), "LINES",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lbl_c)
-		draw_string(font, Vector2(lx, ly + 18.0), str(_lines_cleared),
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, val_c)
+		ly += box_h + gap
+		_draw_sidebar_box(lx, ly, side_w, box_h, "LINES", hue, lbl_c, font)
+		draw_string(font, Vector2(lx + 4, ly + 28.0), str(_lines_cleared),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, GameTerminalStyles.dim())
 
 	# ── Game Over 覆盖 ──
 	if not _game_active and font:
@@ -779,14 +776,42 @@ func _draw_piece_preview(ptype: String, sx: float, sy: float, ps: float) -> void
 	for c in cells:
 		var rx = ox + (c.x - min_x) * ps
 		var ry = oy + (c.y - min_y) * ps
-		draw_rect(Rect2(rx, ry, ps, ps), color)
-		draw_rect(Rect2(rx, ry, ps, ps), color.darkened(0.3), false, 1.0)
+		_draw_block(Rect2(rx, ry, ps, ps), color)
 
 func _get_piece_color(ptype: String, is_active: bool) -> Color:
 	var hue = EventBus.ui_hue
 	var offset = PIECE_HUE_OFFSETS.get(ptype, 0.0)
 	var h = fmod(hue + offset, 1.0)
 	if is_active:
-		return Color.from_hsv(h, 0.6, 0.9, 0.95)
+		return Color.from_hsv(h, 0.65, 0.95, 0.95)
 	else:
-		return Color.from_hsv(h, 0.45, 0.7, 0.85)
+		return Color.from_hsv(h, 0.50, 0.72, 0.88)
+
+## 带立体感的方块绘制 (暗色外框 + 白色高光内框)
+func _draw_block(rect: Rect2, color: Color) -> void:
+	draw_rect(rect, color)
+	# 暗色外框
+	draw_rect(rect, color.darkened(0.45), false, 1.0)
+	# 白色高光 (上边 + 左边, 内缩 1px)
+	var ix = rect.position.x + 1.0
+	var iy = rect.position.y + 1.0
+	var iw = rect.size.x - 2.0
+	var ih = rect.size.y - 2.0
+	if iw > 2 and ih > 2:
+		draw_line(Vector2(ix, iy), Vector2(ix + iw, iy), Color(1,1,1,0.22), 1.0)
+		draw_line(Vector2(ix, iy), Vector2(ix, iy + ih), Color(1,1,1,0.15), 1.0)
+		# 暗色下边 + 右边
+		draw_line(Vector2(ix, iy + ih), Vector2(ix + iw, iy + ih), Color(0,0,0,0.30), 1.0)
+		draw_line(Vector2(ix + iw, iy), Vector2(ix + iw, iy + ih), Color(0,0,0,0.30), 1.0)
+
+## 侧栏分组框 (带标签的双线框)
+func _draw_sidebar_box(x: float, y: float, w: float, h: float,
+		label: String, hue: float, lbl_c: Color, font: Font) -> void:
+	var r = Rect2(x, y, w, h)
+	draw_rect(r, Color(0.04, 0.06, 0.12, 0.65))
+	draw_rect(r, Color.from_hsv(hue, 0.45, 0.55, 0.22), false, 1.0)
+	draw_rect(r.grow(-2.0), Color.from_hsv(hue, 0.25, 0.35, 0.08), false, 1.0)
+	# 标签
+	if font:
+		draw_string(font, Vector2(x + 4, y + 11), label,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 9, lbl_c)

@@ -247,27 +247,6 @@ func _build_title_bar() -> Control:
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(spacer)
 
-	# 风格切换按钮
-	var theme_btn = Button.new()
-	theme_btn.text = "风格: 复古"
-	theme_btn.focus_mode = Control.FOCUS_NONE
-	theme_btn.add_theme_font_size_override("font_size", 13)
-	theme_btn.add_theme_color_override("font_color", GameTerminalStyles.dim())
-	theme_btn.add_theme_color_override("font_hover_color", GameTerminalStyles.bright())
-	theme_btn.add_theme_stylebox_override("normal", GameTerminalStyles.small_btn_normal())
-	theme_btn.add_theme_stylebox_override("hover", GameTerminalStyles.small_btn_hover())
-	theme_btn.add_theme_stylebox_override("pressed", GameTerminalStyles.small_btn_hover())
-	theme_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	theme_btn.mouse_filter = Control.MOUSE_FILTER_PASS
-	theme_btn.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-			var pet = _get_pet()
-			if pet and pet.is_mouse_on_pet(): return
-			GameTerminalStyles.toggle_theme()
-			theme_btn.text = "风格: 复古" if GameTerminalStyles.get_current_theme_id() == "retro" else "风格: 现代"
-			_apply_current_frame()
-	)
-	bar.add_child(theme_btn)
 
 	# 关闭按钮
 	var close_btn = Button.new()
