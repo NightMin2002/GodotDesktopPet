@@ -345,22 +345,28 @@ func _draw() -> void:
 	var hue = EventBus.ui_hue
 	var font = ThemeDB.fallback_font
 
-	# ── 顶部 HUD ──
+	# ── 顶部 HUD: 双框分组 ──
 	if font:
-		var lbl_c = Color.from_hsv(hue, 0.3, 0.7, 0.5)
-		var remain_c = GameTerminalStyles.status_warning() if _mines_remaining > 0 else GameTerminalStyles.status_active()
-		var time_str = "%02d:%02d" % [int(_time) / 60, int(_time) % 60]
-		# 左: MINES
-		draw_string(font, Vector2(_grid_origin.x, _grid_origin.y - 10.0), "MINES",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lbl_c)
-		draw_string(font, Vector2(_grid_origin.x + 46, _grid_origin.y - 10.0), str(_mines_remaining),
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, remain_c)
-		# 右: TIME
 		var grid_w = _cell_size * COLS
-		draw_string(font, Vector2(_grid_origin.x + grid_w - 80, _grid_origin.y - 10.0), "TIME",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, lbl_c)
-		draw_string(font, Vector2(_grid_origin.x + grid_w - 42, _grid_origin.y - 10.0), time_str,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, GameTerminalStyles.dim())
+		var hud_h  = 26.0
+		var hud_y  = _grid_origin.y - hud_h - 5.0
+		var box_w  = grid_w * 0.44
+		var gap_b  = grid_w - box_w * 2.0
+		var lbl_c  = Color.from_hsv(hue, 0.3, 0.65, 0.5)
+
+		# 左框 MINES
+		var lx = _grid_origin.x
+		_draw_hud_box(lx, hud_y, box_w, hud_h, hue)
+		var remain_c = GameTerminalStyles.status_warning() if _mines_remaining > 0 else GameTerminalStyles.status_active()
+		draw_string(font, Vector2(lx+6, hud_y+10),  "MINES", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, lbl_c)
+		draw_string(font, Vector2(lx+6, hud_y+22), str(_mines_remaining), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, remain_c)
+
+		# 右框 TIME
+		var rx = lx + box_w + gap_b
+		_draw_hud_box(rx, hud_y, box_w, hud_h, hue)
+		var time_str = "%02d:%02d" % [int(_time)/60, int(_time)%60]
+		draw_string(font, Vector2(rx+6, hud_y+10),  "TIME",  HORIZONTAL_ALIGNMENT_LEFT, -1, 10, lbl_c)
+		draw_string(font, Vector2(rx+6, hud_y+22), time_str, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, GameTerminalStyles.dim())
 
 	# ── 网格 ──
 	for i in range(COLS * ROWS):
@@ -370,24 +376,29 @@ func _draw() -> void:
 		if _revealed[i]:
 			# 已揭开
 			if _mines[i]:
-				# 雷
-				var mine_bg = Color(0.3, 0.05, 0.05, 0.7) if i == _death_cell else Color(0.08, 0.06, 0.04, 0.5)
+				var mine_bg = Color(0.35, 0.04, 0.04, 0.85) if i == _death_cell else Color(0.08, 0.05, 0.04, 0.55)
 				draw_rect(inr, mine_bg)
+				if i == _death_cell:
+					# 爆炸格: 加一圈红色倒计时波纹
+					draw_rect(inr, Color(0.9, 0.2, 0.15, 0.25), false, 2.0)
 				_draw_mine(cr, hue)
 			else:
-				# 空地/数字
-				draw_rect(inr, Color(0.03, 0.04, 0.07, 0.3))
+				# 凹陷感: 揭开格用深色 + 极细内框
+				draw_rect(inr, Color(0.02, 0.03, 0.06, 0.45))
+				draw_rect(inr, Color(0.0, 0.0, 0.0, 0.2), false, 1.0)
 				if _adjacent[i] > 0:
 					_draw_number(cr, _adjacent[i])
 		else:
-			# 未揭开
-			var base_bg = Color(0.06, 0.08, 0.14, 0.6)
-			# 悬停高亮
-			if i == _hover_cell and _game_active:
-				base_bg = Color(0.10, 0.14, 0.22, 0.7)
-			draw_rect(inr, base_bg)
-			# 暗色网格纹理
-			draw_rect(inr, Color(0.12, 0.16, 0.24, 0.15), false, 0.5)
+			# 未揭开: 双层边框模拟 3D 按鈕
+			var bg = Color(0.10, 0.14, 0.22, 0.75) if (i == _hover_cell and _game_active) else Color(0.07, 0.10, 0.17, 0.70)
+			draw_rect(inr, bg)
+			# 亮色上边 + 左边 (凸起感)
+			draw_line(inr.position, inr.position + Vector2(inr.size.x, 0), Color(1,1,1,0.12), 1.0)
+			draw_line(inr.position, inr.position + Vector2(0, inr.size.y), Color(1,1,1,0.08), 1.0)
+			# 暗色下边 + 右边
+			var br = inr.position + inr.size
+			draw_line(Vector2(inr.position.x, br.y), br, Color(0,0,0,0.25), 1.0)
+			draw_line(Vector2(br.x, inr.position.y), br, Color(0,0,0,0.20), 1.0)
 
 			if _flagged[i]:
 				_draw_flag(cr, hue)
@@ -430,10 +441,15 @@ func _draw_number(cr: Rect2, num: int) -> void:
 	var font = ThemeDB.fallback_font
 	var text = str(num)
 	var c = NUM_COLORS[clampi(num - 1, 0, 7)]
-	var font_size = int(_cell_size * 0.55)
-	var text_size = font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size)
-	var pos = cr.get_center() - text_size * 0.5 + Vector2(0, text_size.y * 0.35)
-	draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, c)
+	var fs = int(_cell_size * 0.55)
+	var tw   = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	var asc  = font.get_ascent(fs)
+	var desc = font.get_descent(fs)
+	var center = cr.get_center()
+	var pos = Vector2(center.x - tw * 0.5, center.y + (asc - desc) * 0.5)
+	# 阴影提升可读性
+	draw_string(font, pos + Vector2(1, 1), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0,0,0,0.6))
+	draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, c)
 
 # ── 绘制旗帜 ──
 func _draw_flag(cr: Rect2, hue: float) -> void:
@@ -453,3 +469,9 @@ func _draw_flag(cr: Rect2, hue: float) -> void:
 	draw_colored_polygon(flag_pts, flag_c)
 	# 底座
 	draw_line(center + Vector2(-s * 0.6, s * 0.8), center + Vector2(s * 0.6, s * 0.8), Color(0.5, 0.6, 0.7, 0.5), 2.0, true)
+
+func _draw_hud_box(x: float, y: float, w: float, h: float, hue: float) -> void:
+	var r = Rect2(x, y, w, h)
+	draw_rect(r, Color(0.04, 0.06, 0.12, 0.7))
+	draw_rect(r, Color.from_hsv(hue, 0.45, 0.55, 0.25), false, 1.0)
+	draw_rect(r.grow(-2.0), Color.from_hsv(hue, 0.25, 0.35, 0.10), false, 1.0)

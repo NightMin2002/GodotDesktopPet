@@ -556,42 +556,32 @@ func _draw() -> void:
 		_restart_btn.size = Vector2(_chat_area_w, 26)
 
 # ══════════════════════════════════════════════
-#  渲染: 精密仪器棋子 (移植自旧版)
+#  渲染: 棋子 (极简加粗风格)
 # ══════════════════════════════════════════════
 
 func _draw_precision_x(center: Vector2, cell_size: float, hue: float, scale_t: float, dim_alpha: float) -> void:
-	var c = Color.from_hsv(hue, 0.3, 0.9, dim_alpha)
-	var gap = cell_size * 0.05
-	var arm = cell_size * 0.25 * scale_t
-	# 两对分离线段，中间留空
-	draw_line(center + Vector2(-gap, -gap), center + Vector2(-gap - arm, -gap - arm), c, 1.5, true)
-	draw_line(center + Vector2(gap, gap), center + Vector2(gap + arm, gap + arm), c, 1.5, true)
-	draw_line(center + Vector2(gap, -gap), center + Vector2(gap + arm, -gap - arm), c, 1.5, true)
-	draw_line(center + Vector2(-gap, gap), center + Vector2(-gap - arm, gap + arm), c, 1.5, true)
-	# 落子闪光
+	var c = Color.from_hsv(hue, 0.35, 0.95, dim_alpha)
+	var half = cell_size * 0.28 * scale_t  # 臂长
+	const W := 3.5                          # 线宽
+	# 两条粗对角线，直接交叉无间隙
+	draw_line(center + Vector2(-half, -half), center + Vector2(half, half), c, W, true)
+	draw_line(center + Vector2(half, -half), center + Vector2(-half, half), c, W, true)
+	# 落子入场: 短暂扩散光晕
 	if scale_t < 1.0:
-		var flash = Color.from_hsv(hue, 0.1, 1.0, (1.0 - scale_t) * dim_alpha)
-		draw_circle(center, 2.0 + scale_t * 2.0, flash)
+		var flash = Color.from_hsv(hue, 0.1, 1.0, (1.0 - scale_t) * 0.6 * dim_alpha)
+		draw_circle(center, half * 1.3, flash)
 
 func _draw_precision_o(center: Vector2, cell_size: float, hue: float, scale_t: float, dim_alpha: float) -> void:
 	var ai_hue = fmod(hue + 0.45, 1.0)
-	var c = Color.from_hsv(ai_hue, 0.4, 0.95, dim_alpha)
-	var r = cell_size * 0.25 * scale_t
-	# 留缺口圆弧
-	var start_angle = -PI / 2 + 0.15
-	var end_angle = PI * 1.5 - 0.15
-	draw_arc(center, r, start_angle, end_angle, 32, c, 1.5, true)
-	# 缺口两端闭合横线
-	var p1 = center + Vector2(cos(start_angle), sin(start_angle)) * r
-	var p2 = center + Vector2(cos(end_angle), sin(end_angle)) * r
-	var t1 = (p1 - center).normalized().rotated(PI / 2) * 2.0
-	var t2 = (p2 - center).normalized().rotated(PI / 2) * 2.0
-	draw_line(p1 - t1, p1 + t1, c, 1.0, true)
-	draw_line(p2 - t2, p2 + t2, c, 1.0, true)
-	# 落子瞄准纹理
+	var c = Color.from_hsv(ai_hue, 0.45, 1.0, dim_alpha)
+	var r_outer = cell_size * 0.29 * scale_t
+	var r_inner = r_outer - 3.5             # 环宽 = 3.5px
+	# 实心圆环: 外圆 - 内圆 (用 draw_arc 高点数模拟实心)
+	draw_arc(center, r_outer, 0.0, TAU, 64, c, 3.5, true)
+	# 落子入场: 短暂圆形扩散
 	if scale_t < 1.0:
-		var flash = Color.from_hsv(ai_hue, 0.1, 1.0, (1.0 - scale_t) * dim_alpha)
-		draw_arc(center, r * 0.6, 0, TAU, 16, flash, 1.0, true)
+		var flash = Color.from_hsv(ai_hue, 0.1, 1.0, (1.0 - scale_t) * 0.6 * dim_alpha)
+		draw_circle(center, r_outer * 1.2, flash)
 
 func _ease_out_expo(t: float) -> float:
 	return 1.0 if t == 1.0 else 1.0 - pow(2.0, -10.0 * t)
