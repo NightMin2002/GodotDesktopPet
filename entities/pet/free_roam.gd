@@ -20,7 +20,12 @@ var _walk_min_x: float = 0.0             # 横移踏板左边界
 var _walk_max_x: float = 0.0             # 横移踏板右边界
 var _last_pet_x: float = 0.0             # 上帧宠物X (屏幕穿越检测)
 
+# ── 驻留状态 ──
+var settled: bool = false                # 是否驻留在空中踏板上
+var _settled_plat: StaticBody2D = null   # 驻留踏板 (独立于 platforms[] 管理)
+
 const PLATFORM_WIDTH := 40.0             # 踏板基础宽度 (宠物是老手，不需要很宽)
+const PLATFORM_MARGIN := 20.0            # 踏板边缘余量 (宠物位置外延)
 
 # ── 公共接口 ──
 
@@ -30,6 +35,26 @@ func screen_scale() -> float:
 
 ## 启动自由漫游
 func start() -> void:
+	if settled:
+		# 从驻留位置启动: 跳过首跳，直接进入决策
+		active = true
+		settled = false
+		_current_plat = _settled_plat
+		_settled_plat = null
+		platforms.append(_current_plat)
+		phase = 0
+		descending = false
+		_elevator = null
+		# 恢复踏板透明度 + 确保碰撞启用 (拖拽可能留下 disabled)
+		if is_instance_valid(_current_plat):
+			var tw = _current_plat.create_tween()
+			tw.tween_property(_current_plat, "modulate:a", 1.0, 0.2)
+			for child in _current_plat.get_children():
+				if child is CollisionShape2D and not child.has_meta("_roam_wall"):
+					child.disabled = false
+		_decide_next()
+		return
+	
 	active = true
 	phase = 0
 	descending = false
@@ -46,6 +71,7 @@ func start() -> void:
 func finish() -> void:
 	_remove_side_walls()
 	_clear_platforms()
+	clear_settled()  # 同时清理驻留状态
 	active = false
 	phase = 0
 	descending = false
@@ -61,6 +87,9 @@ func finish() -> void:
 
 ## 每帧更新 (由 pet._process 调用)
 func update(delta: float) -> void:
+	if settled:
+		_update_settled(delta)
+		return
 	if not active or phase == 0:
 		return
 	
@@ -93,7 +122,7 @@ func update(delta: float) -> void:
 			# 踏板单向追踪: 只覆盖原点到宠物位置 + 两端小余量
 			var plat_x = _current_plat.position.x
 			var pet_x = pet.global_position.x
-			var margin = PLATFORM_WIDTH * 0.5
+			var margin = PLATFORM_MARGIN
 			var left_edge = minf(plat_x, pet_x) - margin
 			var right_edge = maxf(plat_x, pet_x) + margin
 			var new_width = right_edge - left_edge
@@ -160,7 +189,7 @@ func update(delta: float) -> void:
 			_walk_min_x = minf(_walk_min_x, pet_x)
 			_walk_max_x = maxf(_walk_max_x, pet_x)
 			# 两侧少量预留即可 (横移中宠物不会突然掉落)
-			var margin = PLATFORM_WIDTH * 0.65
+			var margin = PLATFORM_MARGIN
 			var left_edge = _walk_min_x - margin
 			var right_edge = _walk_max_x + margin
 			var new_width = right_edge - left_edge
@@ -210,7 +239,7 @@ func do_jump() -> void:
 
 # ── 决策 ──
 
-## 落稳后的决策: 继续跳 / 横移 / 跳下 / 电梯
+## 落稳后的决策: 继续跳 / 横移 / 驻留 / 跳下 / 电梯
 func _decide_next() -> void:
 	pet.movement.finish()  # 落稳后进入 HOLD → 自然过渡
 	var pause = randf_range(0.6, 1.5)
@@ -219,14 +248,120 @@ func _decide_next() -> void:
 		return
 	
 	var roll = randf()
-	if roll < 0.40:
+	if roll < 0.30:
 		do_jump()
-	elif roll < 0.65:
+	elif roll < 0.50:
 		_walk_sideways()
-	elif roll < 0.90:
+	elif roll < 0.70:
+		_settle_on_platform()
+	elif roll < 0.85:
 		_jump_down()
 	else:
 		_begin_descent()
+
+# ── 驻留 ──
+
+## 驻留在当前踏板上: 结束 active 序列，踏板保留，宠物恢复自由行动
+func _settle_on_platform() -> void:
+	if not is_instance_valid(_current_plat):
+		# 没有可驻留的踏板，降级为跳下
+		_jump_down()
+		return
+	
+	# 将踏板从自动管理列表移出，转为独立引用
+	settled = true
+	_settled_plat = _current_plat
+	platforms.erase(_current_plat)
+	_current_plat = null
+	
+	# 直接读取踏板当前的世界空间边界 (避免 margin 换算导致宽度突变)
+	var plat_x = _settled_plat.position.x
+	for child in _settled_plat.get_children():
+		if child is CollisionShape2D and not child.has_meta("_roam_wall"):
+			var shape = child.shape as RectangleShape2D
+			if shape:
+				var half_w = shape.size.x / 2.0
+				var center = plat_x + child.position.x
+				_walk_min_x = center - half_w
+				_walk_max_x = center + half_w
+			break
+	
+	# 结束 active 但不清理踏板
+	active = false
+	phase = 0
+	descending = false
+	pet.physics_material_override.friction = 0.6
+	_elevator = null
+	
+	# 清理其他残留踏板
+	_clear_platforms()
+	
+	# 重置 idle，让宠物恢复正常行为
+	pet.movement.finish()
+	if pet.current_state and pet.current_state is StateIdle:
+		pet.current_state.idle_timer = 0.0
+		pet.current_state.idle_duration = randf_range(0.8, 1.5)
+	
+	# 驻留踏板淡化，减少桌面视觉遮挡
+	if is_instance_valid(_settled_plat):
+		var tw = _settled_plat.create_tween()
+		tw.tween_property(_settled_plat, "modulate:a", 0.1, 0.5)
+
+## 驻留状态每帧更新: 踏板横向跟随 + 拖穿破碎检测
+func _update_settled(delta: float) -> void:
+	if not is_instance_valid(_settled_plat):
+		clear_settled()
+		return
+	
+	var is_dragging = pet.current_state_name == "drag"
+	
+	# ── 拖穿检测: 非拖拽时宠物中心低于踏板 → 破碎 ──
+	if not is_dragging:
+		var plat_y = _settled_plat.position.y
+		var pet_y = pet.global_position.y
+		var dist_below = (pet_y - plat_y) * pet.gravity_sign
+		if dist_below > pet.PET_RADIUS * 2.0:
+			_shatter_settled()
+			return
+	
+	# ── 踏板横向跟随 (只增不缩，边界直接记录) ──
+	var pet_x = pet.global_position.x
+	var margin = PLATFORM_MARGIN
+	_walk_min_x = minf(_walk_min_x, pet_x - margin)
+	_walk_max_x = maxf(_walk_max_x, pet_x + margin)
+	var plat_x = _settled_plat.position.x
+	var new_width = _walk_max_x - _walk_min_x
+	var local_offset_x = (_walk_min_x + _walk_max_x) / 2.0 - plat_x
+	for child in _settled_plat.get_children():
+		if child is CollisionShape2D and not child.has_meta("_roam_wall"):
+			child.disabled = is_dragging
+			var shape = child.shape as RectangleShape2D
+			if shape:
+				shape.size.x = new_width
+			child.position.x = local_offset_x
+		elif child is PlatformVisual:
+			child.platform_width = new_width
+			child.position.x = local_offset_x
+
+## 拖穿踏板: 破碎效果 + 清理驻留状态
+func _shatter_settled() -> void:
+	if is_instance_valid(_settled_plat):
+		_shatter_platform(_settled_plat)
+		_settled_plat = null
+	settled = false
+
+## 静默清理驻留状态 (无破碎效果，用于 finish 等场景)
+func clear_settled() -> void:
+	if is_instance_valid(_settled_plat):
+		var plat = _settled_plat
+		_settled_plat = null
+		var tween = plat.create_tween()
+		tween.tween_property(plat, "modulate:a", 0.0, 0.3)
+		tween.finished.connect(func():
+			if is_instance_valid(plat):
+				plat.queue_free()
+		)
+	settled = false
 
 # ── 横向滚动 ──
 
@@ -417,7 +552,9 @@ func _spawn_platform(pos: Vector2, is_elevator: bool = false) -> StaticBody2D:
 func _schedule_removal(body: Node, delay: float) -> void:
 	await pet.get_tree().create_timer(delay).timeout
 	if not is_instance_valid(body): return
-	if active and is_instance_valid(_current_plat) and _current_plat == body:
+	# 保护正在使用的踏板和驻留踏板
+	if (active and is_instance_valid(_current_plat) and _current_plat == body) or \
+	   (settled and is_instance_valid(_settled_plat) and _settled_plat == body):
 		_schedule_removal(body, 2.0)
 		return
 	var tween = body.create_tween()
