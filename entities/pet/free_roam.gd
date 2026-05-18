@@ -20,7 +20,7 @@ var _walk_min_x: float = 0.0             # 横移踏板左边界
 var _walk_max_x: float = 0.0             # 横移踏板右边界
 var _last_pet_x: float = 0.0             # 上帧宠物X (屏幕穿越检测)
 
-const PLATFORM_WIDTH := 65.0             # 踏板基础宽度 (宠物是老手，不需要很宽)
+const PLATFORM_WIDTH := 40.0             # 踏板基础宽度 (宠物是老手，不需要很宽)
 
 # ── 公共接口 ──
 
@@ -90,21 +90,23 @@ func update(delta: float) -> void:
 			_respawn_platform_at_pet()
 		_last_pet_x = pet.global_position.x
 		if is_instance_valid(_current_plat):
-			# 踏板本体不动，碰撞体局部偏移追踪宠物
+			# 踏板单向追踪: 只覆盖原点到宠物位置 + 两端小余量
 			var plat_x = _current_plat.position.x
 			var pet_x = pet.global_position.x
-			var offset = pet_x - plat_x
-			# 宽度 = 偏移量的两倍 + 基础宽度
-			var new_width = absf(offset) * 2.0 + PLATFORM_WIDTH
+			var margin = PLATFORM_WIDTH * 0.5
+			var left_edge = minf(plat_x, pet_x) - margin
+			var right_edge = maxf(plat_x, pet_x) + margin
+			var new_width = right_edge - left_edge
+			var local_center = (left_edge + right_edge) / 2.0 - plat_x
 			for child in _current_plat.get_children():
 				if child is CollisionShape2D and not child.has_meta("_roam_wall"):
 					var shape = child.shape as RectangleShape2D
 					if shape:
 						shape.size.x = new_width
-					child.position.x = offset
+					child.position.x = local_center
 				elif child is PlatformVisual:
 					child.platform_width = new_width
-					child.position.x = offset
+					child.position.x = local_center
 		if pet.is_settled():
 			pet.physics_material_override.friction = 0.6  # 恢复摩擦力
 			_full_stop()
@@ -157,9 +159,10 @@ func update(delta: float) -> void:
 			# 动态更新边界 (只增不缩)
 			_walk_min_x = minf(_walk_min_x, pet_x)
 			_walk_max_x = maxf(_walk_max_x, pet_x)
-			# 两侧各预留 PLATFORM_WIDTH 余量
-			var left_edge = _walk_min_x - PLATFORM_WIDTH
-			var right_edge = _walk_max_x + PLATFORM_WIDTH
+			# 两侧少量预留即可 (横移中宠物不会突然掉落)
+			var margin = PLATFORM_WIDTH * 0.65
+			var left_edge = _walk_min_x - margin
+			var right_edge = _walk_max_x + margin
 			var new_width = right_edge - left_edge
 			var local_offset_x = (left_edge + right_edge) / 2.0 - plat_x
 			for child in _current_plat.get_children():
@@ -181,7 +184,6 @@ func update(delta: float) -> void:
 
 func do_jump() -> void:
 	_remove_side_walls()
-	phase = 1
 	_was_rising = false
 	_airtime = 0.0
 	
@@ -192,16 +194,19 @@ func do_jump() -> void:
 	if x < edge_pad: hop_dir = 1.0
 	elif x > pet.boundary_size.x - edge_pad: hop_dir = -1.0
 	
-	# 跳跃力度 (650~800)
-	var vy = randf_range(650.0, 800.0) * ss * -pet.gravity_sign
-	var vx = hop_dir * randf_range(60.0, 150.0) * ss
-	
-	pet.linear_damp = 0.2
-	pet.angular_damp = 0.6
-	pet.apply_central_impulse(Vector2(vx, vy))
-	pet.apply_torque_impulse(hop_dir * randf_range(2000.0, 5000.0) * ss)
-	
-	pet.movement.activate(Vector2(hop_dir, -pet.gravity_sign))
+	# 先看方向，缓冲到期后再起跳
+	pet.movement.start(Vector2(hop_dir, -pet.gravity_sign), func():
+		if not active:
+			return
+		phase = 1
+		# 跳跃力度 (650~800)
+		var vy = randf_range(650.0, 800.0) * ss * -pet.gravity_sign
+		var vx = hop_dir * randf_range(60.0, 150.0) * ss
+		pet.linear_damp = 0.2
+		pet.angular_damp = 0.6
+		pet.apply_central_impulse(Vector2(vx, vy))
+		pet.apply_torque_impulse(hop_dir * randf_range(2000.0, 5000.0) * ss)
+	)
 
 # ── 决策 ──
 
@@ -239,15 +244,18 @@ func _walk_sideways() -> void:
 	_walk_min_x = minf(_walk_min_x, pet_x)
 	_walk_max_x = maxf(_walk_max_x, pet_x)
 	
-	phase = 4
-	_airtime = 0.0
-	_last_pet_x = pet.global_position.x
-	pet.linear_damp = 0.1
-	pet.angular_damp = 0.3
-	# 直接设定水平速度，确保宠物真正滚动位移
-	pet.linear_velocity = Vector2(hop_dir * randf_range(150.0, 300.0) * ss, pet.linear_velocity.y)
-	pet.apply_torque_impulse(hop_dir * randf_range(3000.0, 6000.0) * ss)
-	pet.movement.activate(Vector2(hop_dir, 0))
+	# 先看方向，缓冲到期后再滚动
+	pet.movement.start(Vector2(hop_dir, 0), func():
+		if not active:
+			return
+		phase = 4
+		_airtime = 0.0
+		_last_pet_x = pet.global_position.x
+		pet.linear_damp = 0.1
+		pet.angular_damp = 0.3
+		pet.linear_velocity = Vector2(hop_dir * randf_range(150.0, 300.0) * ss, pet.linear_velocity.y)
+		pet.apply_torque_impulse(hop_dir * randf_range(3000.0, 6000.0) * ss)
+	)
 
 # ── 跳下 (踏板破碎) ──
 
@@ -260,31 +268,26 @@ func _jump_down() -> void:
 	if x < edge_pad: hop_dir = 1.0
 	elif x > pet.boundary_size.x - edge_pad: hop_dir = -1.0
 	
-	# 蓄力: 瞳孔看向跳跃方向
+	# 先看方向蓄力，缓冲到期后起跳
 	_full_stop()
-	pet.movement.activate(Vector2(hop_dir, 0))
-	await pet.get_tree().create_timer(0.3).timeout
-	if not active:
-		return
-	
-	# 移除空气墙
-	_remove_side_walls()
-	
-	# 起跳! (强力横向 + 微小上弹)
-	pet.linear_damp = 0.2
-	pet.angular_damp = 0.4
-	pet.apply_central_impulse(Vector2(hop_dir * randf_range(200.0, 350.0) * ss, randf_range(50.0, 120.0) * -pet.gravity_sign * ss))
-	pet.apply_torque_impulse(hop_dir * randf_range(3000.0, 7000.0) * ss)
-	pet.movement.activate(Vector2(hop_dir, pet.gravity_sign))
-	
-	# 踏板因起跳冲击力破碎
-	if is_instance_valid(_current_plat):
-		_shatter_platform(_current_plat)
-		platforms.erase(_current_plat)
-		_current_plat = null
-	_clear_platforms()
-	
-	finish()
+	pet.movement.start(Vector2(hop_dir, pet.gravity_sign), func():
+		if not active:
+			return
+		# 移除空气墙
+		_remove_side_walls()
+		# 起跳! (强力横向 + 微小上弹)
+		pet.linear_damp = 0.2
+		pet.angular_damp = 0.4
+		pet.apply_central_impulse(Vector2(hop_dir * randf_range(200.0, 350.0) * ss, randf_range(50.0, 120.0) * -pet.gravity_sign * ss))
+		pet.apply_torque_impulse(hop_dir * randf_range(3000.0, 7000.0) * ss)
+		# 踏板因起跳冲击力破碎
+		if is_instance_valid(_current_plat):
+			_shatter_platform(_current_plat)
+			platforms.erase(_current_plat)
+			_current_plat = null
+		_clear_platforms()
+		finish()
+	)
 
 # ── 电梯式下降 ──
 
@@ -301,21 +304,18 @@ func _begin_descent() -> void:
 	
 	descending = true
 	
-	await pet.get_tree().create_timer(0.6).timeout
-	if not active:
-		return
-	
+	# 先看向下方，缓冲到期后生成电梯开始下降
 	_full_stop()
-	pet.gravity_scale = 0.0
-	
-	var platform_y = pet.global_position.y + pet.PET_RADIUS * pet.gravity_sign
-	var elevator = _spawn_platform(Vector2(pet.global_position.x, platform_y), true)
-	_elevator = elevator
-	_elevator_vanish_dist = randf_range(10.0, 50.0) * screen_scale()  # 随机 + 屏幕自适应
-	
-	pet.movement.activate(Vector2(0, pet.gravity_sign))
-	
-	phase = 3
+	pet.movement.start(Vector2(0, pet.gravity_sign), func():
+		if not active:
+			return
+		pet.gravity_scale = 0.0
+		var platform_y = pet.global_position.y + pet.PET_RADIUS * pet.gravity_sign
+		var elevator = _spawn_platform(Vector2(pet.global_position.x, platform_y), true)
+		_elevator = elevator
+		_elevator_vanish_dist = randf_range(10.0, 50.0) * screen_scale()
+		phase = 3
+	)
 
 # ── 物理辅助 ──
 
