@@ -200,12 +200,15 @@ func format_size(bytes: int) -> String:
 func _update_hover(delta: float) -> void:
 	var is_hovering := false
 	
-	# 排除宠物自身拖拽状态 (drag 状态下左键也按住, 会误判)
-	if pet.current_state_name != "drag":
+	# 排除: 操作菜单正在展示 (文件已投递, 不是悬停阶段)
+	# 排除: 宠物自身拖拽状态 (drag 状态下左键也按住)
+	# 排除: Godot Input 自己能检测到左键 (说明按下发生在我们窗口内, 不是外部拖入)
+	if not _is_active and pet.current_state_name != "drag" \
+		and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		var wm = _get_wm()
 		if wm:
 			var state = wm.GetGlobalMouseState()  # [held, screenX, screenY]
-			if state[0] == 1:  # 左键全局按住
+			if state[0] == 1:  # 左键全局按住 (但 Godot 自身检测不到 → 来自外部进程)
 				# 将屏幕坐标转为视口坐标 (减去窗口位置)
 				var win_pos = pet.get_window().position
 				var mouse_local = Vector2(state[1] - win_pos.x, state[2] - win_pos.y)
