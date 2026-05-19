@@ -49,6 +49,7 @@ var _back_btn: Button              # 子列表返回按钮
 var _category_container: VBoxContainer  # 分类卡片容器
 var _heatmap_btn: Button           # 键鼠全图按钮
 var _heatmap_panel: CanvasLayer    # 热力图面板实例
+var _alltime_btn: Button           # 历史总计按钮 (汇总所有报告)
 
 # ── 防抖 ──
 var _save_timer: Timer
@@ -185,6 +186,29 @@ func build() -> void:
 	)
 	_report_btn.visible = false  # 只在子列表时显示
 	_search_row.add_child(_report_btn)
+
+	# 历史总计按钮 (仅 sys:input 子列表)
+	_alltime_btn = Button.new()
+	_alltime_btn.text = "历史总计"
+	_alltime_btn.add_theme_font_size_override("font_size", 12)
+	_alltime_btn.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.55, 0.95, 0.9))
+	_alltime_btn.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0, 1.0))
+	var at_s = StyleBoxFlat.new()
+	at_s.bg_color = Color.from_hsv(EventBus.ui_hue, 0.50, 0.16, 0.6)
+	at_s.set_border_width_all(1)
+	at_s.border_color = Color.from_hsv(EventBus.ui_hue, 0.55, 0.60, 0.45)
+	at_s.set_corner_radius_all(2)
+	at_s.content_margin_left = 10; at_s.content_margin_right = 10
+	at_s.content_margin_top = 4; at_s.content_margin_bottom = 4
+	_alltime_btn.add_theme_stylebox_override("normal", at_s)
+	var at_h = at_s.duplicate()
+	at_h.bg_color = Color.from_hsv(EventBus.ui_hue, 0.55, 0.28, 0.8)
+	at_h.border_color = Color.from_hsv(EventBus.ui_hue, 0.55, 0.85, 0.7)
+	_alltime_btn.add_theme_stylebox_override("hover", at_h)
+	_alltime_btn.add_theme_stylebox_override("pressed", at_h)
+	_alltime_btn.pressed.connect(_open_alltime_heatmap)
+	_alltime_btn.visible = false
+	_search_row.add_child(_alltime_btn)
 
 	# ── 分类卡片容器 (机体记录分类首页) ──
 	_category_container = VBoxContainer.new()
@@ -581,6 +605,7 @@ func _switch_source(src: String) -> void:
 	# 用户分区: 平铺列表; 宠物分区: 分类首页
 	_new_btn.visible = (_source_filter == "user")
 	_report_btn.visible = false
+	_alltime_btn.visible = false
 	_back_btn.visible = false
 	# 更新按钮样式
 	for i in range(_filter_btns.size()):
@@ -616,6 +641,7 @@ func _update_pet_view() -> void:
 		_search_row.visible = true
 		_back_btn.visible = true
 		_report_btn.visible = (_pet_category in ["sys:input", "sys:window"])
+		_alltime_btn.visible = (_pet_category == "sys:input")
 		_apply_filter()
 
 func _render_pet_categories() -> void:
@@ -635,6 +661,7 @@ func _on_back_to_categories() -> void:
 	_search_edit.text = ""
 	_back_btn.visible = false
 	_report_btn.visible = false
+	_alltime_btn.visible = false
 	_new_btn.visible = false
 	_update_pet_view()
 	_update_detail_panel()
@@ -794,8 +821,15 @@ func _open_heatmap() -> void:
 	var input_data: Dictionary = entry.get("input_data", {})
 	var key_data: Dictionary = input_data.get("keys", {})
 	var mouse_data: Dictionary = input_data.get("mouse", {})
+	var combo_data: Dictionary = input_data.get("combos", {})
 	
-	# 懒加载面板 (挂载到 Main 节点, 确保不被装置终端面板裁剪)
+	_ensure_heatmap_panel()
+	_heatmap_panel.set_title("输入行为热力全图")
+	_heatmap_panel.set_data(key_data, mouse_data, combo_data)
+	_heatmap_panel.open_panel()
+
+## 确保热力图面板实例存在
+func _ensure_heatmap_panel() -> void:
 	if not is_instance_valid(_heatmap_panel):
 		_heatmap_panel = CanvasLayer.new()
 		_heatmap_panel.set_script(InputHeatmapWindow)
@@ -804,8 +838,48 @@ func _open_heatmap() -> void:
 			main_node.add_child(_heatmap_panel)
 		else:
 			add_child(_heatmap_panel)
+
+## 汇总所有 sys:input 报告, 打开历史总计热力图
+func _open_alltime_heatmap() -> void:
+	var logs = SettingsManager.get_datalogs()
+	var all_keys: Dictionary = {}
+	var all_mouse: Dictionary = {"left_clicks": 0, "right_clicks": 0, "middle_clicks": 0, "distance_px": 0}
+	var all_combos: Dictionary = {}
+	var report_count: int = 0
 	
-	_heatmap_panel.set_data(key_data, mouse_data)
+	for entry in logs:
+		if entry.get("source", "") != "pet":
+			continue
+		var tags: Array = entry.get("tags", [])
+		if "sys:input" not in tags:
+			continue
+		report_count += 1
+		var input_data: Dictionary = entry.get("input_data", {})
+		# 合并按键数据
+		var keys: Dictionary = input_data.get("keys", {})
+		for k in keys:
+			all_keys[k] = int(all_keys.get(k, 0)) + int(keys[k])
+		# 合并鼠标数据
+		var mouse: Dictionary = input_data.get("mouse", {})
+		for mk in ["left_clicks", "right_clicks", "middle_clicks", "distance_px"]:
+			all_mouse[mk] = int(all_mouse.get(mk, 0)) + int(mouse.get(mk, 0))
+		# 合并组合键数据
+		var combos: Dictionary = input_data.get("combos", {})
+		for ck in combos:
+			all_combos[ck] = int(all_combos.get(ck, 0)) + int(combos[ck])
+	
+	if report_count == 0:
+		return  # 没有数据
+	
+	# 统计总击键数
+	var total_hits: int = 0
+	for k in all_keys:
+		total_hits += int(all_keys[k])
+	
+	_ensure_heatmap_panel()
+	var subtitle := "-- 跨 %d 份报告累计采集。哪些键是牛马, 哪些键在摸鱼, 一目了然。 --" % report_count
+	_heatmap_panel.set_title("键盘历史总统计", subtitle)
+	_heatmap_panel.set_data(all_keys, all_mouse, all_combos)
 	_heatmap_panel.open_panel()
 
 # ═══════════════════════════════════════════════

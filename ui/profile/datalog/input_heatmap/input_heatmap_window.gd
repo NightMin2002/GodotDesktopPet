@@ -2,6 +2,7 @@ extends CanvasLayer
 
 var _key_data: Dictionary = {}
 var _mouse_data: Dictionary = {}
+var _combo_data: Dictionary = {}
 
 var _key_w := 50.0
 var _key_h := 46.0
@@ -29,6 +30,20 @@ var _avg_count: float = 0.0
 var _delta_mode: bool = false
 var _mode_btn: Button
 
+var _title_text: String = "输入行为热力全图"
+var _subtitle_text: String = ""  # 自定义副标题 (为空则用默认)
+var _unused_count: int = 0  # 从未按过的键数量
+var _active_count: int = 0  # 按过的键数量
+var _title_label: Label      # 标题 Label 引用
+var _layout_bottom_y: float = 0.0  # 所有键盘元素的最大底部 Y 坐标
+
+# ── 组合键排行区 ──
+var _combo_scroll: ScrollContainer
+var _combo_vbox: VBoxContainer
+var _combo_label: Label
+var _combo_sep: Control  # 分隔线
+var _combo_wrapper: HBoxContainer  # CyberScrollIndicator 包装器
+
 var _panel_w: float = 1100
 var _panel_h: float = 640
 
@@ -41,8 +56,8 @@ func _ready() -> void:
 func _calc_sizes() -> void:
 	var vp := get_viewport().get_visible_rect().size
 	_panel_w = clampf(vp.x * 0.88, 1100, 1800)
-	_panel_h = clampf(vp.y * 0.82, 580, 900)
-	var scale := minf(_panel_w / 1500.0, _panel_h / 680.0)
+	_panel_h = clampf(vp.y * 0.88, 640, 1050)
+	var scale := minf(_panel_w / 1500.0, _panel_h / 820.0)
 	_key_w = 50.0 * scale
 	_key_h = 46.0 * scale
 	_key_gap = 4.0 * scale
@@ -103,6 +118,7 @@ func _build_ui() -> void:
 	_canvas = Control.new()
 	_canvas.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_canvas.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_canvas.clip_contents = true
 	_canvas.mouse_filter = Control.MOUSE_FILTER_PASS
 	_canvas.draw.connect(_on_draw)
 	outer.add_child(_canvas)
@@ -116,12 +132,12 @@ func _build_title_bar() -> HBoxContainer:
 	bar.mouse_filter = Control.MOUSE_FILTER_PASS
 	bar.gui_input.connect(_on_title_bar_input)
 	
-	var title := Label.new()
-	title.text = "输入行为热力全图"
-	title.add_theme_font_size_override("font_size", 22)
-	title.add_theme_color_override("font_color", Color(0.70, 0.80, 0.92, 0.9))
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bar.add_child(title)
+	_title_label = Label.new()
+	_title_label.text = _title_text
+	_title_label.add_theme_font_size_override("font_size", 22)
+	_title_label.add_theme_color_override("font_color", Color(0.70, 0.80, 0.92, 0.9))
+	_title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(_title_label)
 	
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -196,9 +212,10 @@ func _clamp_pos(pos: Vector2) -> Vector2:
 	pos.y = clampf(pos.y, 4.0, maxf(4.0, vp.y - _panel_h - 4.0))
 	return pos
 
-func set_data(key_data: Dictionary, mouse_data: Dictionary) -> void:
+func set_data(key_data: Dictionary, mouse_data: Dictionary, combo_data: Dictionary = {}) -> void:
 	_key_data = key_data
 	_mouse_data = mouse_data
+	_combo_data = combo_data
 	_compute_stats()
 	
 	var hue := EventBus.ui_hue
@@ -222,6 +239,15 @@ func set_data(key_data: Dictionary, mouse_data: Dictionary) -> void:
 		
 	if is_instance_valid(_canvas):
 		_canvas.queue_redraw()
+	
+	_rebuild_combo_list()
+
+## 设置自定义标题和副标题
+func set_title(title: String, subtitle: String = "") -> void:
+	_title_text = title
+	_subtitle_text = subtitle
+	if is_instance_valid(_title_label):
+		_title_label.text = title
 
 func open_panel() -> void:
 	_is_open = true
@@ -250,6 +276,7 @@ func _compute_stats() -> void:
 	_total_keys = 0
 	_top_key = ""
 	_top_count = 0
+	_active_count = 0
 	var key_count := 0
 	for k in _key_data:
 		var v := int(_key_data[k])
@@ -258,6 +285,14 @@ func _compute_stats() -> void:
 		if v > _top_count:
 			_top_count = v
 			_top_key = k
+	_active_count = key_count
+	# 统计未使用的键 (基于布局中的所有键位)
+	var total_layout_keys := _key_nodes.size()
+	var used_in_layout := 0
+	for node in _key_nodes:
+		if int(_key_data.get(node.data_key, 0)) > 0:
+			used_in_layout += 1
+	_unused_count = total_layout_keys - used_in_layout
 	_total_mouse = int(_mouse_data.get("left_clicks", 0)) + int(_mouse_data.get("right_clicks", 0)) + int(_mouse_data.get("middle_clicks", 0))
 	_avg_count = float(_total_keys) / float(maxi(key_count, 1))
 
@@ -358,12 +393,16 @@ func _build_layout() -> void:
 			_key_nodes.append(kn)
 			x += kw + _key_gap
 		oy += _key_h + _key_gap
+	var main_kb_bottom := oy  # 主键盘底部
 	
-	var nav_ox := ox + 15.5 * (_key_w + _key_gap) + 28
-	var nav_label_oy := oy - (_key_h + _key_gap) * 4 - 12
-	_add_label("NAV // 导航阵列", nav_ox, nav_label_oy, Color.from_hsv(EventBus.ui_hue, 0.25, 0.55, 0.40))
+	# ── 右侧元素统一对齐到数字行顶部 ──
+	# 数字行顶部 = header + SYS_FUNC标签(16) + F键行(key_h+gap) + 间距(10) + ALPHA标签(16)
+	var right_top_y := _header_h + 16 + (_key_h + _key_gap) + 10 + 16
 	
-	var sp_oy := nav_label_oy + 16
+	var nav_ox := ox + 15.5 * (_key_w + _key_gap) + 20
+	_add_label("NAV // 导航阵列", nav_ox, right_top_y - 16, Color.from_hsv(EventBus.ui_hue, 0.25, 0.55, 0.40))
+	
+	var sp_oy := right_top_y
 	var sp_keys := [
 		["Ins", "Insert"], ["Home", "Home"], ["PgUp", "PageUp"],
 		["Del", "Delete"], ["End", "End"],   ["PgDn", "PageDown"],
@@ -390,25 +429,19 @@ func _build_layout() -> void:
 		kn.size = Vector2(_key_w, _key_h)
 		_canvas.add_child(kn)
 		_key_nodes.append(kn)
+	var arrow_bottom := arrow_oy + 2 * (_key_h + _key_gap)
 	
 	# ── 小键盘区 (Numpad) ──
 	var num_ox := nav_ox + 3.5 * (_key_w + _key_gap) + 10
-	var num_label_oy := nav_label_oy
-	_add_label("NUMPAD // 数值输入", num_ox, num_label_oy, Color.from_hsv(EventBus.ui_hue, 0.25, 0.55, 0.40))
-	var num_oy := num_label_oy + 16
+	_add_label("NUMPAD // 数值输入", num_ox, right_top_y - 16, Color.from_hsv(EventBus.ui_hue, 0.25, 0.55, 0.40))
+	var num_oy := right_top_y
 	
 	# 小键盘布局: 5行 x 4列
-	# Row 0: NumLock  Num/  Num*  Num-
-	# Row 1: Num7     Num8  Num9  Num+ (2行高)
-	# Row 2: Num4     Num5  Num6
-	# Row 3: Num1     Num2  Num3  NumEnter (2行高)
-	# Row 4: Num0 (2列宽)   Num.
-	
 	var nk_w := _key_w * 0.9
 	var nk_h := _key_h * 0.9
 	var nk_gap := _key_gap
 	
-	# Row 0
+	# Row 0: NumLock, /, *, -
 	var num_row0 := [["NLk", "NumLock"], ["/", "Num/"], ["*", "Num*"], ["-", "Num-"]]
 	for i in range(num_row0.size()):
 		var kn = CyberKey.new()
@@ -419,7 +452,7 @@ func _build_layout() -> void:
 		_key_nodes.append(kn)
 	num_oy += nk_h + nk_gap
 	
-	# Row 1: 7, 8, 9 + Num+ (spans 2 rows)
+	# Row 1: 7, 8, 9 + Num+ (2行高)
 	var num_row1 := [["7", "Num7"], ["8", "Num8"], ["9", "Num9"]]
 	for i in range(num_row1.size()):
 		var kn = CyberKey.new()
@@ -428,7 +461,6 @@ func _build_layout() -> void:
 		kn.size = Vector2(nk_w, nk_h)
 		_canvas.add_child(kn)
 		_key_nodes.append(kn)
-	# Num+ (2行高)
 	var plus_kn = CyberKey.new()
 	plus_kn._init_key("+", "Num+")
 	plus_kn.position = Vector2(num_ox + 3 * (nk_w + nk_gap), num_oy)
@@ -457,7 +489,6 @@ func _build_layout() -> void:
 		kn.size = Vector2(nk_w, nk_h)
 		_canvas.add_child(kn)
 		_key_nodes.append(kn)
-	# NumEnter (2行高) — data_key 用 "Enter" 因为 C# 里 Numpad Enter 也是 0x0D
 	var enter_kn = CyberKey.new()
 	enter_kn._init_key("Ent", "Enter")
 	enter_kn.position = Vector2(num_ox + 3 * (nk_w + nk_gap), num_oy)
@@ -473,24 +504,29 @@ func _build_layout() -> void:
 	zero_kn.size = Vector2(nk_w * 2 + nk_gap, nk_h)
 	_canvas.add_child(zero_kn)
 	_key_nodes.append(zero_kn)
-	
 	var dot_kn = CyberKey.new()
 	dot_kn._init_key(".", "Num.")
 	dot_kn.position = Vector2(num_ox + 2 * (nk_w + nk_gap), num_oy)
 	dot_kn.size = Vector2(nk_w, nk_h)
 	_canvas.add_child(dot_kn)
 	_key_nodes.append(dot_kn)
+	var numpad_bottom := num_oy + nk_h + nk_gap
 	
 	# ── 鼠标 (IO_DEVICE) ── 放在小键盘右侧
 	var mouse_ox := num_ox + 4.5 * (nk_w + nk_gap) + 10
-	var mouse_oy := _header_h
+	var mouse_oy := right_top_y - 16
 	_add_label("IO_DEVICE // 定位装置", mouse_ox, mouse_oy, Color.from_hsv(EventBus.ui_hue, 0.25, 0.55, 0.40))
 	mouse_oy += 16
-	
 	_mouse_node = CyberMouse.new()
 	_mouse_node.position = Vector2(mouse_ox, mouse_oy)
 	_mouse_node.size = Vector2(140.0, 210.0)
 	_canvas.add_child(_mouse_node)
+	
+	# 统一底部: 取所有元素的最大 Y
+	_layout_bottom_y = maxf(main_kb_bottom, maxf(arrow_bottom, numpad_bottom))
+	
+	# ── 组合键排行区 (键盘下方空白, 延迟到布局完成后构建) ──
+	_build_combo_section.call_deferred()
 
 func _on_frame_draw() -> void:
 	if not _frame_drawer: return
@@ -570,13 +606,185 @@ func _on_draw() -> void:
 	if _delta_mode:
 		_canvas.draw_string(font, Vector2(ox + 620, oy + 18), "AVG //", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, stat_color)
 		_canvas.draw_string(font, Vector2(ox + 670, oy + 18), "%.1f" % _avg_count, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.from_hsv(0.55, 0.4, 0.90, 0.90))
+	else:
+		# 未使用/已使用键位统计
+		var unused_ox := ox + 620
+		if _unused_count > 0:
+			_canvas.draw_string(font, Vector2(unused_ox, oy + 18), "IDLE //", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, stat_color)
+			_canvas.draw_string(font, Vector2(unused_ox + 55, oy + 18), "%d" % _unused_count, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.from_hsv(0.0, 0.45, 0.85, 0.80))
+			_canvas.draw_string(font, Vector2(unused_ox + 95, oy + 18), "ACTIVE //", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, stat_color)
+			_canvas.draw_string(font, Vector2(unused_ox + 170, oy + 18), "%d" % _active_count, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.from_hsv(0.35, 0.55, 0.90, 0.90))
 	
-	_canvas.draw_line(Vector2(ox, oy + 28), Vector2(ox + 750, oy + 28), Color.from_hsv(hue, 0.4, 0.5, 0.15), 1.0)
+	_canvas.draw_line(Vector2(ox, oy + 28), Vector2(ox + 950, oy + 28), Color.from_hsv(hue, 0.4, 0.5, 0.15), 1.0)
 	
-	var note := "-- 本机仅做行为采集。数据解读是操作员的事。 --"
-	if _delta_mode:
+	var note: String
+	if _subtitle_text != "":
+		note = _subtitle_text
+	elif _delta_mode:
 		note = "-- 基准偏差模式: 偏蓝 = 低于均值, 偏橙 = 高于均值。不关我事。 --"
+	else:
+		note = "-- 本机仅做行为采集。数据解读是操作员的事。 --"
 	_canvas.draw_string(font, Vector2(ox, oy + 44), note, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.40, 0.45, 0.55, 0.40))
+
+## 构建组合键排行区域 (ScrollContainer + CyberScrollIndicator)
+func _build_combo_section() -> void:
+	var hue := EventBus.ui_hue
+	var ox := _margin
+	var oy := _layout_bottom_y + 10
+	# 全宽: canvas 宽度减去两侧 margin
+	var canvas_w := _canvas.size.x if is_instance_valid(_canvas) else _panel_w
+	var area_w := canvas_w - _margin * 2
+	# 可用高度
+	var canvas_h := _canvas.size.y if is_instance_valid(_canvas) else _panel_h
+	var available_h := canvas_h - oy - 8
+	if available_h < 40:
+		return
+	
+	# 区域标题
+	_combo_label = Label.new()
+	_combo_label.text = "COMBO_FREQ // 组合键频次"
+	_combo_label.position = Vector2(ox, oy)
+	_combo_label.add_theme_font_size_override("font_size", 11)
+	_combo_label.add_theme_color_override("font_color", Color.from_hsv(hue, 0.25, 0.55, 0.40))
+	_canvas.add_child(_combo_label)
+	oy += 16
+	
+	# 分隔线 (全宽)
+	_combo_sep = Control.new()
+	_combo_sep.position = Vector2(ox, oy)
+	_combo_sep.size = Vector2(area_w, 1)
+	var sep_w := area_w  # 捕获到闭包
+	_combo_sep.draw.connect(func():
+		_combo_sep.draw_line(Vector2.ZERO, Vector2(sep_w, 0), Color.from_hsv(hue, 0.3, 0.4, 0.15), 1.0)
+	)
+	_canvas.add_child(_combo_sep)
+	oy += 5
+	
+	# ScrollContainer (先不设绝对位置, 由 wrapper 管理)
+	_combo_scroll = ScrollContainer.new()
+	_combo_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_combo_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_combo_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_combo_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	# 透明背景
+	var scroll_bg := StyleBoxFlat.new()
+	scroll_bg.bg_color = Color.TRANSPARENT
+	_combo_scroll.add_theme_stylebox_override("panel", scroll_bg)
+	_canvas.add_child(_combo_scroll)
+	
+	# 内容容器
+	_combo_vbox = VBoxContainer.new()
+	_combo_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_combo_vbox.add_theme_constant_override("separation", 0)
+	_combo_scroll.add_child(_combo_vbox)
+	
+	# 用项目统一的科幻滚动指示器替换原生滚动条
+	_combo_wrapper = CyberScrollIndicator.wrap(_combo_scroll)
+	# wrapper 继承绝对定位 (因为 _canvas 是手动布局)
+	_combo_wrapper.position = Vector2(ox, oy)
+	_combo_wrapper.size = Vector2(area_w, available_h - 22)
+	
+	# 构建完成后立即填充数据 (因为 set_data 可能已在 deferred 之前调用过)
+	_rebuild_combo_list()
+
+## 重建组合键列表
+func _rebuild_combo_list() -> void:
+	if not is_instance_valid(_combo_vbox):
+		return
+	# 清空旧内容
+	for child in _combo_vbox.get_children():
+		child.queue_free()
+	
+	# 显示/隐藏组合键区域
+	var has_data := not _combo_data.is_empty()
+	if is_instance_valid(_combo_label): _combo_label.visible = has_data
+	if is_instance_valid(_combo_sep): _combo_sep.visible = has_data
+	if is_instance_valid(_combo_wrapper): _combo_wrapper.visible = has_data
+	if not has_data:
+		return
+	
+	# 排序
+	var sorted: Array = []
+	for k in _combo_data:
+		sorted.append([k, int(_combo_data[k])])
+	sorted.sort_custom(func(a, b): return a[1] > b[1])
+	
+	var max_val: int = int(sorted[0][1]) if not sorted.is_empty() else 1
+	var hue := EventBus.ui_hue
+	
+	# 全宽三栏布局
+	var canvas_w := _canvas.size.x if is_instance_valid(_canvas) else _panel_w
+	var area_w := canvas_w - _margin * 2 - 50  # 减去滚动指示器宽度
+	var row_h := 18.0
+	_build_combo_tri_col(sorted, max_val, hue, area_w, row_h)
+
+## 三栏布局
+func _build_combo_tri_col(sorted: Array, max_val: int, hue: float, area_w: float, row_h: float) -> void:
+	var col_gap := 20.0
+	var col_w := (area_w - col_gap * 2) / 3.0
+	var third := ceili(sorted.size() / 3.0)
+	
+	for r in range(third):
+		var hbox := HBoxContainer.new()
+		hbox.add_theme_constant_override("separation", int(col_gap))
+		
+		for c in range(3):
+			var data_idx := r + c * third
+			if data_idx < sorted.size():
+				var item := _create_combo_row(data_idx, sorted[data_idx][0], int(sorted[data_idx][1]), max_val, hue, col_w, row_h)
+				hbox.add_child(item)
+			else:
+				# 占位: 保持列宽一致
+				var spacer := Control.new()
+				spacer.custom_minimum_size = Vector2(col_w, row_h)
+				hbox.add_child(spacer)
+		
+		_combo_vbox.add_child(hbox)
+
+## 创建单行组合键条目
+func _create_combo_row(idx: int, combo_name: String, count: int, max_val: int, hue: float, w: float, h: float) -> Control:
+	var row := Control.new()
+	row.custom_minimum_size = Vector2(w, h)
+	row.size = Vector2(w, h)
+	
+	var t := clampf(float(count) / float(maxi(max_val, 1)), 0.0, 1.0)
+	
+	# 用 draw 一次性渲染整行
+	row.draw.connect(func():
+		var font := ThemeDB.fallback_font
+		var dim_c := Color(0.45, 0.50, 0.58, 0.50)
+		var name_c := Color(0.70, 0.78, 0.88, 0.82)
+		var count_c := Color.from_hsv(hue, 0.35, 0.85, 0.80)
+		
+		# 序号
+		var idx_text := "%d." % (idx + 1)
+		row.draw_string(font, Vector2(0, h - 4), idx_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, dim_c)
+		
+		# 组合键名
+		var name_ox := 22.0
+		var name_w := font.get_string_size(combo_name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+		row.draw_string(font, Vector2(name_ox, h - 4), combo_name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, name_c)
+		
+		# 次数
+		var count_text := HeatUtil.format_count(count)
+		var count_w := font.get_string_size(count_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+		row.draw_string(font, Vector2(w - count_w, h - 4), count_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, count_c)
+		
+		# 频次条 (名字后 8px 到次数前 8px)
+		var bar_ox := name_ox + name_w + 8.0
+		var bar_end := w - count_w - 8
+		var bar_max_w := bar_end - bar_ox
+		if bar_max_w > 10:
+			var bar_y := h - 11.0
+			var bar_h := 4.0
+			var bar_bg := Color.from_hsv(hue, 0.15, 0.08, 0.20)
+			row.draw_rect(Rect2(bar_ox, bar_y, bar_max_w, bar_h), bar_bg)
+			var fill_w := bar_max_w * t
+			if fill_w > 0.5:
+				var fill_c := Color.from_hsv(hue, 0.40, 0.30, 0.50).lerp(Color.from_hsv(0.10, 0.55, 0.50, 0.65), t)
+				row.draw_rect(Rect2(bar_ox, bar_y, fill_w, bar_h), fill_c)
+	)
+	return row
 
 func _get_pet() -> Node:
 	var main_node = get_tree().root.get_node_or_null("Main")
