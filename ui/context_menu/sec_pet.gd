@@ -170,7 +170,7 @@ func _build_terminal_l3_panel() -> void:
 		{"label": "新消息", "behavior": "_holo_mail", "desc": "全息屏显示系统级通知与新邮件待办"},
 		{"label": "桌面监控", "behavior": "_holo_desktop", "desc": "实时捕捉桌面画面投射到全息屏"},
 		{"label": "终端引导", "behavior": "_holo_loading", "desc": "全息屏显示系统初始化引导序列"},
-		{"label": "待机屏保", "behavior": "_holo_browse", "desc": "弹出全息屏待机屏保 (25秒)"}
+		{"label": "待机屏保", "behavior": "_holo_browse", "desc": "弹出全息屏待机屏保"}
 	]
 
 	for item in items:
@@ -207,26 +207,26 @@ func _on_terminal_action(behavior: String) -> void:
 		pet.show_local_bubble("休眠周期中。指令已搁置。")
 		return
 
-	if pet and not pet.gaming.active and not pet.holo_screen.visible:
+	if pet and not pet.gaming.active:
 		var s: float = -1.0 if pet.global_position.x > pet.boundary_size.x * 0.5 else 1.0
 		_dispatch_terminal(pet, behavior, s)
 
 # ── 终端行为分发表 (数据驱动, 新增模式只加一行) ──
 const _TERMINAL_ACTIONS := {
-	"_holo_browse":  {"method": "show_idle",    "duration": 25.0},
+	"_holo_browse":  {"method": "show_idle",    "duration": 10.0},
 	"_holo_loading": {"method": "show_loading", "duration": 10.0, "arg": "初始化"},
 	"_holo_battery": {"method": "show_battery", "duration": 10.0},
-	"_holo_done":    {"method": "show_done",    "duration": 4.0},
-	"_holo_error":   {"method": "show_error",   "duration": 5.0},
-	"_holo_warning": {"method": "show_warning", "duration": 5.0},
-	"_holo_query":   {"method": "show_query",   "duration": 5.0},
-	"_holo_alarm":   {"method": "show_alarm",   "duration": 8.0},
-	"_holo_cleanup": {"method": "show_cleanup", "duration": 6.0},
-	"_holo_recycle": {"method": "show_recycle", "duration": 5.0},
+	"_holo_done":    {"method": "show_done",    "duration": 10.0},
+	"_holo_error":   {"method": "show_error",   "duration": 10.0},
+	"_holo_warning": {"method": "show_warning", "duration": 10.0},
+	"_holo_query":   {"method": "show_query",   "duration": 10.0},
+	"_holo_alarm":   {"method": "show_alarm",   "duration": 10.0},
+	"_holo_cleanup": {"method": "show_cleanup", "duration": 10.0},
+	"_holo_recycle": {"method": "show_recycle", "duration": 10.0},
 	"_holo_globe":   {"method": "show_globe",   "duration": 10.0},
-	"_holo_sync":    {"method": "show_sync",    "duration": 6.0},
-	"_holo_lock":    {"method": "show_lock",    "duration": 5.0},
-	"_holo_mail":    {"method": "show_mail",    "duration": 6.0},
+	"_holo_sync":    {"method": "show_sync",    "duration": 10.0},
+	"_holo_lock":    {"method": "show_lock",    "duration": 10.0},
+	"_holo_mail":    {"method": "show_mail",    "duration": 10.0},
 	"_holo_desktop": {"method": "show_desktop", "duration": 0.0},
 }
 

@@ -111,19 +111,19 @@ func show_game(texture_provider: Callable, screen_side: float, lock: bool = fals
 
 ## 显示全息屏 (待机屏保模式)
 ## duration: 屏保时长 (秒), 0=不自动隐藏
-func show_idle(screen_side: float, duration: float = 0.0) -> void:
+func show_idle(screen_side: float, duration: float = 10.0) -> void:
+	if is_terminal_mode:
+		_smooth_swap(Mode.IDLE, "", duration)
+		return
 	side = screen_side
 	mode = Mode.IDLE
 	_idle_duration = duration
 	_idle_elapsed = 0.0
 	_get_renderer(Mode.IDLE).init()
-	# 展开动画
 	visible = true
 	_deploying = true
 	_retracting = false
-	# 锁定宠物 + 生成踏板
 	_lock_pet()
-	# 创建关闭按钮
 	_create_close_btn()
 
 ## 隐藏全息屏 (带收起动画)
@@ -158,9 +158,10 @@ func hide() -> void:
 ## 显示全息屏 (加载模式: 旋转弧线 + 状态标签)
 ## label_text: 状态文字 (如 "LOADING", "SYS.CHECK")
 func show_loading(label_text: String, screen_side: float, duration: float = 0.0) -> void:
-	# 如果当前在其他模式, 先清理
 	if is_terminal_mode:
-		_cleanup_active_mode()
+		_smooth_swap(Mode.LOADING, label_text, duration)
+		_loading_label_text = label_text
+		return
 	side = screen_side
 	mode = Mode.LOADING
 	_get_renderer(Mode.LOADING).init()
@@ -170,15 +171,14 @@ func show_loading(label_text: String, screen_side: float, duration: float = 0.0)
 	visible = true
 	_deploying = true
 	_retracting = false
-	# 锁定宠物 + 踏板
 	_lock_pet()
-	# 创建关闭按钮 (双态: 默认显示状态文字, 悬停变断开连接)
 	_create_close_btn(label_text)
 
 ## 显示全息屏 (电池状态模式)
-func show_battery(screen_side: float, duration: float = 0.0) -> void:
+func show_battery(screen_side: float, duration: float = 10.0) -> void:
 	if is_terminal_mode:
-		_cleanup_active_mode()
+		_smooth_swap(Mode.BATTERY, "电源监测", duration)
+		return
 	side = screen_side
 	mode = Mode.BATTERY
 	_get_renderer(Mode.BATTERY).init()
@@ -191,43 +191,43 @@ func show_battery(screen_side: float, duration: float = 0.0) -> void:
 	_create_close_btn("电源监测")
 
 ## 显示终端操作完成 (打勾动画)
-func show_done(screen_side: float, duration: float = 3.0) -> void:
+func show_done(screen_side: float, duration: float = 10.0) -> void:
 	_show_terminal(Mode.DONE, screen_side, duration)
 
 ## 显示邮件通知
-func show_mail(screen_side: float, duration: float = 0.0) -> void:
+func show_mail(screen_side: float, duration: float = 10.0) -> void:
 	_show_terminal(Mode.MAIL, screen_side, duration)
 
 ## 显示报错警示
-func show_error(screen_side: float, duration: float = 0.0) -> void:
+func show_error(screen_side: float, duration: float = 10.0) -> void:
 	_show_terminal(Mode.ERROR, screen_side, duration)
 
 ## 显示系统轻度警告
-func show_warning(screen_side: float, duration: float = 0.0) -> void:
+func show_warning(screen_side: float, duration: float = 10.0) -> void:
 	_show_terminal(Mode.WARNING, screen_side, duration)
 
 ## 显示未知检索
-func show_query(screen_side: float, duration: float = 0.0) -> void:
+func show_query(screen_side: float, duration: float = 10.0) -> void:
 	_show_terminal(Mode.QUERY, screen_side, duration)
 
 ## 显示日程闹钟提醒
-func show_alarm(screen_side: float, duration: float = 0.0) -> void:
+func show_alarm(screen_side: float, duration: float = 10.0) -> void:
 	_show_terminal(Mode.ALARM, screen_side, duration)
 
 ## 显示垃圾清理与记忆回收
-func show_cleanup(screen_side: float, duration: float = 0.0) -> void:
+func show_cleanup(screen_side: float, duration: float = 10.0) -> void:
 	_show_terminal(Mode.CLEANUP, screen_side, duration)
 
 ## 显示全球网络侦测彩蛋
-func show_globe(screen_side: float, duration: float = 0.0) -> void:
+func show_globe(screen_side: float, duration: float = 10.0) -> void:
 	_show_terminal(Mode.GLOBE, screen_side, duration)
 
 ## 显示普通级别的通讯或离线状态断点连线扫描
-func show_sync(screen_side: float, duration: float = 0.0) -> void:
+func show_sync(screen_side: float, duration: float = 10.0) -> void:
 	_show_terminal(Mode.SYNC, screen_side, duration)
 
 ## 显示隐私/终端锁定
-func show_lock(screen_side: float, duration: float = 0.0) -> void:
+func show_lock(screen_side: float, duration: float = 10.0) -> void:
 	_show_terminal(Mode.LOCK, screen_side, duration)
 
 ## 显示桌面监控 (实时屏幕捕捉)
@@ -235,13 +235,17 @@ func show_desktop(screen_side: float, duration: float = 0.0) -> void:
 	_show_terminal(Mode.DESKTOP, screen_side, duration)
 
 ## 显示回收归档 (文件移入回收站)
-func show_recycle(screen_side: float, duration: float = 0.0) -> void:
+func show_recycle(screen_side: float, duration: float = 10.0) -> void:
 	_show_terminal(Mode.RECYCLE, screen_side, duration)
 
 ## 通用终端模式启动 (注册表驱动)
-func _show_terminal(m: Mode, screen_side: float, duration: float = 0.0) -> void:
+func _show_terminal(m: Mode, screen_side: float, duration: float = 10.0) -> void:
+	var label: String = _MODE_REGISTRY[m]["label"] if m in _MODE_REGISTRY else "终端"
+	# 已在终端模式: 平滑换屏 (骨架不动, 只换内容)
 	if is_terminal_mode:
-		_cleanup_active_mode()
+		_smooth_swap(m, label, duration)
+		return
+	# 首次部署: 展开动画 + 锁定 + 踏板
 	side = screen_side
 	mode = m
 	_get_renderer(m).init()
@@ -251,7 +255,6 @@ func _show_terminal(m: Mode, screen_side: float, duration: float = 0.0) -> void:
 	_deploying = true
 	_retracting = false
 	_lock_pet()
-	var label: String = _MODE_REGISTRY[m]["label"] if m in _MODE_REGISTRY else "终端"
 	_create_close_btn(label)
 
 ## 每帧更新 (由 pet._process 调用, 驱动动画)
@@ -644,13 +647,36 @@ func _map_uv(pts: PackedVector2Array, u: float, v: float) -> Vector2:
 # 统一清理
 # ══════════════════════════════════════
 
-## 清理当前活跃模式的所有资源 (踏板/按钮/解锁/后台线程)
-func _cleanup_active_mode() -> void:
-	# 桌面监控模式: 停止后台截屏线程
+## 清理当前渲染器资源 (不动骨架: 不解锁/不拆踏板/不移除按钮)
+func _cleanup_renderer() -> void:
 	if mode == Mode.DESKTOP:
 		var renderer = _renderers.get(Mode.DESKTOP)
 		if renderer and renderer.has_method("stop_capture"):
 			renderer.stop_capture()
 	_cleanup_mini_vp()
+
+## 终端→终端平滑换屏 (骨架不动, 只切换屏幕内容)
+func _smooth_swap(m: Mode, label: String, duration: float) -> void:
+	_cleanup_renderer()
+	# 如果正在收起, 反转为展开 (保持屏幕开启)
+	if _retracting:
+		_retracting = false
+		_deploying = _deploy_progress < 1.0
+		# 重新锁定 (收起时已解锁)
+		_lock_pet()
+		if not is_instance_valid(_close_btn):
+			_create_close_btn(label if label != "" else "")
+	mode = m
+	_get_renderer(m).init()
+	_idle_duration = duration
+	_idle_elapsed = 0.0
+	# 更新关闭按钮文字
+	_close_btn_default_text = label
+	if is_instance_valid(_close_btn):
+		_close_btn.text = label if label != "" else "断开连接"
+
+## 清理当前活跃模式的所有资源 (踏板/按钮/解锁/后台线程)
+func _cleanup_active_mode() -> void:
+	_cleanup_renderer()
 	_unlock_pet()
 	_remove_close_btn()

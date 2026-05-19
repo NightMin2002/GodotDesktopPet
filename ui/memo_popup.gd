@@ -239,15 +239,11 @@ func _on_save() -> void:
 	logs.insert(0, entry)
 	SettingsManager.save_datalogs(logs)
 
-	# 宠物反馈: 全息屏打勾确认 (先触发再关窗，让 hide→show_done 衔接)
+	# 宠物反馈: 全息屏打勾确认 (平滑换屏, 骨架不动)
 	var pet = _get_pet()
 	if pet and "holo_screen" in pet and pet.holo_screen:
 		var hs = pet.holo_screen
 		var s: float = hs.side if hs.visible else 1.0
-		# 先收起录入状态，再显示完成
-		if hs.visible:
-			hs.hide()
-			await get_tree().create_timer(0.15).timeout
 		hs.show_done(s, 2.5)
 
 	_saving = false

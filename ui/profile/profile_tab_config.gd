@@ -355,7 +355,7 @@ func _toggle_holo_preview(btn: Button) -> void:
 		# 弹出待机屏作为参考
 		var vp_w = get_viewport().get_visible_rect().size.x
 		var screen_side = -1.0 if pet.global_position.x > vp_w * 0.5 else 1.0
-		holo.show_idle(screen_side)
+		holo.show_idle(screen_side, 0)  # 预览不自动关闭
 		_holo_preview_active = true
 		btn.text = "收起参考"
 
