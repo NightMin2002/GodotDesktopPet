@@ -44,6 +44,7 @@ func init() -> void:
 	_register_builtin_actions()
 
 func _register_builtin_actions() -> void:
+	_register_action_file("res://entities/pet/file_drop/action_scan.gd")
 	_register_action_file("res://entities/pet/file_drop/action_shred.gd")
 
 ## 从脚本路径加载并注册一个操作模块
