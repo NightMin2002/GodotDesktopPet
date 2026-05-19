@@ -100,6 +100,9 @@ var idle_activities: IdleActivities
 # ── 弹性形变系统 (委托给 PetSquash) ──
 var squash: PetSquash
 
+# ── 悬停特效系统 (委托给 HoverEffect) ──
+var hover_effect: HoverEffect
+
 # ── 游戏态管理器 (委托给 PetGaming) ──
 var gaming: PetGaming
 
@@ -172,6 +175,10 @@ func _ready() -> void:
 	squash = PetSquash.new()
 	squash.pet = self
 	
+	# 初始化悬停特效系统
+	hover_effect = HoverEffect.new()
+	hover_effect.pet = self
+	
 	# 初始化空间跳跃系统
 	free_roam_sys = FreeRoamSystem.new()
 	free_roam_sys.pet = self
@@ -209,6 +216,8 @@ func _ready() -> void:
 	if elastic_mode > 0:
 		squash.enabled = true
 		squash.style = clampi(elastic_mode - 1, 0, 2)
+	# 悬停特效恢复 (hover_style: 0=关闭, 1=柔光环, 2=边缘呼吸, 3=锁定框)
+	hover_effect.style = SettingsManager.get_int("hover_style", 1)
 	# HUD 组件状态恢复 (仅原体)
 	if not is_clone:
 		var hud_clock = SettingsManager.get_bool("hud_clock", false)
@@ -256,6 +265,8 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		screen_wrap = is_on
 		if not is_on:
 			_wrap_ghost_offset = Vector2.ZERO
+	elif setting_id == "hover_style":
+		hover_effect.style = SettingsManager.get_int("hover_style", 1)
 	elif setting_id == "auto_activity":
 		idle_activities.mode = SettingsManager.get_int("auto_activity", 1)
 	elif setting_id == "hud_clock":
@@ -496,6 +507,9 @@ func _process(delta: float) -> void:
 	idle_activities.update(delta)
 	_roam_update(delta)
 	var squash_changed = squash.update(delta)
+	# 悬停特效: 传入当前鼠标状态 (游戏态/克隆不响应)
+	var _mouse_hover = is_mouse_on_pet() and not gaming.active and not is_clone
+	var hover_changed = hover_effect.update(delta, _mouse_hover)
 	
 	# 文件投喂菜单 + 悬停检测: 跟随宠物位置
 	if file_drop:
@@ -509,7 +523,7 @@ func _process(delta: float) -> void:
 	
 	# 按需重绘
 	var _hover_active = file_drop and file_drop.hover_amount > 0.01
-	if has_visual_change or linear_velocity.length() > 1.0 or eye_behavior.is_animating() or squash_changed or _wrap_ghost_offset != Vector2.ZERO or holo_screen.visible or _hover_active:
+	if has_visual_change or linear_velocity.length() > 1.0 or eye_behavior.is_animating() or squash_changed or hover_changed or _wrap_ghost_offset != Vector2.ZERO or holo_screen.visible or _hover_active:
 		queue_redraw()
 
 func _physics_process(delta: float) -> void:
@@ -569,6 +583,11 @@ func _draw() -> void:
 	_draw_body(Vector2.ZERO)
 	if _wrap_ghost_offset != Vector2.ZERO:
 		_draw_body(_wrap_ghost_offset)
+	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+	
+	# ── 悬停特效 (最顶层, 覆盖在宠物本体之上, 抵消旋转保持世界对齐) ──
+	draw_set_transform(Vector2.ZERO, -rotation, Vector2.ONE)
+	hover_effect.render(self)
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 	
 ## 绘制宠物本体 (外壳+眼球+覆盖层), world_offset 用于屏幕穿越双重渲染

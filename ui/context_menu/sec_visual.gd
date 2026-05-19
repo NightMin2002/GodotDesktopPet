@@ -8,6 +8,7 @@ var ctx  # ContextMenu 引用
 # ── 按钮引用 ──
 var _effects_btn: Button
 var _elastic_btn: Button
+var _hover_btn: Button
 var _effect_color_btns: Array[Button] = []
 
 func _init(context_menu) -> void:
@@ -26,6 +27,12 @@ func build() -> void:
 	_elastic_btn = ctx._make_menu_btn("弹性 · 关闭 [+]", Color(1.0, 0.85, 0.3, 1))
 	vbox.add_child(_elastic_btn)
 	ctx._bind_l3_trigger(_elastic_btn, "elastic", "sec_visual")
+	
+	var hover_style = SettingsManager.get_int("hover_style", 1)
+	var hover_name = HoverEffect.STYLE_NAMES[clampi(hover_style, 0, HoverEffect.STYLE_COUNT - 1)]
+	_hover_btn = ctx._make_menu_btn("悬停 · " + hover_name + " [+]", Color(1.0, 0.85, 0.3, 1))
+	vbox.add_child(_hover_btn)
+	ctx._bind_l3_trigger(_hover_btn, "hover_fx", "sec_visual")
 
 	panel.mouse_entered.connect(func(): ctx._submenu.on_panel_enter())
 	panel.mouse_exited.connect(func(): ctx._submenu.on_panel_exit())
@@ -47,6 +54,14 @@ func build() -> void:
 		{"value": 2, "label": "果冻", "desc": "QQ弹弹，慢速晃动恢复"},
 		{"value": 3, "label": "弹力球", "desc": "弹性十足，强力回弹"},
 	], _on_radio_elastic, 3, "sec_visual")
+	
+	# L3: 悬停特效单选
+	ctx._submenu.create_radio("hover_fx", [
+		{"value": 0, "label": "关闭", "desc": "鼠标靠近不显示视觉反馈"},
+		{"value": 1, "label": "柔光环", "desc": "柔和的呼吸光晕环绕外壳"},
+		{"value": 2, "label": "边缘呼吸", "desc": "外壳边缘节奏性脉冲"},
+		{"value": 3, "label": "锁定框", "desc": "科幻准星锁定标记"},
+	], _on_radio_hover_fx, 3, "sec_visual")
 
 # ── 特效配色 ──
 
@@ -112,3 +127,11 @@ func apply_elastic_mode(value: int, emit_signal: bool) -> void:
 		_elastic_btn.text = "弹性 · " + names[idx] + " [+]"
 		if emit_signal:
 			EventBus.trigger_squash_test.emit(idx)
+
+# ── 悬停特效 ──
+
+func _on_radio_hover_fx(value: int) -> void:
+	SettingsManager.set_int("hover_style", value)
+	EventBus.setting_toggled.emit("hover_style", value > 0)
+	var name = HoverEffect.STYLE_NAMES[clampi(value, 0, HoverEffect.STYLE_COUNT - 1)]
+	_hover_btn.text = "悬停 · " + name + " [+]"

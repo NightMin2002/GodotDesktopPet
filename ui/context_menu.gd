@@ -263,6 +263,7 @@ func _refresh_submenu_states() -> void:
 	_submenu.refresh_radio("gait", SettingsManager.get_int("move_style", 0))
 	_submenu.refresh_radio("chatter", SettingsManager.get_int("chatter_mode", 0))
 	_submenu.refresh_radio("elastic", elastic_mode)
+	_submenu.refresh_radio("hover_fx", SettingsManager.get_int("hover_style", 1))
 	_submenu.refresh_radio("auto_activity", SettingsManager.get_int("auto_activity", 1))
 	# 宠物档案面板
 	_sec_pet.refresh_profile()
