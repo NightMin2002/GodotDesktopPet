@@ -1,10 +1,16 @@
 # profile_tab_config.gd — 终端配置 Tab (装置终端 Tab 5)
-# 系统级开关设置: 随系统唤醒 + 全息屏配置
+# 系统级开关设置: 随系统唤醒 + 全息屏配置 + 快捷键绑定
 extends HBoxContainer
+
+const HotkeyManager = preload("res://core/hotkey_manager.gd")
 
 var _wake_btn: Button
 var _wake_status: Label
 var _holo_preview_active: bool = false  # 预览状态
+
+# ── 快捷键 ──
+var _hotkey_rows: Dictionary = {}  # action -> { combo_label, record_btn, status_label }
+var _recording_action: String = ""  # 当前正在录入的 action ("" = 未录入)
 
 func _init() -> void:
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -36,6 +42,9 @@ func build() -> void:
 
 	# ── 2. 个人终端 ──
 	_build_holo_card(main_vbox)
+
+	# ── 3. 快捷键配置 ──
+	_build_hotkey_card(main_vbox)
 
 	# 滚动指示器
 	var indicator = preload("res://ui/profile/cyber_scroll_indicator.gd").new()
@@ -357,6 +366,239 @@ func cleanup() -> void:
 		if pet and "holo_screen" in pet and pet.holo_screen:
 			pet.holo_screen.hide()
 		_holo_preview_active = false
+
+# ═══════════════════════════════════════════════
+#  快捷键配置
+# ═══════════════════════════════════════════════
+
+func _build_hotkey_card(parent: VBoxContainer) -> void:
+	var card = PanelContainer.new()
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var cs = StyleBoxFlat.new()
+	cs.bg_color = Color.from_hsv(EventBus.ui_hue, 0.35, 0.16, 0.45)
+	cs.border_width_left = 4
+	cs.border_color = Color.from_hsv(EventBus.ui_hue, 0.6, 0.8, 0.7)
+	cs.set_corner_radius_all(3)
+	cs.content_margin_left = 24; cs.content_margin_right = 24
+	cs.content_margin_top = 20; cs.content_margin_bottom = 20
+	card.add_theme_stylebox_override("panel", cs)
+	parent.add_child(card)
+
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 14)
+	card.add_child(vbox)
+
+	# 标题行
+	var title_row = HBoxContainer.new()
+	title_row.add_child(ProfileStyles.label_dim("KEY_BIND //", 13))
+	title_row.add_child(ProfileStyles.make_label("快捷键配置", 17, Color(0.85, 0.9, 0.95)))
+	vbox.add_child(title_row)
+
+	# 描述
+	var desc = Label.new()
+	desc.text = "为常用操作绑定全局快捷键。即使本机不在前台也能响应。"
+	desc.add_theme_font_size_override("font_size", 13)
+	desc.add_theme_color_override("font_color", Color(0.55, 0.6, 0.65, 0.7))
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(desc)
+
+	# 热键行
+	_hotkey_rows.clear()
+	var hotkey_mgr = _get_hotkey_mgr()
+	for action in HotkeyManager.HOTKEY_DEFS:
+		var def = HotkeyManager.HOTKEY_DEFS[action]
+		var current = def["default"]
+		if hotkey_mgr:
+			current = hotkey_mgr.get_binding(action)
+			if current == "":
+				current = def["default"]
+		_add_hotkey_row(vbox, action, _action_label(action), current)
+
+	# 恢复默认按钮
+	var btn_row = HBoxContainer.new()
+	var spacer = Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn_row.add_child(spacer)
+	var reset_btn = _make_config_btn("[ 恢复默认 ]")
+	reset_btn.pressed.connect(_on_hotkey_reset)
+	btn_row.add_child(reset_btn)
+	vbox.add_child(btn_row)
+
+func _action_label(action: String) -> String:
+	match action:
+		"quick_memo": return "快速备忘"
+		"profile_panel": return "装置终端"
+		"quiet_mode": return "安静待命"
+	return action
+
+func _add_hotkey_row(parent: VBoxContainer, action: String, label: String, combo: String) -> void:
+	var row = HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+
+	# 操作名
+	var lbl = Label.new()
+	lbl.text = label
+	lbl.custom_minimum_size.x = 80
+	lbl.add_theme_font_size_override("font_size", 14)
+	lbl.add_theme_color_override("font_color", Color(0.7, 0.75, 0.8, 0.8))
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(lbl)
+
+	# 组合键显示
+	var combo_lbl = Label.new()
+	combo_lbl.text = HotkeyManager.format_combo(combo)
+	combo_lbl.custom_minimum_size.x = 140
+	combo_lbl.add_theme_font_size_override("font_size", 14)
+	combo_lbl.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.35, 0.85, 0.85))
+	combo_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(combo_lbl)
+
+	# 录入按钮
+	var rec_btn = _make_config_btn("录入")
+	rec_btn.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.35, 0.7, 0.6))
+	rec_btn.add_theme_color_override("font_hover_color", Color.from_hsv(EventBus.ui_hue, 0.45, 0.9, 0.9))
+	var act = action
+	rec_btn.pressed.connect(func(): _start_recording(act))
+	row.add_child(rec_btn)
+
+	# 状态提示
+	var status = Label.new()
+	status.text = ""
+	status.add_theme_font_size_override("font_size", 12)
+	status.add_theme_color_override("font_color", Color(0.4, 0.7, 0.5, 0.7))
+	status.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(status)
+
+	parent.add_child(row)
+	_hotkey_rows[action] = {"combo_label": combo_lbl, "record_btn": rec_btn, "status_label": status}
+
+func _start_recording(action: String) -> void:
+	# 先注销当前热键 (录入期间不响应)
+	var hotkey_mgr = _get_hotkey_mgr()
+	if hotkey_mgr:
+		hotkey_mgr.unregister(action)
+	_recording_action = action
+	var row = _hotkey_rows.get(action, {})
+	if row.is_empty():
+		return
+	row.record_btn.text = "按下组合键..."
+	row.record_btn.add_theme_color_override("font_color", Color(0.9, 0.8, 0.3, 0.9))
+	row.status_label.text = "ESC 取消"
+	row.status_label.add_theme_color_override("font_color", Color(0.5, 0.55, 0.6, 0.5))
+	# 呼吸动画
+	var tw = create_tween().set_loops()
+	tw.tween_property(row.record_btn, "modulate:a", 0.5, 0.6)
+	tw.tween_property(row.record_btn, "modulate:a", 1.0, 0.6)
+	row["breath_tween"] = tw
+
+func _stop_recording() -> void:
+	if _recording_action == "":
+		return
+	var row = _hotkey_rows.get(_recording_action, {})
+	if not row.is_empty():
+		row.record_btn.text = "录入"
+		row.record_btn.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.35, 0.7, 0.6))
+		row.record_btn.modulate.a = 1.0
+		if row.has("breath_tween") and row.breath_tween is Tween:
+			row.breath_tween.kill()
+	# 重新注册热键
+	var hotkey_mgr = _get_hotkey_mgr()
+	if hotkey_mgr:
+		var combo = hotkey_mgr.get_binding(_recording_action)
+		if combo != "":
+			hotkey_mgr.rebind(_recording_action, combo)
+	_recording_action = ""
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if _recording_action == "" or not (event is InputEventKey) or not event.pressed or event.echo:
+		return
+
+	# ESC 取消录入
+	if event.keycode == KEY_ESCAPE:
+		var row = _hotkey_rows.get(_recording_action, {})
+		if not row.is_empty():
+			row.status_label.text = "已取消"
+			row.status_label.add_theme_color_override("font_color", Color(0.5, 0.55, 0.6, 0.5))
+		_stop_recording()
+		get_viewport().set_input_as_handled()
+		return
+
+	# 构建组合键字符串
+	var combo = HotkeyManager.event_to_combo(event)
+	if combo == "":
+		return  # 只按了修饰键
+
+	get_viewport().set_input_as_handled()
+
+	# 冲突检测
+	var hotkey_mgr = _get_hotkey_mgr()
+	var row = _hotkey_rows.get(_recording_action, {})
+	if row.is_empty():
+		_stop_recording()
+		return
+
+	row.combo_label.text = HotkeyManager.format_combo(combo)
+
+	var conflict = {"available": true, "reason": ""}
+	if hotkey_mgr:
+		conflict = hotkey_mgr.check_conflict(combo, _recording_action)
+
+	if not conflict.available:
+		var reason: String = conflict.reason
+		if reason.begins_with("internal:"):
+			var other_action = reason.substr(9)
+			row.status_label.text = "已绑定到 [%s]" % _action_label(other_action)
+			row.status_label.add_theme_color_override("font_color", Color(0.9, 0.6, 0.2, 0.9))
+		elif reason == "system":
+			row.status_label.text = "系统保留组合键"
+			row.status_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2, 0.9))
+		elif reason == "occupied":
+			row.status_label.text = "已被其他程序占用"
+			row.status_label.add_theme_color_override("font_color", Color(0.9, 0.4, 0.3, 0.9))
+		else:
+			row.status_label.text = "不可用"
+			row.status_label.add_theme_color_override("font_color", Color(0.9, 0.4, 0.3, 0.9))
+		# 不绑定, 保持录入模式让用户重试或 ESC 取消
+		return
+
+	# 可用 — 绑定并退出录入
+	row.status_label.text = "已绑定"
+	row.status_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.5, 0.9))
+	if hotkey_mgr:
+		hotkey_mgr.rebind(_recording_action, combo)
+	_stop_recording()
+
+	# 2 秒后清除状态文字
+	var tw = create_tween()
+	tw.tween_interval(2.0)
+	tw.tween_callback(func():
+		if not row.is_empty() and is_instance_valid(row.status_label):
+			row.status_label.text = ""
+	)
+
+func _on_hotkey_reset() -> void:
+	var hotkey_mgr = _get_hotkey_mgr()
+	if _recording_action != "":
+		_stop_recording()
+	for action in HotkeyManager.HOTKEY_DEFS:
+		var def = HotkeyManager.HOTKEY_DEFS[action]
+		var default_combo: String = def["default"]
+		if hotkey_mgr:
+			hotkey_mgr.rebind(action, default_combo)
+		var row = _hotkey_rows.get(action, {})
+		if not row.is_empty():
+			row.combo_label.text = HotkeyManager.format_combo(default_combo)
+			row.status_label.text = "已恢复"
+			row.status_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.5, 0.7))
+
+func _get_hotkey_mgr() -> Node:
+	if not is_inside_tree():
+		return null
+	var main_node = get_tree().root.get_node_or_null("Main")
+	if main_node and "hotkey_mgr" in main_node:
+		return main_node.hotkey_mgr
+	return null
 
 # ═══════════════════════════════════════════════
 #  工具

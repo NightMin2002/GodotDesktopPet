@@ -615,5 +615,138 @@ public partial class WindowsManager : Node
         DeleteObject(hBitmap);
         DeleteDC(memDC);
     }
+
+    // ══════════════════════════════════════════════════════════════
+    //  全局热键 (RegisterHotKey / UnregisterHotKey)
+    //  ── 注册系统级热键, 任何时候都能响应 ──
+    //  ── 支持冲突探测: 尝试注册→立即释放 ──
+    // ══════════════════════════════════════════════════════════════
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+    [DllImport("user32.dll")]
+    private static extern bool PeekMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax, uint wRemoveMsg);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MSG
+    {
+        public IntPtr hwnd;
+        public uint message;
+        public IntPtr wParam;
+        public IntPtr lParam;
+        public uint time;
+        public int pt_x;
+        public int pt_y;
+    }
+
+    private const uint WM_HOTKEY = 0x0312;
+    private const uint PM_REMOVE = 0x0001;
+
+    // Win32 modifier flags for RegisterHotKey
+    private const uint MOD_ALT = 0x0001;
+    private const uint MOD_CONTROL = 0x0002;
+    private const uint MOD_SHIFT = 0x0004;
+    private const uint MOD_WIN = 0x0008;
+    private const uint MOD_NOREPEAT = 0x4000;
+
+    // 已注册热键 ID 追踪 (防止重复注册)
+    private HashSet<int> _registeredHotKeys = new HashSet<int>();
+
+    /// <summary>
+    /// 注册一个全局热键。
+    /// modifiers: 修饰键标志 (1=Alt, 2=Ctrl, 4=Shift, 8=Win)
+    /// keyCode: 虚拟键码 (Win32 VK_* 值)
+    /// hotkeyId: 热键标识 (用于后续轮询和注销)
+    /// 返回 true = 注册成功
+    /// </summary>
+    public bool RegisterGlobalHotKey(int hotkeyId, int modifiers, int keyCode)
+    {
+        IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
+        // 先尝试注销 (防止重复注册)
+        if (_registeredHotKeys.Contains(hotkeyId))
+        {
+            UnregisterHotKey(hwnd, hotkeyId);
+            _registeredHotKeys.Remove(hotkeyId);
+        }
+        uint mods = (uint)modifiers | MOD_NOREPEAT;
+        bool ok = RegisterHotKey(hwnd, hotkeyId, mods, (uint)keyCode);
+        if (ok)
+        {
+            _registeredHotKeys.Add(hotkeyId);
+            GD.Print($"[HotKey] 注册成功: id={hotkeyId}, mods={modifiers}, vk=0x{keyCode:X2}");
+        }
+        else
+        {
+            int err = Marshal.GetLastWin32Error();
+            GD.Print($"[HotKey] 注册失败: id={hotkeyId}, mods={modifiers}, vk=0x{keyCode:X2}, error={err}");
+        }
+        return ok;
+    }
+
+    /// <summary>
+    /// 注销一个已注册的全局热键。
+    /// </summary>
+    public bool UnregisterGlobalHotKey(int hotkeyId)
+    {
+        IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
+        bool ok = UnregisterHotKey(hwnd, hotkeyId);
+        _registeredHotKeys.Remove(hotkeyId);
+        return ok;
+    }
+
+    /// <summary>
+    /// 探测一个组合键是否可用 (未被其他程序注册为全局热键)。
+    /// 原理: 尝试 RegisterHotKey, 成功则立即 UnregisterHotKey。
+    /// 返回 true = 可用, false = 已被占用。
+    /// </summary>
+    public bool TestHotKeyAvailable(int modifiers, int keyCode)
+    {
+        IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
+        int probeId = 0x7FFF;  // 临时 ID (不会和正式的冲突)
+        uint mods = (uint)modifiers | MOD_NOREPEAT;
+        bool ok = RegisterHotKey(hwnd, probeId, mods, (uint)keyCode);
+        if (ok)
+            UnregisterHotKey(hwnd, probeId);
+        return ok;
+    }
+
+    /// <summary>
+    /// 轮询是否有全局热键被按下 (通过 PeekMessage 检查 WM_HOTKEY)。
+    /// 返回被按下的热键 ID, 无则返回 -1。
+    /// GDScript 端在 _process() 中每帧调用。
+    /// </summary>
+    public int PollHotKey()
+    {
+        IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
+        MSG msg;
+        if (PeekMessage(out msg, hwnd, WM_HOTKEY, WM_HOTKEY, PM_REMOVE))
+        {
+            return (int)msg.wParam;  // wParam = hotkey id
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// 注销所有已注册的全局热键 (退出时调用)。
+    /// </summary>
+    public void UnregisterAllHotKeys()
+    {
+        IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
+        foreach (int id in _registeredHotKeys)
+        {
+            UnregisterHotKey(hwnd, id);
+        }
+        _registeredHotKeys.Clear();
+    }
+
+    public override void _ExitTree()
+    {
+        UnregisterAllHotKeys();
+        StopCapture();
+    }
 }
 

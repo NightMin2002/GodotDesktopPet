@@ -120,3 +120,13 @@ func get_ui_hue() -> int:
 func set_ui_hue(hue: int) -> void:
 	_config.set_value("colors", "ui_hue", hue)
 	_config.save(SETTINGS_PATH)
+
+## ── 快捷键绑定 ──
+## 格式: [hotkeys] quick_memo = "ctrl+shift+n"
+
+func get_hotkey(action: String, default_val: String = "") -> String:
+	return _config.get_value("hotkeys", action, default_val) as String
+
+func set_hotkey(action: String, combo: String) -> void:
+	_config.set_value("hotkeys", action, combo)
+	_config.save(SETTINGS_PATH)

@@ -16,6 +16,9 @@ var win_manager: Node
 var input_monitor: Node  # InputMonitor (C# 键鼠采集)
 var file_ops: Node       # FileOperations (C# 文件操作)
 
+# ── 快捷键管理器 ──
+var hotkey_mgr: Node
+
 # ── 共享状态 (被子管理器读写) ──
 var window_mode: int = 0  # 0=FREE, 1=CONFINED, 2=REPELLED
 var behavior_mode: int = 0  # 0=FREE, 1=QUIET
@@ -84,6 +87,8 @@ func _ready() -> void:
 	_setup_todo_system()
 	_setup_pet_chatter()
 	_setup_platform_style_panel()
+	_setup_hotkey_manager()
+	_setup_memo_popup()
 	_setup_pet_profile_panel()
 	_setup_game_terminal()
 	
@@ -785,3 +790,23 @@ func quit_with_farewell() -> void:
 func reorganize_quiet_queue() -> void:
 	if clone_mgr:
 		clone_mgr.reorganize_quiet_queue()
+
+# ── 全局快捷键管理器 ──
+
+func _setup_hotkey_manager() -> void:
+	var script = load("res://core/hotkey_manager.gd")
+	if script:
+		hotkey_mgr = Node.new()
+		hotkey_mgr.set_script(script)
+		add_child(hotkey_mgr)
+		if hotkey_mgr.has_method("setup"):
+			hotkey_mgr.setup(self)
+
+# ── 快速备忘弹窗 ──
+
+func _setup_memo_popup() -> void:
+	var script = load("res://ui/memo_popup.gd")
+	if script:
+		var node = CanvasLayer.new()
+		node.set_script(script)
+		add_child(node)
