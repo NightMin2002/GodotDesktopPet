@@ -22,6 +22,9 @@ func restore_clones() -> void:
 	var saved_clones = SettingsManager.get_int("clone_count", 0)
 	for i in range(mini(saved_clones, MAX_CLONES)):
 		_clone_pet(null, false)
+		# 顺序入场: 等当前克隆体具象化完成后再生成下一个
+		if i < mini(saved_clones, MAX_CLONES) - 1:
+			await get_tree().create_timer(1.2).timeout
 
 # ── 克隆系统 ──
 
@@ -59,47 +62,19 @@ func _clone_pet(source: Node2D, with_bubble: bool) -> void:
 	clone.behavior_mode = _main.behavior_mode
 	
 	var ag = SettingsManager.get_bool("anti_gravity", false)
-	var g_sign: float = -1.0 if ag else 1.0
 	
 	# ── 入场方式决策 ──
 	# 70% 从侧方滚入/弹入 (和原体同风格)，30% 从空中掉落 (彩蛋)
 	var side_entrance: bool = randf() < 0.7 and with_bubble  # 静默恢复时直接空降
 	
 	if side_entrance:
-		# ── 侧方入场: 从屏幕外弹入 ──
-		var from_left: bool = randf() < 0.5
-		var is_roll: bool = randf() < 0.5
-		var spawn_margin := 60.0
-		var spawn_x: float
-		if from_left:
-			spawn_x = -spawn_margin
-		else:
-			spawn_x = _main.boundary_size.x + spawn_margin
-		var spawn_y: float
-		if ag:
-			spawn_y = 50.0
-		else:
-			spawn_y = _main.boundary_size.y - 50.0
-		clone.position = Vector2(spawn_x, spawn_y)
-		
-		# 临时禁用入场侧墙壁
-		var entry_wall: StaticBody2D = _main._wall_left if from_left else _main._wall_right
-		if is_instance_valid(entry_wall):
-			entry_wall.get_child(0).disabled = true
-		
-		# 入场期间临时关闭屏幕穿越
-		var had_wrap: bool = clone.screen_wrap
-		if had_wrap:
-			clone.screen_wrap = false
-		
+		# ── 侧方入场: 复用原体入场动画 ──
+		clone.modulate = Color(1, 1, 1, 0)
 		_main.add_child(clone)
 		_main.pet_instances.append(clone)
-		
-		# 延迟一帧施加入场冲量
-		var dir: float = 1.0 if from_left else -1.0
-		_main._apply_entrance.call_deferred(clone, dir, entry_wall, had_wrap, is_roll, g_sign)
+		_main.perform_side_entrance(clone)
 	else:
-		# ── 空中掉落: 从上方淡入 (保留原有方式，加淡入过渡) ──
+		# ── 次元传送: 悬空具象化 (彩蛋入场) ──
 		var spawn_x: float
 		if is_instance_valid(source):
 			spawn_x = source.global_position.x + randf_range(-80, 80)
@@ -108,19 +83,33 @@ func _clone_pet(source: Node2D, with_bubble: bool) -> void:
 		spawn_x = clampf(spawn_x, 60.0, _main.boundary_size.x - 60.0)
 		var spawn_y: float
 		if ag:
-			spawn_y = _main.boundary_size.y * randf_range(0.6, 0.9)  # 反重力: 从底部随机高度掉上去
+			spawn_y = _main.boundary_size.y * randf_range(0.6, 0.9)
 		else:
-			spawn_y = _main.boundary_size.y * randf_range(0.1, 0.4)  # 正常: 从顶部随机高度掉下来
+			spawn_y = _main.boundary_size.y * randf_range(0.1, 0.4)
 		clone.position = Vector2(spawn_x, spawn_y)
 		
-		# 淡入过渡 (从透明到不透明, 2~3 秒缓慢显形)
+		# 物理冻结: 具象化期间悬停在原地
+		clone.freeze = true
 		clone.modulate = Color(1, 1, 1, 0)
 		
 		_main.add_child(clone)
 		_main.pet_instances.append(clone)
 		
+		# 具象化特效
+		var pet_hue = clone.palette.effective_hue() if clone.palette else 0.6
+		var vfx = _MaterializeVFX.new(pet_hue, clone.PET_RADIUS)
+		clone.add_child(vfx)
+		
+		# 淡入 + 完成后解冻掉落
+		var fade_dur = 1.0
+		vfx.duration = 1.5  # 特效比淡入多持续 0.5 秒收尾
 		var tween = clone.create_tween()
-		tween.tween_property(clone, "modulate:a", 1.0, randf_range(2.0, 3.0)).set_ease(Tween.EASE_OUT)
+		tween.tween_property(clone, "modulate:a", 1.0, fade_dur).set_ease(Tween.EASE_IN)
+		tween.tween_callback(func():
+			# 解冻: 开始掉落
+			if is_instance_valid(clone):
+				clone.freeze = false
+		)
 	
 	SettingsManager.set_int("clone_count", _main.pet_instances.size() - 1)
 	
@@ -221,3 +210,85 @@ func _generate_distinct_hue() -> float:
 	
 	# 如果尝试次数耗尽 (宠物太多)，直接返回随机值
 	return randf()
+
+# ══════════════════════════════════════
+# 次元具象化特效 (克隆体空降入场)
+# ══════════════════════════════════════
+
+class _MaterializeVFX extends Node2D:
+	## 特效色调 (跟随克隆体配色)
+	var _hue: float = 0.6
+	## 宠物半径 (决定特效范围)
+	var _radius: float = 30.0
+	## 特效总时长
+	var duration: float = 3.0
+	## 内部计时
+	var _time: float = 0.0
+	## 数据碎片种子 (确定性随机, 每帧一致)
+	var _frag_seeds: Array[float] = []
+	
+	func _init(hue: float = 0.6, radius: float = 30.0) -> void:
+		_hue = hue
+		_radius = radius
+		# 预生成碎片种子 (黄金比例分布)
+		for i in range(12):
+			_frag_seeds.append(float(i) * 1.618033)
+	
+	func _process(delta: float) -> void:
+		_time += delta
+		if _time >= duration:
+			queue_free()
+			return
+		queue_redraw()
+	
+	func _draw() -> void:
+		var progress = clampf(_time / duration, 0.0, 1.0)
+		# 特效整体强度: 前 70% 渐强, 后 30% 淡出
+		var intensity: float
+		if progress < 0.7:
+			intensity = progress / 0.7
+		else:
+			intensity = (1.0 - progress) / 0.3
+		intensity = clampf(intensity, 0.0, 1.0)
+		
+		# ── 1. 空间裂隙: 垂直亮线 → 逐渐扩展 ──
+		var slit_h = _radius * 2.5 * (0.2 + progress * 0.8)
+		var slit_w = 1.5 + progress * _radius * 0.3
+		var slit_alpha = intensity * 0.25
+		var slit_color = Color.from_hsv(_hue, 0.3, 1.0, slit_alpha)
+		draw_rect(Rect2(-slit_w / 2.0, -slit_h / 2.0, slit_w, slit_h), slit_color)
+		# 裂隙中心亮线
+		var core_alpha = intensity * 0.5
+		draw_line(Vector2(0, -slit_h / 2.0), Vector2(0, slit_h / 2.0),
+			Color.from_hsv(_hue, 0.15, 1.0, core_alpha), 1.0, true)
+		
+		# ── 2. 脉冲环: 从中心向外扩散 ──
+		for i in range(3):
+			var ring_t = fmod(_time * 0.6 + float(i) * 0.33, 1.0)
+			var ring_r = _radius * (0.3 + ring_t * 2.0)
+			var ring_alpha = (1.0 - ring_t) * intensity * 0.35
+			if ring_alpha > 0.01:
+				draw_arc(Vector2.ZERO, ring_r, 0, TAU, 48,
+					Color.from_hsv(_hue, 0.4, 0.9, ring_alpha), 1.2, true)
+		
+		# ── 3. 数据碎片: 从远处汇聚到中心 ──
+		for i in range(_frag_seeds.size()):
+			var seed_v = _frag_seeds[i]
+			var angle = seed_v * TAU
+			# 碎片从远处飞向中心, 随进度接近
+			var dist_factor = 1.0 - clampf((_time - float(i) * 0.12) / (duration * 0.7), 0.0, 1.0)
+			var dist = _radius * (1.5 + dist_factor * 3.5)
+			var pos = Vector2(cos(angle), sin(angle)) * dist
+			var frag_alpha = (1.0 - dist_factor * 0.6) * intensity * 0.5
+			if frag_alpha > 0.01 and dist_factor > 0.02:
+				var fw = 2.0 + fmod(seed_v * 7.3, 4.0)
+				var fh = 1.0 + fmod(seed_v * 3.7, 2.0)
+				draw_rect(Rect2(pos.x - fw / 2.0, pos.y - fh / 2.0, fw, fh),
+					Color.from_hsv(_hue, 0.3, 1.0, frag_alpha))
+		
+		# ── 4. 水平扫描线: 上下扫过 ──
+		var scan_y = sin(_time * 2.5) * _radius * 1.2
+		var scan_alpha = intensity * 0.15
+		if scan_alpha > 0.01:
+			draw_line(Vector2(-_radius * 2.0, scan_y), Vector2(_radius * 2.0, scan_y),
+				Color.from_hsv(_hue, 0.2, 1.0, scan_alpha), 0.8, true)
