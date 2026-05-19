@@ -108,6 +108,32 @@ public partial class WindowsManager : Node
         _shellWindow = GetShellWindow();
     }
 
+    // ── 全局鼠标状态检测 (供拖放悬停检测用) ──
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out POINT pt);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT { public int X, Y; }
+
+    private const int VK_LBUTTON = 0x01;
+
+    /// <summary>
+    /// 检测鼠标左键是否在全局按住状态 (不依赖 Godot 输入系统)。
+    /// OLE 拖放期间鼠标事件被系统劫持, Godot 的 Input 接收不到,
+    /// 但 GetAsyncKeyState 可以跨进程检测物理按键状态。
+    /// 返回: [isHeld: bool, screenX: int, screenY: int]
+    /// </summary>
+    public int[] GetGlobalMouseState()
+    {
+        bool held = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+        GetCursorPos(out POINT pt);
+        return new[] { held ? 1 : 0, pt.X, pt.Y };
+    }
+
     /// <summary>
     /// 将进程优先级提升至 Above Normal，对抗游戏等高占用程序的资源抢夺
     /// </summary>

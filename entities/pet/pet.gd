@@ -497,7 +497,7 @@ func _process(delta: float) -> void:
 	_roam_update(delta)
 	var squash_changed = squash.update(delta)
 	
-	# 文件投喂菜单: 跟随宠物位置
+	# 文件投喂菜单 + 悬停检测: 跟随宠物位置
 	if file_drop:
 		file_drop.update(delta)
 	
@@ -508,7 +508,8 @@ func _process(delta: float) -> void:
 		_wrap_ghost_offset = Vector2.ZERO
 	
 	# 按需重绘
-	if has_visual_change or linear_velocity.length() > 1.0 or eye_behavior.is_animating() or squash_changed or _wrap_ghost_offset != Vector2.ZERO or holo_screen.visible:
+	var _hover_active = file_drop and file_drop.hover_amount > 0.01
+	if has_visual_change or linear_velocity.length() > 1.0 or eye_behavior.is_animating() or squash_changed or _wrap_ghost_offset != Vector2.ZERO or holo_screen.visible or _hover_active:
 		queue_redraw()
 
 func _physics_process(delta: float) -> void:
@@ -541,6 +542,9 @@ func _unhandled_input(event: InputEvent) -> void:
 # ── 视觉系统 ──
 
 func _draw() -> void:
+	# ── 拖放悬停光圈 (最底层, 被宠物本体覆盖) ──
+	if file_drop:
+		file_drop.render_hover(self)
 	# ── 绘制特效 (冲击波 + 拖影，委托给 PetEffects) ──
 	pet_effects.render(self)
 	if _wrap_ghost_offset != Vector2.ZERO:

@@ -6,6 +6,7 @@ var pet: Node2D  # 由 pet.gd 注入
 
 # ── C# 桥接引用 (懒加载) ──
 var _file_ops: Node = null
+var _wm: Node = null  # WindowsManager (全局鼠标状态检测)
 
 # ── 已注册的操作 ──
 # 格式: [{id, label, handler}]
@@ -17,6 +18,10 @@ var _actions: Array = []
 # ── 状态 ──
 var _pending_paths: PackedStringArray = []  # 当前待处理的文件路径
 var _is_active: bool = false
+
+# ── 拖放悬停视觉反馈 ──
+var hover_amount: float = 0.0   # 悬停动画进度 (0=隐藏, 1=完全显示), pet.gd 读取
+var _hover_time: float = 0.0    # 脉冲动画计时器
 
 # ── 菜单 UI (委托给 DropMenu) ──
 var _menu  # DropMenu 实例
@@ -80,16 +85,30 @@ func get_actions() -> Array:
 func get_file_ops() -> Node:
 	if _file_ops != null and is_instance_valid(_file_ops):
 		return _file_ops
+	var node = _find_csharp_node("GetFileInfo")
+	if node:
+		_file_ops = node
+	return _file_ops
+
+## 懒加载 WindowsManager C# 节点
+func _get_wm() -> Node:
+	if _wm != null and is_instance_valid(_wm):
+		return _wm
+	var node = _find_csharp_node("GetGlobalMouseState")
+	if node:
+		_wm = node
+	return _wm
+
+## 通用: 在 Main 节点下查找拥有指定方法的 C# 子节点
+func _find_csharp_node(method_name: String) -> Node:
 	var tree = pet.get_tree()
 	if tree == null:
 		return null
-	# FileOperations 挂在 Main 节点下 (由 main.gd add_child)
 	var main_node = tree.root.get_node_or_null("Main")
 	if main_node:
 		for child in main_node.get_children():
-			if child.has_method("GetFileInfo"):
-				_file_ops = child
-				return _file_ops
+			if child.has_method(method_name):
+				return child
 	return null
 
 # ══════════════════════════════════════
@@ -155,6 +174,9 @@ func dismiss() -> void:
 func update(delta: float) -> void:
 	if _menu and _is_active:
 		_menu.update(delta)
+	# 拖放悬停检测 (原体专属)
+	if not pet.is_clone:
+		_update_hover(delta)
 
 # ══════════════════════════════════════
 #  工具方法 (供 action 模块共用)
@@ -169,3 +191,64 @@ func format_size(bytes: int) -> String:
 		return "%.1f MB" % (bytes / (1024.0 * 1024.0))
 	else:
 		return "%.2f GB" % (bytes / (1024.0 * 1024.0 * 1024.0))
+
+# ══════════════════════════════════════
+#  拖放悬停检测 + 吸引光圈
+# ══════════════════════════════════════
+
+## 每帧检测: 外部拖放是否悬停在宠物上方
+func _update_hover(delta: float) -> void:
+	var is_hovering := false
+	
+	# 排除宠物自身拖拽状态 (drag 状态下左键也按住, 会误判)
+	if pet.current_state_name != "drag":
+		var wm = _get_wm()
+		if wm:
+			var state = wm.GetGlobalMouseState()  # [held, screenX, screenY]
+			if state[0] == 1:  # 左键全局按住
+				# 将屏幕坐标转为视口坐标 (减去窗口位置)
+				var win_pos = pet.get_window().position
+				var mouse_local = Vector2(state[1] - win_pos.x, state[2] - win_pos.y)
+				var dist = pet.global_position.distance_to(mouse_local)
+				if dist <= pet.PET_RADIUS + 20.0:
+					is_hovering = true
+	
+	# 平滑过渡动画
+	var target = 1.0 if is_hovering else 0.0
+	hover_amount = move_toward(hover_amount, target, delta * 5.0)
+	if hover_amount > 0.01:
+		_hover_time += delta
+	else:
+		_hover_time = 0.0
+
+## 绘制拖放悬停吸引光圈 (由 pet.gd _draw 调用)
+func render_hover(canvas: Node2D) -> void:
+	if hover_amount <= 0.01:
+		return
+	var alpha = hover_amount
+	var t = _hover_time
+	var base_hue = EventBus.ui_hue
+	var r = pet.PET_RADIUS
+	
+	# 呼吸脉冲半径
+	var pulse = sin(t * 3.5) * 0.12 + 1.0
+	var ring_r = (r + 12.0) * pulse
+	
+	# 外圈发光 (柔和的宽弧)
+	var glow_color = Color.from_hsv(base_hue, 0.6, 0.9, alpha * 0.25)
+	canvas.draw_arc(Vector2.ZERO, ring_r + 4.0, 0, TAU, 64, glow_color, 6.0, true)
+	
+	# 主圈 (旋转的断续弧线)
+	var ring_color = Color.from_hsv(base_hue, 0.5, 1.0, alpha * 0.7)
+	var seg_count := 3
+	var seg_len = TAU / seg_count * 0.6  # 每段弧占 60%
+	var gap = TAU / seg_count
+	var spin = t * 2.0  # 旋转速度
+	for i in range(seg_count):
+		var start_a = spin + gap * i
+		canvas.draw_arc(Vector2.ZERO, ring_r, start_a, start_a + seg_len, 16, ring_color, 2.0, true)
+	
+	# 内圈呼吸光晕
+	var inner_r = r + 4.0
+	var inner_color = Color.from_hsv(base_hue, 0.4, 1.0, alpha * 0.15 * pulse)
+	canvas.draw_circle(Vector2.ZERO, inner_r, inner_color, true, -1.0, true)
