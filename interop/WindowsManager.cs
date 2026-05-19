@@ -116,22 +116,81 @@ public partial class WindowsManager : Node
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out POINT pt);
 
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorInfo(ref CURSORINFO pci);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr LoadCursor(IntPtr hInstance, int lpCursorName);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct POINT { public int X, Y; }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CURSORINFO
+    {
+        public int cbSize;
+        public int flags;
+        public IntPtr hCursor;
+        public POINT ptScreenPos;
+    }
+
     private const int VK_LBUTTON = 0x01;
 
+    // 所有标准系统光标 ID (从 winuser.h)
+    private static readonly int[] _standardCursorIds = {
+        32512, // IDC_ARROW
+        32513, // IDC_IBEAM
+        32514, // IDC_WAIT
+        32515, // IDC_CROSS
+        32516, // IDC_UPARROW
+        32642, // IDC_SIZENWSE
+        32643, // IDC_SIZENESW
+        32644, // IDC_SIZEWE
+        32645, // IDC_SIZENS
+        32646, // IDC_SIZEALL
+        32648, // IDC_NO
+        32649, // IDC_HAND
+        32650, // IDC_APPSTARTING
+        32651, // IDC_HELP
+    };
+    private static HashSet<IntPtr> _standardCursorHandles;
+
     /// <summary>
-    /// 检测鼠标左键是否在全局按住状态 (不依赖 Godot 输入系统)。
-    /// OLE 拖放期间鼠标事件被系统劫持, Godot 的 Input 接收不到,
-    /// 但 GetAsyncKeyState 可以跨进程检测物理按键状态。
-    /// 返回: [isHeld: bool, screenX: int, screenY: int]
+    /// 检测全局鼠标状态 (不依赖 Godot 输入系统)。
+    /// 返回: [isHeld, screenX, screenY, isDragCursor]
+    ///   isHeld: 左键是否按住
+    ///   isDragCursor: 光标是否为非标准光标 (OLE 拖拽时光标变成带文件图标的特殊光标)
     /// </summary>
     public int[] GetGlobalMouseState()
     {
         bool held = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
         GetCursorPos(out POINT pt);
-        return new[] { held ? 1 : 0, pt.X, pt.Y };
+
+        // 检测当前光标是否为标准系统光标
+        bool isDragCursor = false;
+        if (held)
+        {
+            // 懒加载标准光标句柄集合
+            if (_standardCursorHandles == null)
+            {
+                _standardCursorHandles = new HashSet<IntPtr>();
+                foreach (int id in _standardCursorIds)
+                {
+                    IntPtr h = LoadCursor(IntPtr.Zero, id);
+                    if (h != IntPtr.Zero) _standardCursorHandles.Add(h);
+                }
+            }
+
+            var ci = new CURSORINFO();
+            ci.cbSize = System.Runtime.InteropServices.Marshal.SizeOf(ci);
+            if (GetCursorInfo(ref ci) && ci.hCursor != IntPtr.Zero)
+            {
+                // 如果当前光标不属于任何标准光标 → 可能是 OLE 拖拽光标
+                isDragCursor = !_standardCursorHandles.Contains(ci.hCursor);
+            }
+        }
+
+        return new[] { held ? 1 : 0, pt.X, pt.Y, isDragCursor ? 1 : 0 };
     }
 
     /// <summary>

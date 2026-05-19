@@ -22,6 +22,8 @@ var _is_active: bool = false
 # ── 拖放悬停视觉反馈 ──
 var hover_amount: float = 0.0   # 悬停动画进度 (0=隐藏, 1=完全显示), pet.gd 读取
 var _hover_time: float = 0.0    # 脉冲动画计时器
+var _was_hovering: bool = false  # 上一帧是否在悬停 (用于检测"拖了个寂寞")
+var _miss_timer: float = 0.0    # 松手后确认定时器 (等待 files_dropped 信号)
 
 # ── 菜单 UI (委托给 DropMenu) ──
 var _menu  # DropMenu 实例
@@ -34,6 +36,15 @@ const LINES := {
 	"no_bridge": "系统桥接离线。无法执行。",
 	"not_found": "目标不存在。可能已被移除。",
 }
+
+# ── 彩蛋: 拖入非文件内容的吐槽话术 ──
+const MISS_LINES := [
+	"数据格式解析失败。投入的是什么？",
+	"检测到未知载荷。已丢弃。",
+	"…这不是文件。",
+	"输入流无法解码。请检查载体类型。",
+	"投喂失败。我不吃这个。",
+]
 
 # ══════════════════════════════════════
 #  初始化
@@ -126,6 +137,7 @@ func receive(paths: PackedStringArray) -> void:
 	
 	_pending_paths = paths
 	_is_active = true
+	_miss_timer = 0.0  # 清除吐槽定时器 (文件成功投入, 不是 "拖了个寂寞")
 	
 	# 话术反馈
 	if paths.size() == 1:
@@ -202,13 +214,13 @@ func _update_hover(delta: float) -> void:
 	
 	# 排除: 操作菜单正在展示 (文件已投递, 不是悬停阶段)
 	# 排除: 宠物自身拖拽状态 (drag 状态下左键也按住)
-	# 排除: Godot Input 自己能检测到左键 (说明按下发生在我们窗口内, 不是外部拖入)
-	if not _is_active and pet.current_state_name != "drag" \
-		and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+	if not _is_active and pet.current_state_name != "drag":
 		var wm = _get_wm()
 		if wm:
-			var state = wm.GetGlobalMouseState()  # [held, screenX, screenY]
-			if state[0] == 1:  # 左键全局按住 (但 Godot 自身检测不到 → 来自外部进程)
+			var state = wm.GetGlobalMouseState()  # [held, screenX, screenY, isDragCursor]
+			# 左键按住 + 光标是非标准光标 (OLE 拖拽时光标变成带文件图标的特殊形态)
+			# 普通左键按住时光标仍是标准箭头 → isDragCursor=0 → 不触发
+			if state[0] == 1 and state[3] == 1:
 				# 将屏幕坐标转为视口坐标 (减去窗口位置)
 				var win_pos = pet.get_window().position
 				var mouse_local = Vector2(state[1] - win_pos.x, state[2] - win_pos.y)
@@ -223,6 +235,21 @@ func _update_hover(delta: float) -> void:
 		_hover_time += delta
 	else:
 		_hover_time = 0.0
+	
+	# ── 彩蛋: 检测"拖了个寂寞" (光圈亮了但没收到文件) ──
+	if _was_hovering and not is_hovering:
+		# 悬停结束, 启动确认定时器 (等 files_dropped 信号抵达)
+		_miss_timer = 0.3
+	_was_hovering = is_hovering
+	
+	# 定时器倒计时
+	if _miss_timer > 0.0:
+		_miss_timer -= delta
+		if _miss_timer <= 0.0:
+			_miss_timer = 0.0
+			# 定时器到期且 receive 没被调用 (没有文件投入)
+			if not _is_active:
+				pet.show_local_bubble(MISS_LINES.pick_random())
 
 ## 绘制拖放悬停吸引光圈 (由 pet.gd _draw 调用)
 func render_hover(canvas: Node2D) -> void:
