@@ -56,18 +56,71 @@ func _clone_pet(source: Node2D, with_bubble: bool) -> void:
 		# 首次随机分配后立即保存
 		SettingsManager.set_pet_color(pet_index, clone.palette.get_hue_degrees(), clone.palette.get_sat_percent(), clone.palette.get_val_percent())
 	
-	var spawn_x: float
-	if is_instance_valid(source):
-		spawn_x = source.global_position.x + randf_range(-80, 80)
-	else:
-		spawn_x = randf_range(_main.boundary_size.x * 0.2, _main.boundary_size.x * 0.8)
-	spawn_x = clampf(spawn_x, 60.0, _main.boundary_size.x - 60.0)
-	clone.position = Vector2(spawn_x, _main.boundary_size.y * 0.1)
-	
 	clone.behavior_mode = _main.behavior_mode
 	
-	_main.add_child(clone)
-	_main.pet_instances.append(clone)
+	var ag = SettingsManager.get_bool("anti_gravity", false)
+	var g_sign: float = -1.0 if ag else 1.0
+	
+	# ── 入场方式决策 ──
+	# 70% 从侧方滚入/弹入 (和原体同风格)，30% 从空中掉落 (彩蛋)
+	var side_entrance: bool = randf() < 0.7 and with_bubble  # 静默恢复时直接空降
+	
+	if side_entrance:
+		# ── 侧方入场: 从屏幕外弹入 ──
+		var from_left: bool = randf() < 0.5
+		var is_roll: bool = randf() < 0.5
+		var spawn_margin := 60.0
+		var spawn_x: float
+		if from_left:
+			spawn_x = -spawn_margin
+		else:
+			spawn_x = _main.boundary_size.x + spawn_margin
+		var spawn_y: float
+		if ag:
+			spawn_y = 50.0
+		else:
+			spawn_y = _main.boundary_size.y - 50.0
+		clone.position = Vector2(spawn_x, spawn_y)
+		
+		# 临时禁用入场侧墙壁
+		var entry_wall: StaticBody2D = _main._wall_left if from_left else _main._wall_right
+		if is_instance_valid(entry_wall):
+			entry_wall.get_child(0).disabled = true
+		
+		# 入场期间临时关闭屏幕穿越
+		var had_wrap: bool = clone.screen_wrap
+		if had_wrap:
+			clone.screen_wrap = false
+		
+		_main.add_child(clone)
+		_main.pet_instances.append(clone)
+		
+		# 延迟一帧施加入场冲量
+		var dir: float = 1.0 if from_left else -1.0
+		_main._apply_entrance.call_deferred(clone, dir, entry_wall, had_wrap, is_roll, g_sign)
+	else:
+		# ── 空中掉落: 从上方淡入 (保留原有方式，加淡入过渡) ──
+		var spawn_x: float
+		if is_instance_valid(source):
+			spawn_x = source.global_position.x + randf_range(-80, 80)
+		else:
+			spawn_x = randf_range(_main.boundary_size.x * 0.2, _main.boundary_size.x * 0.8)
+		spawn_x = clampf(spawn_x, 60.0, _main.boundary_size.x - 60.0)
+		var spawn_y: float
+		if ag:
+			spawn_y = _main.boundary_size.y * randf_range(0.6, 0.9)  # 反重力: 从底部随机高度掉上去
+		else:
+			spawn_y = _main.boundary_size.y * randf_range(0.1, 0.4)  # 正常: 从顶部随机高度掉下来
+		clone.position = Vector2(spawn_x, spawn_y)
+		
+		# 淡入过渡 (从透明到不透明, 2~3 秒缓慢显形)
+		clone.modulate = Color(1, 1, 1, 0)
+		
+		_main.add_child(clone)
+		_main.pet_instances.append(clone)
+		
+		var tween = clone.create_tween()
+		tween.tween_property(clone, "modulate:a", 1.0, randf_range(2.0, 3.0)).set_ease(Tween.EASE_OUT)
 	
 	SettingsManager.set_int("clone_count", _main.pet_instances.size() - 1)
 	

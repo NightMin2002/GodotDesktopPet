@@ -43,16 +43,14 @@ func register(id: String, weight: float, action: Callable) -> void:
 func update(delta: float) -> void:
 	if mode == 0:
 		return
-	# 克隆体不触发
-	if pet.is_clone:
-		return
+	# 克隆体也参与自主活动 (具体活动在 _can_run 中单独控制)
 	# 只在 idle 状态下计时
 	if pet.current_state_name != "idle":
 		return
 	# 前置条件: 自由行动 + 非深夜 + 非游戏中 + 非空间跳跃中
 	if pet.behavior_mode != 0 or pet.nighttime_mode:
 		return
-	if pet.gaming.active or pet._roam_active or pet.holo_screen._game_locked:
+	if pet.gaming.active or pet._roam_active or pet.holo_screen._game_locked or pet.holo_screen.is_terminal_mode:
 		return
 	# 微行为活跃时不触发 (休眠/自检中)
 	if pet.idle_behaviors.is_active():

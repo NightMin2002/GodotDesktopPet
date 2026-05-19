@@ -507,8 +507,8 @@ func _process(delta: float) -> void:
 	idle_activities.update(delta)
 	_roam_update(delta)
 	var squash_changed = squash.update(delta)
-	# 悬停特效: 传入当前鼠标状态 (游戏态/克隆不响应)
-	var _mouse_hover = is_mouse_on_pet() and not gaming.active and not is_clone
+	# 悬停特效: 传入当前鼠标状态 (游戏态不响应)
+	var _mouse_hover = is_mouse_on_pet() and not gaming.active
 	var hover_changed = hover_effect.update(delta, _mouse_hover)
 	
 	# 文件投喂菜单 + 悬停检测: 跟随宠物位置

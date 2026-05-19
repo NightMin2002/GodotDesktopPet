@@ -288,8 +288,13 @@ func _spawn_pet() -> void:
 		spawn_x = -spawn_margin
 	else:
 		spawn_x = boundary_size.x + spawn_margin
-	# 地面附近 (地面墙在 boundary_size.y，宠物半径 30)
-	var spawn_y := boundary_size.y - 50.0
+	# 根据反重力状态选择入场高度
+	var ag = SettingsManager.get_bool("anti_gravity", false)
+	var spawn_y: float
+	if ag:
+		spawn_y = 50.0  # 天花板附近 (反重力=地面)
+	else:
+		spawn_y = boundary_size.y - 50.0  # 地面附近
 	pet_instance.position = Vector2(spawn_x, spawn_y)
 	
 	# 临时禁用入场侧的墙壁，让宠物从外面穿入
@@ -307,27 +312,28 @@ func _spawn_pet() -> void:
 	
 	# 延迟一帧施加入场冲量 (等 RigidBody2D 物理就绪)
 	var dir: float = 1.0 if from_left else -1.0
-	_apply_entrance.call_deferred(pet_instance, dir, entry_wall, had_wrap, roll_style)
+	var g_sign: float = -1.0 if ag else 1.0
+	_apply_entrance.call_deferred(pet_instance, dir, entry_wall, had_wrap, roll_style, g_sign)
 	
 	var style_name := "滚动" if roll_style else "弹跳"
 	print("[DesktopPet] 宠物从%s侧%s入场" % [("左" if from_left else "右"), style_name])
 
 ## 入场冲量 + 墙壁恢复
-func _apply_entrance(pet: RigidBody2D, dir: float, wall: StaticBody2D, had_wrap: bool, is_roll: bool) -> void:
+func _apply_entrance(pet: RigidBody2D, dir: float, wall: StaticBody2D, had_wrap: bool, is_roll: bool, g_sign: float) -> void:
 	if not is_instance_valid(pet):
 		return
 	if is_roll:
 		# 滚动: 沿地面平推 + 强旋转，优雅自然
 		pet.apply_central_impulse(Vector2(
 			dir * randf_range(400, 600),
-			randf_range(-50, -20),  # 微微离地，不会飞起
+			g_sign * randf_range(-50, -20),  # 微微离地，不会飞起
 		))
 		pet.apply_torque_impulse(dir * randf_range(4000, 7000))
 	else:
 		# 斜抛: 高抛物线弹入
 		pet.apply_central_impulse(Vector2(
 			dir * randf_range(600, 900),
-			randf_range(-550, -380),
+			g_sign * randf_range(-550, -380),
 		))
 		pet.apply_torque_impulse(dir * randf_range(2000, 4000))
 	
