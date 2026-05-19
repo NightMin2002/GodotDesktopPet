@@ -29,6 +29,7 @@ const SYSTEM_COMBOS := [
 # ── 内部状态 ──
 var _win_mgr: Node
 var _bindings: Dictionary = {}  # action_id -> combo_string
+var _enabled: Dictionary = {}   # action_id -> bool
 var _active: bool = false
 # action_id -> signal_name 回调映射
 var _callbacks: Dictionary = {
@@ -45,8 +46,11 @@ func setup(main_node: Node) -> void:
 	for action in HOTKEY_DEFS:
 		var def = HOTKEY_DEFS[action]
 		var saved = SettingsManager.get_hotkey(action, def["default"])
+		var enabled = SettingsManager.get_hotkey_enabled(action, true)
 		_bindings[action] = saved
-		_register_combo(action, saved)
+		_enabled[action] = enabled
+		if enabled:
+			_register_combo(action, saved)
 	print("[HotKey] 全局热键管理器就绪, %d 个绑定" % _bindings.size())
 
 func _process(_delta: float) -> void:
@@ -100,6 +104,19 @@ func rebind(action: String, combo: String) -> bool:
 ## 获取当前绑定
 func get_binding(action: String) -> String:
 	return _bindings.get(action, "")
+
+## 获取启用状态
+func is_enabled(action: String) -> bool:
+	return _enabled.get(action, true)
+
+## 设置启用/禁用 (持久化 + 注册/注销)
+func set_enabled(action: String, enabled: bool) -> void:
+	_enabled[action] = enabled
+	SettingsManager.set_hotkey_enabled(action, enabled)
+	if enabled:
+		_register_combo(action, _bindings.get(action, ""))
+	else:
+		unregister(action)
 
 # ═══════════════════════════════════════════════
 #  冲突检测

@@ -99,38 +99,63 @@ func _update_confirm_positions() -> void:
 	var vp = _confirm_pet.get_viewport().get_visible_rect().size
 	var pet_r: float = _confirm_pet.PET_RADIUS
 	const BTN_GAP := 10.0
+	const BTN_SPACE := 6.0  # 按钮之间间距
 	const MARGIN := 4.0
 	
 	var btn_y = anchor.center.y - 14.0
 	
-	# [取消] 左侧
-	if _confirm_btn_cancel and is_instance_valid(_confirm_btn_cancel):
-		var w = _confirm_btn_cancel.size.x
-		var h = _confirm_btn_cancel.size.y
-		_confirm_btn_cancel.position = Vector2(
-			anchor.center.x - pet_r - BTN_GAP - w,
-			btn_y
-		)
-		_confirm_btn_cancel.position.x = clampf(_confirm_btn_cancel.position.x, MARGIN, maxf(MARGIN, vp.x - w - MARGIN))
-		_confirm_btn_cancel.position.y = clampf(_confirm_btn_cancel.position.y, MARGIN, maxf(MARGIN, vp.y - h - MARGIN))
+	# 计算各按钮尺寸
+	var cw = _confirm_btn_cancel.size.x if is_instance_valid(_confirm_btn_cancel) else 60.0
+	var ch = _confirm_btn_cancel.size.y if is_instance_valid(_confirm_btn_cancel) else 28.0
+	var rw = _confirm_btn_recycle.size.x if is_instance_valid(_confirm_btn_recycle) else 70.0
+	var sw = _confirm_btn_shred.size.x if is_instance_valid(_confirm_btn_shred) else 80.0
+	var right_total = rw + BTN_SPACE + sw  # 右侧两按钮总宽度
 	
-	# [回收站] 和 [彻底粉碎] 右侧并排
-	var right_x = anchor.center.x + pet_r + BTN_GAP
+	# 计算左右可用空间
+	var left_space = anchor.center.x - pet_r - BTN_GAP
+	var right_space = vp.x - (anchor.center.x + pet_r + BTN_GAP)
 	
-	if _confirm_btn_recycle and is_instance_valid(_confirm_btn_recycle):
-		var w = _confirm_btn_recycle.size.x
-		var h = _confirm_btn_recycle.size.y
-		_confirm_btn_recycle.position = Vector2(right_x, btn_y)
-		_confirm_btn_recycle.position.x = clampf(_confirm_btn_recycle.position.x, MARGIN, maxf(MARGIN, vp.x - w - MARGIN))
-		_confirm_btn_recycle.position.y = clampf(_confirm_btn_recycle.position.y, MARGIN, maxf(MARGIN, vp.y - h - MARGIN))
-		right_x = _confirm_btn_recycle.position.x + w + 6.0
+	if left_space >= cw + 10 and right_space >= right_total + 10:
+		# ── 标准布局: 取消在左, 回收站+粉碎在右 ──
+		if is_instance_valid(_confirm_btn_cancel):
+			_confirm_btn_cancel.position = Vector2(
+				anchor.center.x - pet_r - BTN_GAP - cw, btn_y)
+		if is_instance_valid(_confirm_btn_recycle):
+			_confirm_btn_recycle.position = Vector2(
+				anchor.center.x + pet_r + BTN_GAP, btn_y)
+		if is_instance_valid(_confirm_btn_shred):
+			_confirm_btn_shred.position = Vector2(
+				anchor.center.x + pet_r + BTN_GAP + rw + BTN_SPACE, btn_y)
+	elif right_space >= cw + BTN_SPACE + right_total + 10:
+		# ── 左侧不够: 三个按钮全部放右侧 ──
+		var rx = anchor.center.x + pet_r + BTN_GAP
+		if is_instance_valid(_confirm_btn_cancel):
+			_confirm_btn_cancel.position = Vector2(rx, btn_y)
+			rx += cw + BTN_SPACE
+		if is_instance_valid(_confirm_btn_recycle):
+			_confirm_btn_recycle.position = Vector2(rx, btn_y)
+			rx += rw + BTN_SPACE
+		if is_instance_valid(_confirm_btn_shred):
+			_confirm_btn_shred.position = Vector2(rx, btn_y)
+	else:
+		# ── 右侧也不够: 三个按钮全部放左侧 ──
+		var lx = anchor.center.x - pet_r - BTN_GAP
+		if is_instance_valid(_confirm_btn_shred):
+			_confirm_btn_shred.position = Vector2(lx - sw, btn_y)
+			lx -= sw + BTN_SPACE
+		if is_instance_valid(_confirm_btn_recycle):
+			_confirm_btn_recycle.position = Vector2(lx - rw, btn_y)
+			lx -= rw + BTN_SPACE
+		if is_instance_valid(_confirm_btn_cancel):
+			_confirm_btn_cancel.position = Vector2(lx - cw, btn_y)
 	
-	if _confirm_btn_shred and is_instance_valid(_confirm_btn_shred):
-		var w = _confirm_btn_shred.size.x
-		var h = _confirm_btn_shred.size.y
-		_confirm_btn_shred.position = Vector2(right_x, btn_y)
-		_confirm_btn_shred.position.x = clampf(_confirm_btn_shred.position.x, MARGIN, maxf(MARGIN, vp.x - w - MARGIN))
-		_confirm_btn_shred.position.y = clampf(_confirm_btn_shred.position.y, MARGIN, maxf(MARGIN, vp.y - h - MARGIN))
+	# ── 最终边界 clamp (防超出屏幕) ──
+	for btn in [_confirm_btn_cancel, _confirm_btn_recycle, _confirm_btn_shred]:
+		if btn and is_instance_valid(btn):
+			var w = btn.size.x
+			var h = btn.size.y
+			btn.position.x = clampf(btn.position.x, MARGIN, maxf(MARGIN, vp.x - w - MARGIN))
+			btn.position.y = clampf(btn.position.y, MARGIN, maxf(MARGIN, vp.y - h - MARGIN))
 	
 	# DWM 穿透区域
 	_update_confirm_hit_rects()

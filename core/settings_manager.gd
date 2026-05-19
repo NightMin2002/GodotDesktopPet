@@ -130,3 +130,10 @@ func get_hotkey(action: String, default_val: String = "") -> String:
 func set_hotkey(action: String, combo: String) -> void:
 	_config.set_value("hotkeys", action, combo)
 	_config.save(SETTINGS_PATH)
+
+func get_hotkey_enabled(action: String, default_val: bool = true) -> bool:
+	return _config.get_value("hotkeys_enabled", action, default_val)
+
+func set_hotkey_enabled(action: String, enabled: bool) -> void:
+	_config.set_value("hotkeys_enabled", action, enabled)
+	_config.save(SETTINGS_PATH)

@@ -139,27 +139,49 @@ func _update_positions() -> void:
 	
 	var btn_y = anchor.center.y - 14.0
 	
-	# ── [取消] 在宠物左侧 ──
-	if _btn_cancel and is_instance_valid(_btn_cancel):
-		var cw = _btn_cancel.size.x
-		var ch = _btn_cancel.size.y
-		_btn_cancel.position = Vector2(
-			anchor.center.x - pet_r - BTN_GAP - cw,
-			btn_y
-		)
-		_btn_cancel.position.x = clampf(_btn_cancel.position.x, MARGIN, maxf(MARGIN, vp.x - cw - MARGIN))
-		_btn_cancel.position.y = clampf(_btn_cancel.position.y, MARGIN, maxf(MARGIN, vp.y - ch - MARGIN))
+	# 计算按钮尺寸
+	var cw = _btn_cancel.size.x if is_instance_valid(_btn_cancel) else 60.0
+	var ch = _btn_cancel.size.y if is_instance_valid(_btn_cancel) else 28.0
+	var aw = _btn_action.size.x if is_instance_valid(_btn_action) else 60.0
+	var ah = _btn_action.size.y if is_instance_valid(_btn_action) else 28.0
+	const BTN_SPACE := 8.0
 	
-	# ── [指令] 在宠物右侧 ──
-	if _btn_action and is_instance_valid(_btn_action):
-		var aw = _btn_action.size.x
-		var ah = _btn_action.size.y
-		_btn_action.position = Vector2(
-			anchor.center.x + pet_r + BTN_GAP,
-			btn_y
-		)
-		_btn_action.position.x = clampf(_btn_action.position.x, MARGIN, maxf(MARGIN, vp.x - aw - MARGIN))
-		_btn_action.position.y = clampf(_btn_action.position.y, MARGIN, maxf(MARGIN, vp.y - ah - MARGIN))
+	# 计算左右可用空间
+	var left_space = anchor.center.x - pet_r - BTN_GAP
+	var right_space = vp.x - (anchor.center.x + pet_r + BTN_GAP)
+	
+	if left_space >= cw + 10 and right_space >= aw + 10:
+		# ── 标准布局: 取消在左, 指令在右 ──
+		if is_instance_valid(_btn_cancel):
+			_btn_cancel.position = Vector2(
+				anchor.center.x - pet_r - BTN_GAP - cw, btn_y)
+		if is_instance_valid(_btn_action):
+			_btn_action.position = Vector2(
+				anchor.center.x + pet_r + BTN_GAP, btn_y)
+	elif right_space >= cw + BTN_SPACE + aw + 10:
+		# ── 左侧不够: 两个按钮都放右侧 ──
+		var rx = anchor.center.x + pet_r + BTN_GAP
+		if is_instance_valid(_btn_cancel):
+			_btn_cancel.position = Vector2(rx, btn_y)
+			rx += cw + BTN_SPACE
+		if is_instance_valid(_btn_action):
+			_btn_action.position = Vector2(rx, btn_y)
+	else:
+		# ── 右侧也不够: 两个按钮都放左侧 ──
+		var lx = anchor.center.x - pet_r - BTN_GAP
+		if is_instance_valid(_btn_action):
+			_btn_action.position = Vector2(lx - aw, btn_y)
+			lx -= aw + BTN_SPACE
+		if is_instance_valid(_btn_cancel):
+			_btn_cancel.position = Vector2(lx - cw, btn_y)
+	
+	# ── 最终边界 clamp ──
+	for btn in [_btn_cancel, _btn_action]:
+		if btn and is_instance_valid(btn):
+			var w = btn.size.x
+			var h = btn.size.y
+			btn.position.x = clampf(btn.position.x, MARGIN, maxf(MARGIN, vp.x - w - MARGIN))
+			btn.position.y = clampf(btn.position.y, MARGIN, maxf(MARGIN, vp.y - h - MARGIN))
 	
 	# ── 子菜单: 贴在 [指令] 按钮下方 ──
 	if _submenu_bg and is_instance_valid(_submenu_bg) and _submenu_bg.visible and _btn_action and is_instance_valid(_btn_action):

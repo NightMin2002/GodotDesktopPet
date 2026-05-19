@@ -436,6 +436,17 @@ func _add_hotkey_row(parent: VBoxContainer, action: String, label: String, combo
 	var row = HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
 
+	# 启用开关
+	var hotkey_mgr = _get_hotkey_mgr()
+	var enabled = hotkey_mgr.is_enabled(action) if hotkey_mgr else true
+	var toggle = CheckButton.new()
+	toggle.button_pressed = enabled
+	toggle.custom_minimum_size = Vector2(40, 0)
+	toggle.tooltip_text = "启用/禁用此快捷键"
+	var act_toggle = action
+	toggle.toggled.connect(func(on: bool): _on_hotkey_toggled(act_toggle, on))
+	row.add_child(toggle)
+
 	# 操作名
 	var lbl = Label.new()
 	lbl.text = label
@@ -450,7 +461,7 @@ func _add_hotkey_row(parent: VBoxContainer, action: String, label: String, combo
 	combo_lbl.text = HotkeyManager.format_combo(combo)
 	combo_lbl.custom_minimum_size.x = 140
 	combo_lbl.add_theme_font_size_override("font_size", 14)
-	combo_lbl.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.35, 0.85, 0.85))
+	combo_lbl.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.35, 0.85, 0.85) if enabled else Color(0.4, 0.4, 0.4, 0.4))
 	combo_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(combo_lbl)
 
@@ -471,7 +482,45 @@ func _add_hotkey_row(parent: VBoxContainer, action: String, label: String, combo
 	row.add_child(status)
 
 	parent.add_child(row)
-	_hotkey_rows[action] = {"combo_label": combo_lbl, "record_btn": rec_btn, "status_label": status}
+	_hotkey_rows[action] = {"combo_label": combo_lbl, "record_btn": rec_btn, "status_label": status, "toggle": toggle, "name_label": lbl}
+
+	# 初始禁用态视觉
+	if not enabled:
+		_apply_disabled_visual(action)
+
+func _on_hotkey_toggled(action: String, enabled: bool) -> void:
+	var hotkey_mgr = _get_hotkey_mgr()
+	if hotkey_mgr:
+		hotkey_mgr.set_enabled(action, enabled)
+	# 视觉反馈
+	if enabled:
+		_apply_enabled_visual(action)
+	else:
+		# 如果正在录入这个热键, 先停止
+		if _recording_action == action:
+			_stop_recording()
+		_apply_disabled_visual(action)
+
+func _apply_disabled_visual(action: String) -> void:
+	var row = _hotkey_rows.get(action, {})
+	if row.is_empty():
+		return
+	row.combo_label.add_theme_color_override("font_color", Color(0.4, 0.4, 0.4, 0.4))
+	row.name_label.add_theme_color_override("font_color", Color(0.45, 0.45, 0.45, 0.5))
+	row.record_btn.disabled = true
+	row.record_btn.modulate.a = 0.35
+	row.status_label.text = "已禁用"
+	row.status_label.add_theme_color_override("font_color", Color(0.5, 0.45, 0.4, 0.5))
+
+func _apply_enabled_visual(action: String) -> void:
+	var row = _hotkey_rows.get(action, {})
+	if row.is_empty():
+		return
+	row.combo_label.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.35, 0.85, 0.85))
+	row.name_label.add_theme_color_override("font_color", Color(0.7, 0.75, 0.8, 0.8))
+	row.record_btn.disabled = false
+	row.record_btn.modulate.a = 1.0
+	row.status_label.text = ""
 
 func _start_recording(action: String) -> void:
 	# 先注销当前热键 (录入期间不响应)
@@ -585,10 +634,14 @@ func _on_hotkey_reset() -> void:
 		var def = HotkeyManager.HOTKEY_DEFS[action]
 		var default_combo: String = def["default"]
 		if hotkey_mgr:
+			hotkey_mgr.set_enabled(action, true)
 			hotkey_mgr.rebind(action, default_combo)
 		var row = _hotkey_rows.get(action, {})
 		if not row.is_empty():
 			row.combo_label.text = HotkeyManager.format_combo(default_combo)
+			if row.has("toggle") and is_instance_valid(row.toggle):
+				row.toggle.set_pressed_no_signal(true)
+			_apply_enabled_visual(action)
 			row.status_label.text = "已恢复"
 			row.status_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.5, 0.7))
 
