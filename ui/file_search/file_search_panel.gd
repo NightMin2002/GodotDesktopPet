@@ -36,6 +36,7 @@ var _count_label: Label
 var _clear_btn: Button
 var _frame_drawer: Control
 var _time_passed: float = 0.0
+var _detail_view: bool = false  # false=正常视图, true=详细视图(单行)
 
 # ── 结果卡片引用 ──
 var _result_cards: Array[Control] = []
@@ -179,12 +180,46 @@ func _build_ui() -> void:
 	# ── 搜索栏 ──
 	outer.add_child(_build_search_bar())
 
-	# ── 结果统计 ──
+	# ── 结果统计 + 视图切换 ──
+	var count_row = HBoxContainer.new()
+	count_row.add_theme_constant_override("separation", 8)
+	count_row.mouse_filter = Control.MOUSE_FILTER_PASS
+
 	_count_label = Label.new()
 	_count_label.add_theme_font_size_override("font_size", 13)
 	_count_label.add_theme_color_override("font_color", Color(0.50, 0.58, 0.65, 0.6))
+	_count_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_count_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	outer.add_child(_count_label)
+	count_row.add_child(_count_label)
+
+	# 视图切换按钮
+	var view_btn = Button.new()
+	view_btn.text = "详细"
+	view_btn.add_theme_font_size_override("font_size", 12)
+	view_btn.add_theme_color_override("font_color", Color(0.55, 0.62, 0.70, 0.7))
+	view_btn.add_theme_color_override("font_hover_color", Color(0.80, 0.88, 0.95, 1.0))
+	var vb_s = StyleBoxFlat.new()
+	vb_s.bg_color = Color(0.08, 0.10, 0.16, 0.5)
+	vb_s.set_corner_radius_all(3)
+	vb_s.set_border_width_all(1)
+	vb_s.border_color = Color(0.35, 0.40, 0.50, 0.3)
+	vb_s.content_margin_left = 8; vb_s.content_margin_right = 8
+	vb_s.content_margin_top = 2; vb_s.content_margin_bottom = 2
+	view_btn.add_theme_stylebox_override("normal", vb_s)
+	var vb_h = vb_s.duplicate()
+	vb_h.bg_color = Color(0.12, 0.14, 0.22, 0.7)
+	vb_h.border_color = Color(0.45, 0.50, 0.60, 0.5)
+	view_btn.add_theme_stylebox_override("hover", vb_h)
+	view_btn.add_theme_stylebox_override("pressed", vb_h)
+	view_btn.mouse_filter = Control.MOUSE_FILTER_PASS
+	view_btn.pressed.connect(func():
+		_detail_view = not _detail_view
+		view_btn.text = "正常" if _detail_view else "详细"
+		_rebuild_result_cards()
+	)
+	count_row.add_child(view_btn)
+
+	outer.add_child(count_row)
 
 	# ── 结果列表区域 ──
 	_scroll = ScrollContainer.new()
@@ -192,21 +227,8 @@ func _build_ui() -> void:
 	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_scroll.mouse_filter = Control.MOUSE_FILTER_PASS
-	# 自定义滚动条颜色
-	var vbar = _scroll.get_v_scroll_bar()
-	if vbar:
-		var grab_style = StyleBoxFlat.new()
-		grab_style.bg_color = Color.from_hsv(EventBus.ui_hue, 0.3, 0.5, 0.4)
-		grab_style.set_corner_radius_all(3)
-		vbar.add_theme_stylebox_override("grabber", grab_style)
-		var grab_hl = grab_style.duplicate()
-		grab_hl.bg_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.7, 0.6)
-		vbar.add_theme_stylebox_override("grabber_highlight", grab_hl)
-		vbar.add_theme_stylebox_override("grabber_pressed", grab_hl)
-		var scroll_bg = StyleBoxFlat.new()
-		scroll_bg.bg_color = Color(0.05, 0.07, 0.12, 0.3)
-		scroll_bg.set_corner_radius_all(3)
-		vbar.add_theme_stylebox_override("scroll", scroll_bg)
+	# 自定义滚动条 (复用装置终端样式)
+	ProfileStyles.setup_custom_scrollbar(_scroll)
 	outer.add_child(_scroll)
 
 	_result_container = VBoxContainer.new()
@@ -761,7 +783,11 @@ func _poll_search_results() -> void:
 		for i in new_results.size():
 			var item = new_results[i]
 			_results.append(item)
-			var card = _make_result_card(item, base_index + i)
+			var card: Control
+			if _detail_view:
+				card = _make_detail_card(item, base_index + i)
+			else:
+				card = _make_result_card(item, base_index + i)
 			_result_container.add_child(card)
 			_result_cards.append(card)
 			# 入场动画: 淡入
@@ -911,6 +937,101 @@ func _make_result_card(item: Dictionary, index: int) -> Control:
 	vbox.add_child(row3)
 
 	return card
+
+func _make_detail_card(item: Dictionary, index: int) -> Control:
+	var card = PanelContainer.new()
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.06, 0.08, 0.14, 0.35) if index % 2 == 0 else Color(0.07, 0.09, 0.16, 0.35)
+	style.set_corner_radius_all(2)
+	style.set_border_width_all(0)
+	style.content_margin_left = 8; style.content_margin_right = 8
+	style.content_margin_top = 3; style.content_margin_bottom = 3
+	card.add_theme_stylebox_override("panel", style)
+	card.mouse_filter = Control.MOUSE_FILTER_PASS
+
+	# hover
+	var hover_style = style.duplicate()
+	hover_style.bg_color = Color(0.08, 0.10, 0.18, 0.6)
+	hover_style.set_border_width_all(1)
+	hover_style.border_color = Color.from_hsv(EventBus.ui_hue, 0.3, 0.6, 0.3)
+	card.mouse_entered.connect(func(): card.add_theme_stylebox_override("panel", hover_style))
+	card.mouse_exited.connect(func(): card.add_theme_stylebox_override("panel", style))
+
+	var row = HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.mouse_filter = Control.MOUSE_FILTER_PASS
+	card.add_child(row)
+
+	var is_folder: bool = item.get("is_folder", false)
+	var ext: String = str(item.get("extension", "")).to_lower()
+
+	# 图标
+	var icon_l = Label.new()
+	icon_l.text = _get_type_icon(is_folder, ext)
+	icon_l.add_theme_font_size_override("font_size", 12)
+	icon_l.add_theme_color_override("font_color", _get_type_color(is_folder, ext))
+	icon_l.custom_minimum_size.x = 28
+	icon_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(icon_l)
+
+	# 文件名
+	var name_l = Label.new()
+	name_l.text = str(item.get("name", ""))
+	name_l.add_theme_font_size_override("font_size", 13)
+	name_l.add_theme_color_override("font_color", Color(0.82, 0.88, 0.96, 0.9))
+	name_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(name_l)
+
+	# 日期
+	var date_l = Label.new()
+	date_l.text = str(item.get("date_modified", ""))
+	date_l.add_theme_font_size_override("font_size", 11)
+	date_l.add_theme_color_override("font_color", Color(0.42, 0.48, 0.55, 0.5))
+	date_l.custom_minimum_size.x = 110
+	date_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(date_l)
+
+	# 大小
+	var size_l = Label.new()
+	var size_val: int = int(item.get("size", 0))
+	size_l.text = _format_size(size_val) if not is_folder else ""
+	size_l.add_theme_font_size_override("font_size", 11)
+	size_l.add_theme_color_override("font_color", Color(0.42, 0.48, 0.55, 0.5))
+	size_l.custom_minimum_size.x = 60
+	size_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	size_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(size_l)
+
+	# 双击打开 / 右键复制路径
+	var full_path: String = str(item.get("full_path", ""))
+	card.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.pressed:
+			var pet = _get_pet()
+			if pet and pet.is_mouse_on_pet():
+				return
+			if event.button_index == MOUSE_BUTTON_LEFT and event.double_click:
+				_on_locate(full_path)
+			elif event.button_index == MOUSE_BUTTON_RIGHT:
+				_on_copy_path(full_path)
+	)
+
+	return card
+
+func _rebuild_result_cards() -> void:
+	for card in _result_cards:
+		if is_instance_valid(card):
+			card.queue_free()
+	_result_cards.clear()
+	for i in _results.size():
+		var card: Control
+		if _detail_view:
+			card = _make_detail_card(_results[i], i)
+		else:
+			card = _make_result_card(_results[i], i)
+		_result_container.add_child(card)
+		_result_cards.append(card)
 
 func _make_action_btn(text: String, color: Color) -> Button:
 	var btn = Button.new()
