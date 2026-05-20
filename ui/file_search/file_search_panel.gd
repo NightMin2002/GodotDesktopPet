@@ -71,8 +71,8 @@ func _ready() -> void:
 
 func _calc_panel_size() -> void:
 	var vp = get_viewport().get_visible_rect().size
-	_panel_w = clampf(vp.x * 0.45, 580, 900)
-	_panel_h = clampf(vp.y * 0.70, 450, 750)
+	_panel_w = vp.x * 0.70
+	_panel_h = vp.y * 0.70
 
 func _clamp_pos(pos: Vector2) -> Vector2:
 	var vp = get_viewport().get_visible_rect().size
@@ -649,6 +649,8 @@ func _show_guide_card() -> void:
 					_check_engine_status()
 					if _engine_available:
 						_hide_guide_card()
+						if is_instance_valid(_input_field):
+							_input_field.grab_focus()
 						if pet:
 							pet.show_local_bubble("检索引擎已接入。")
 				else:
@@ -755,11 +757,18 @@ func _poll_search_results() -> void:
 	# 获取新增结果
 	var new_results: Array = _search_engine.call("PollResults")
 	if new_results.size() > 0:
-		for item in new_results:
+		var base_index = _result_cards.size()
+		for i in new_results.size():
+			var item = new_results[i]
 			_results.append(item)
-			var card = _make_result_card(item, _result_cards.size())
+			var card = _make_result_card(item, base_index + i)
 			_result_container.add_child(card)
 			_result_cards.append(card)
+			# 入场动画: 淡入
+			card.modulate.a = 0.0
+			var tw = create_tween()
+			var delay = i * 0.03
+			tw.tween_property(card, "modulate:a", 1.0, 0.2).set_delay(delay).set_ease(Tween.EASE_OUT)
 		_total_results = _results.size()
 		_count_label.text = "命中 %d 个目标" % _total_results
 	# 检查搜索是否完成
@@ -1100,14 +1109,7 @@ func _on_frame_draw() -> void:
 			_frame_drawer.draw_line(p_s, p_e, glow_c, 5.0, true)
 			_frame_drawer.draw_line(p_s, p_e, highlight_c, 1.5, true)
 
-	# 8. 搜索中指示器 (输入框右侧旋转圆弧)
-	if _is_searching:
-		var spin_x = w - 50
-		var spin_y = 72
-		var spin_r = 6.0
-		var spin_c = Color.from_hsv(hue, 0.5, 1.0, 0.8)
-		var spin_a = _time_passed * 8.0
-		_frame_drawer.draw_arc(Vector2(spin_x, spin_y), spin_r, spin_a, spin_a + TAU * 0.7, 12, spin_c, 2.0, true)
+
 
 # ═══════════════════════════════════════════════
 #  工具方法
