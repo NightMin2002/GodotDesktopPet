@@ -91,6 +91,7 @@ func _ready() -> void:
 	_setup_memo_popup()
 	_setup_pet_profile_panel()
 	_setup_game_terminal()
+	_setup_file_search_panel()
 	
 	# 触发首次启用日期记录 (首次运行时自动写入)
 	SettingsManager.get_first_launch_date()
@@ -417,6 +418,15 @@ func _setup_game_terminal() -> void:
 		node.set_script(script)
 		add_child(node)
 
+# ── 文件检索终端面板 ──
+
+func _setup_file_search_panel() -> void:
+	var script = load("res://ui/file_search/file_search_panel.gd")
+	if script:
+		var node = CanvasLayer.new()
+		node.set_script(script)
+		add_child(node)
+
 # ── 版本更新检测 ──
 
 func _setup_update_checker() -> void:
@@ -457,6 +467,17 @@ func _setup_file_operations() -> void:
 	# 监听文件拖放事件
 	get_window().files_dropped.connect(_on_files_dropped)
 	print("[FileOps] 文件拖放监听已注册")
+	
+	# 加载 Everything 搜索引擎
+	_setup_everything_search()
+
+func _setup_everything_search() -> void:
+	if not ResourceLoader.exists("res://interop/FileSearchEngine.cs"):
+		print("[FileSearch] C# 脚本不存在, 跳过")
+		return
+	var node = load("res://interop/FileSearchEngine.cs").new()
+	add_child(node)
+	print("[FileSearch] 文件搜索引擎已加载")
 
 func _on_files_dropped(paths: PackedStringArray) -> void:
 	if paths.is_empty():

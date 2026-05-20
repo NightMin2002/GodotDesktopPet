@@ -44,6 +44,10 @@ func build() -> void:
 	vbox.add_child(terminal_btn)
 	ctx._bind_l3_trigger(terminal_btn, "holo_terminal", "sec_pet")
 
+	var search_btn = ctx._make_menu_btn("文件检索", Color(0.2, 0.85, 1.0, 1))
+	search_btn.pressed.connect(_on_file_search_pressed)
+	vbox.add_child(search_btn)
+
 	_debug_behavior_btn = ctx._make_menu_btn("指令序列 [+]", Color(0.2, 0.85, 1.0, 1))
 	vbox.add_child(_debug_behavior_btn)
 	ctx._bind_l3_trigger(_debug_behavior_btn, "debug_behavior", "sec_pet")
@@ -142,6 +146,16 @@ func update_clone_label() -> void:
 
 func refresh_profile() -> void:
 	pass  # 等级控制已迁移至 pet_profile_panel.gd
+
+# ── 文件检索 ──
+
+func _on_file_search_pressed() -> void:
+	ctx._submenu.hide_all_instant()
+	ctx.hud.hide()
+	ctx._sidebar.panel.hide()
+	ctx.target = null
+	EventBus.context_menu_toggled.emit(false)
+	EventBus.show_file_search.emit()
 
 
 func _get_pet() -> Node:

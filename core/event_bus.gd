@@ -51,6 +51,7 @@ signal show_platform_style_panel
 signal show_game_terminal  # 打开/关闭游戏终端面板
 signal pet_gaming_changed(active: bool, game: RefCounted)  # 游戏启停时通知宠物
 signal show_memo_popup  # 全局热键: 弹出快速备忘录弹窗
+signal show_file_search  # 打开/关闭文件检索终端面板
 
 ## UI 主题色 Hue (全局可读，默认 0.537 ≈ 当前青色)
 var ui_hue: float = 0.537
