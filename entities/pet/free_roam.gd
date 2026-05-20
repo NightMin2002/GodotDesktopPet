@@ -19,6 +19,7 @@ var _elevator_vanish_dist: float = 10.0  # 电梯消失距地面距离 (px)
 var _walk_min_x: float = 0.0             # 横移踏板左边界
 var _walk_max_x: float = 0.0             # 横移踏板右边界
 var _last_pet_x: float = 0.0             # 上帧宠物X (屏幕穿越检测)
+var no_descend: bool = false              # 遍伴触发: 禁止电梯/跳下, 只保留继续跳/横移/驻留
 
 # ── 驻留状态 ──
 var settled: bool = false                # 是否驻留在空中踏板上
@@ -34,7 +35,8 @@ func screen_scale() -> float:
 	return pet.boundary_size.y / 1080.0
 
 ## 启动自由漫游
-func start() -> void:
+func start(p_no_descend: bool = false) -> void:
+	no_descend = p_no_descend
 	if settled:
 		# 从驻留位置启动: 跳过首跳，直接进入决策
 		active = true
@@ -76,9 +78,11 @@ func finish() -> void:
 	phase = 0
 	descending = false
 	pet.gravity_scale = pet.gravity_sign
+	no_descend = false
 	_elevator = null
 	_current_plat = null
-	pet.physics_material_override.friction = 0.6  # 确保摩擦力恢复
+	pet.physics_material_override.friction = 0.6
+	pet.movement.finish()  # 重置 movement 状态 (防止卡在 HOLD/看向下方)
 	# 重置 idle 计时器 (roam 期间 idle_timer 持续累加，不重置会导致
 	# finish() 后第一帧 idle 立刻满足转换条件，walk 抢走瞳孔方向)
 	if pet.current_state and pet.current_state is StateIdle:
@@ -217,14 +221,20 @@ func do_jump() -> void:
 	_airtime = 0.0
 	
 	var ss = screen_scale()
-	var hop_dir = [-1.0, 1.0].pick_random()
-	var edge_pad = pet.boundary_size.x * 0.08
-	var x = pet.global_position.x
-	if x < edge_pad: hop_dir = 1.0
-	elif x > pet.boundary_size.x - edge_pad: hop_dir = -1.0
+	var hop_dir: float
+	if no_descend:
+		# 遇伴触发: 垂直起跳 (跳过同伴, 不像逃跑)
+		hop_dir = 0.0
+	else:
+		hop_dir = [-1.0, 1.0].pick_random()
+		var edge_pad = pet.boundary_size.x * 0.08
+		var x = pet.global_position.x
+		if x < edge_pad: hop_dir = 1.0
+		elif x > pet.boundary_size.x - edge_pad: hop_dir = -1.0
 	
 	# 先看方向，缓冲到期后再起跳
-	pet.movement.start(Vector2(hop_dir, -pet.gravity_sign), func():
+	var look_dir = Vector2(hop_dir if hop_dir != 0.0 else 1.0, -pet.gravity_sign)
+	pet.movement.start(look_dir, func():
 		if not active:
 			return
 		phase = 1
@@ -248,16 +258,28 @@ func _decide_next() -> void:
 		return
 	
 	var roll = randf()
-	if roll < 0.30:
-		do_jump()
-	elif roll < 0.50:
-		_walk_sideways()
-	elif roll < 0.70:
-		_settle_on_platform()
-	elif roll < 0.85:
-		_jump_down()
+	var _no_descend_this_time = no_descend
+	no_descend = false  # 只限第一次决策, 后续恢复正常
+	if _no_descend_this_time:
+		# 遍伴触发模式: 只保留继续跳/横移/驻留 (40%/30%/30%)
+		if roll < 0.40:
+			do_jump()
+		elif roll < 0.70:
+			_walk_sideways()
+		else:
+			_settle_on_platform()
 	else:
-		_begin_descent()
+		# 正常模式: 全部行为可用
+		if roll < 0.30:
+			do_jump()
+		elif roll < 0.50:
+			_walk_sideways()
+		elif roll < 0.70:
+			_settle_on_platform()
+		elif roll < 0.85:
+			_jump_down()
+		else:
+			_begin_descent()
 
 # ── 驻留 ──
 

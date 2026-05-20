@@ -451,8 +451,8 @@ func _on_trigger_free_roam() -> void:
 		return
 	_start_free_roam()
 
-func _start_free_roam() -> void:
-	free_roam_sys.start()
+func _start_free_roam(p_no_descend: bool = false) -> void:
+	free_roam_sys.start(p_no_descend)
 
 func _roam_update(delta: float) -> void:
 	free_roam_sys.update(delta)

@@ -123,8 +123,20 @@ func physics_process(delta: float) -> void:
 			# 自主巡航: 推开前方同伴让路
 			_nudge_pets(pets_ahead)
 		elif not pets_ahead.is_empty():
-			# 短距滚动: 发现前方同伴就提前结束，避免碰撞
-			_end_roll()
+			# 短距滚动: 前方有同层同伴
+			# 检查对方是否已在空间跳跃 (避免两只同时跳)
+			var other_jumping := false
+			for p in pets_ahead:
+				if "_roam_active" in p and p._roam_active:
+					other_jumping = true
+					break
+			if not other_jumping and pet.free_roam_enabled and not pet._roam_active:
+				# 对方没在跳 + 空间跳跃可用 → 跳过同伴 (禁止电梯/跳下)
+				_end_roll()
+				pet._start_free_roam(true)
+			else:
+				# 对方在跳 或 空间跳跃不可用 → 停步等待
+				_end_roll()
 			return
 		
 		# 缓速扭矩驱动滚动 (短距滚动更慢更从容)
@@ -150,7 +162,7 @@ func physics_process(delta: float) -> void:
 
 # ── 前方同伴检测 (巡航推人和短距避让共用) ──
 
-## 查找前方指定距离内的所有同伴
+## 查找前方指定距离内的所有同伴 (同一高度层)
 func _find_pets_ahead(dist: float) -> Array[RigidBody2D]:
 	var result: Array[RigidBody2D] = []
 	var parent = pet.get_parent()
@@ -160,6 +172,9 @@ func _find_pets_ahead(dist: float) -> Array[RigidBody2D]:
 		if not is_instance_valid(child): continue
 		if not child.has_method("is_mouse_on_pet"): continue
 		if child.freeze: continue  # 跳过冻结的宠物 (叠高高等)
+		# Y 轴过滤: 垂直高度差超过 80px 不算同层 (踏板上 vs 地面)
+		var dy = absf(child.global_position.y - pet.global_position.y)
+		if dy > 80.0: continue
 		var dx = child.global_position.x - pet.global_position.x
 		if _roll_direction > 0 and dx < 0: continue
 		if _roll_direction < 0 and dx > 0: continue

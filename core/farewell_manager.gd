@@ -62,6 +62,10 @@ func _on_dismiss_clones_requested() -> void:
 		clone.show_local_bubble(farewells[i % farewells.size()])
 		await get_tree().create_timer(0.5).timeout
 		
+		# 清理空间跳跃踏板 (防止驻留/攀升中的踏板遗留)
+		if clone.free_roam_sys:
+			clone.free_roam_sys.finish()
+		
 		# 退场动画
 		var c = clone
 		var tw = animate_exit(clone)
@@ -139,6 +143,10 @@ func quit_with_farewell() -> void:
 				clone.z_index = 100
 				clone.show_local_bubble(clone_farewells[i % clone_farewells.size()])
 				await get_tree().create_timer(0.6).timeout
+				
+				# 清理空间跳跃踏板
+				if clone.free_roam_sys:
+					clone.free_roam_sys.finish()
 				
 				var c = clone
 				var tw = animate_exit(clone)
