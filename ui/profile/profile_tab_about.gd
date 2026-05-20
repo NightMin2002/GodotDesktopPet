@@ -41,6 +41,9 @@ func build() -> void:
 	# ── 3. 项目链接 ──
 	_build_links(main_vbox)
 
+	# ── 4. 开源致谢 ──
+	_build_credits(main_vbox)
+
 	# 滚动指示器
 	var indicator = preload("res://ui/profile/cyber_scroll_indicator.gd").new()
 	indicator.bind_scroll(scroll)
@@ -321,3 +324,87 @@ func _add_link_btn(parent: VBoxContainer, text: String, url: String) -> void:
 	var u = url
 	btn.pressed.connect(func(): OS.shell_open(u))
 	parent.add_child(btn)
+
+# ═══════════════════════════════════════════════
+#  开源致谢
+# ═══════════════════════════════════════════════
+
+func _build_credits(parent: VBoxContainer) -> void:
+	var card = PanelContainer.new()
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var cs = StyleBoxFlat.new()
+	cs.bg_color = Color(0.04, 0.06, 0.1, 0.4)
+	cs.border_width_left = 2
+	cs.border_color = Color.from_hsv(EventBus.ui_hue, 0.3, 0.5, 0.3)
+	cs.set_corner_radius_all(3)
+	cs.content_margin_left = 20; cs.content_margin_right = 20
+	cs.content_margin_top = 16; cs.content_margin_bottom = 16
+	card.add_theme_stylebox_override("panel", cs)
+	parent.add_child(card)
+
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
+	card.add_child(vbox)
+
+	var title_row = HBoxContainer.new()
+	title_row.add_child(ProfileStyles.label_dim("CREDITS //", 12))
+	title_row.add_child(ProfileStyles.make_label("开源致谢", 15, Color(0.75, 0.82, 0.9)))
+	vbox.add_child(title_row)
+
+	_add_credit_row(vbox, "Everything", "voidtools", "MIT License", "https://www.voidtools.com/", "文件检索引擎")
+	_add_credit_row(vbox, "Godot Engine", "Godot Community", "MIT License", "https://godotengine.org/", "游戏引擎")
+
+func _add_credit_row(parent: VBoxContainer, name: String, author: String, license: String, url: String, desc: String) -> void:
+	var row = HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+
+	var info_vbox = VBoxContainer.new()
+	info_vbox.add_theme_constant_override("separation", 2)
+	info_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	# 名称行
+	var name_row = HBoxContainer.new()
+	name_row.add_theme_constant_override("separation", 8)
+	var name_label = Label.new()
+	name_label.text = name
+	name_label.add_theme_font_size_override("font_size", 14)
+	name_label.add_theme_color_override("font_color", Color(0.75, 0.82, 0.9, 0.9))
+	name_row.add_child(name_label)
+
+	var license_label = Label.new()
+	license_label.text = "(%s)" % license
+	license_label.add_theme_font_size_override("font_size", 12)
+	license_label.add_theme_color_override("font_color", Color(0.45, 0.55, 0.45, 0.6))
+	name_row.add_child(license_label)
+	info_vbox.add_child(name_row)
+
+	# 描述行
+	var desc_label = Label.new()
+	desc_label.text = "%s — by %s" % [desc, author]
+	desc_label.add_theme_font_size_override("font_size", 12)
+	desc_label.add_theme_color_override("font_color", Color(0.45, 0.5, 0.55, 0.55))
+	info_vbox.add_child(desc_label)
+
+	row.add_child(info_vbox)
+
+	# 链接按钮
+	var link_btn = Button.new()
+	link_btn.text = ">"
+	link_btn.add_theme_font_size_override("font_size", 14)
+	link_btn.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.3, 0.7, 0.6))
+	link_btn.add_theme_color_override("font_hover_color", Color.from_hsv(EventBus.ui_hue, 0.5, 1.0, 1.0))
+	var s = StyleBoxFlat.new()
+	s.bg_color = Color(0.04, 0.06, 0.1, 0.2)
+	s.set_corner_radius_all(2)
+	s.content_margin_left = 8; s.content_margin_right = 8
+	s.content_margin_top = 4; s.content_margin_bottom = 4
+	link_btn.add_theme_stylebox_override("normal", s)
+	var h = s.duplicate()
+	h.bg_color = Color(0.08, 0.12, 0.2, 0.5)
+	link_btn.add_theme_stylebox_override("hover", h)
+	link_btn.add_theme_stylebox_override("pressed", h)
+	var u = url
+	link_btn.pressed.connect(func(): OS.shell_open(u))
+	row.add_child(link_btn)
+
+	parent.add_child(row)
