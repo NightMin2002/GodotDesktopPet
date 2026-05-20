@@ -291,7 +291,8 @@ public partial class FileSearchEngine : Node
             try
             {
                 using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(regPath);
-                var installPath = key?.GetValue("InstallPath") as string
+                var installPath = key?.GetValue("InstallLocation") as string
+                    ?? key?.GetValue("InstallPath") as string
                     ?? key?.GetValue("Install_Dir") as string;
                 if (!string.IsNullOrEmpty(installPath))
                     candidates.Add(Path.Combine(installPath, DLL_NAME));
@@ -301,7 +302,8 @@ public partial class FileSearchEngine : Node
             try
             {
                 using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(regPath);
-                var installPath = key?.GetValue("InstallPath") as string
+                var installPath = key?.GetValue("InstallLocation") as string
+                    ?? key?.GetValue("InstallPath") as string
                     ?? key?.GetValue("Install_Dir") as string;
                 if (!string.IsNullOrEmpty(installPath))
                     candidates.Add(Path.Combine(installPath, DLL_NAME));
@@ -429,6 +431,130 @@ public partial class FileSearchEngine : Node
             GD.Print($"[FileSearch] 重试成功! Everything v{_sdkVersion} 已就绪");
         else
             GD.Print($"[FileSearch] 重试失败: {_sdkError}");
+    }
+
+    // ══════════════════════════════════════
+    //  启动 Everything
+    // ══════════════════════════════════════
+
+    /// <summary>
+    /// 尝试启动 Everything。返回 true = 成功启动或已在运行。
+    /// 普通权限即可调用。
+    /// </summary>
+    public bool TryLaunchEverything()
+    {
+        // 如果 SDK 已经可用 (IPC 正常)，不需要启动
+        if (_sdkAvailable) return true;
+
+        // 查找 Everything.exe
+        var exePath = FindEverythingExe();
+        if (string.IsNullOrEmpty(exePath))
+        {
+            GD.Print("[FileSearch] 未找到 Everything.exe，无法启动");
+            return false;
+        }
+
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = "-startup",
+                UseShellExecute = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+            Process.Start(psi);
+            GD.Print($"[FileSearch] 已启动 Everything: {exePath}");
+
+            // 延迟 2 秒后重试初始化 (Everything 需要时间启动 IPC)
+            Task.Run(async () =>
+            {
+                await Task.Delay(2000);
+                CallDeferred(nameof(RetryInit));
+            });
+
+            return true;
+        }
+        catch (Exception e)
+        {
+            GD.PrintErr($"[FileSearch] 启动 Everything 失败: {e.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 查找 Everything.exe 路径。未找到返回空字符串。
+    /// </summary>
+    public string FindEverythingExe()
+    {
+        var candidates = new List<string>();
+
+        // 1. 如果 DLL 已找到，exe 通常在同目录
+        if (!string.IsNullOrEmpty(_dllPath))
+        {
+            var dir = Path.GetDirectoryName(_dllPath);
+            if (!string.IsNullOrEmpty(dir))
+                candidates.Add(Path.Combine(dir, "Everything.exe"));
+        }
+
+        // 2. 注册表
+        foreach (var regPath in new[] {
+            @"SOFTWARE\voidtools\Everything",
+            @"SOFTWARE\WOW6432Node\voidtools\Everything"
+        })
+        {
+            try
+            {
+                using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(regPath);
+                var installPath = key?.GetValue("InstallLocation") as string
+                    ?? key?.GetValue("InstallPath") as string
+                    ?? key?.GetValue("Install_Dir") as string;
+                if (!string.IsNullOrEmpty(installPath))
+                    candidates.Add(Path.Combine(installPath, "Everything.exe"));
+            }
+            catch { }
+
+            try
+            {
+                using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(regPath);
+                var installPath = key?.GetValue("InstallLocation") as string
+                    ?? key?.GetValue("InstallPath") as string
+                    ?? key?.GetValue("Install_Dir") as string;
+                if (!string.IsNullOrEmpty(installPath))
+                    candidates.Add(Path.Combine(installPath, "Everything.exe"));
+            }
+            catch { }
+        }
+
+        // 3. 常见安装路径
+        foreach (var dir in new[] {
+            @"C:\Program Files\Everything",
+            @"C:\Program Files (x86)\Everything",
+            @"D:\Program Files\Everything",
+            @"E:\Program Files\Everything",
+            @"E:\Everything",
+            @"D:\Everything",
+            Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.ProgramFiles), "Everything"),
+            Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.ProgramFilesX86), "Everything"),
+            Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "Everything"),
+        })
+        {
+            if (!string.IsNullOrEmpty(dir))
+                candidates.Add(Path.Combine(dir, "Everything.exe"));
+        }
+
+        // 依次检查
+        foreach (var path in candidates)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    return path;
+            }
+            catch { }
+        }
+
+        return "";
     }
 
     // ══════════════════════════════════════

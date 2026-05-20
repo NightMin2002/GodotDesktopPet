@@ -564,10 +564,18 @@ func _show_guide_card() -> void:
 	vbox.add_child(desc)
 
 	# 根据错误类型显示不同内容
+	var _everything_installed = false
+	if _search_engine and _search_engine.has_method("FindEverythingExe"):
+		var exe_path: String = _search_engine.call("FindEverythingExe")
+		_everything_installed = exe_path.length() > 0
+
 	match _engine_error:
 		"not_running":
 			title.text = "Everything 未运行"
-			desc.text = "检索终端依赖 Everything 提供毫秒级全盘索引。\n请启动 Everything 后再试，终端会自动接入。"
+			if _everything_installed:
+				desc.text = "检测到 Everything 已安装但未运行。\n点击下方按钮，由本机代为启动。"
+			else:
+				desc.text = "检索终端依赖 Everything 提供毫秒级全盘索引。\n请启动 Everything 后再试，终端会自动接入。"
 			icon_label.text = "[STANDBY]"
 		"downloading":
 			title.text = "SDK 下载中"
@@ -578,8 +586,13 @@ func _show_guide_card() -> void:
 			desc.text = "无法从 voidtools.com 获取 SDK。\n请检查网络连接后重试，或手动下载 Everything64.dll 放入程序目录。"
 			icon_label.text = "[ERROR]"
 		_:
-			title.text = "需要安装 Everything"
-			desc.text = "检索终端依赖 Everything 提供毫秒级全盘文件索引。\n安装后在后台运行，终端将自动接入。轻量无广告，推荐安装。"
+			if _everything_installed:
+				title.text = "Everything 未运行"
+				desc.text = "检测到 Everything 已安装。\n点击下方按钮，由本机代为启动。"
+				icon_label.text = "[STANDBY]"
+			else:
+				title.text = "需要安装 Everything"
+				desc.text = "检索终端依赖 Everything 提供毫秒级全盘文件索引。\n安装后在后台运行，终端将自动接入。轻量无广告，推荐安装。"
 
 	# 分隔线
 	var sep = HSeparator.new()
@@ -598,27 +611,54 @@ func _show_guide_card() -> void:
 	btn_row.mouse_filter = Control.MOUSE_FILTER_PASS
 	vbox.add_child(btn_row)
 
-	# 下载按钮
-	if _engine_error != "downloading":
-		var dl_btn = Button.new()
-		dl_btn.text = "前往下载 Everything"
-		dl_btn.add_theme_font_size_override("font_size", 14)
-		dl_btn.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.4, 0.95, 0.95))
-		dl_btn.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0, 1.0))
-		var dl_s = StyleBoxFlat.new()
-		dl_s.bg_color = Color.from_hsv(EventBus.ui_hue, 0.35, 0.3, 0.6)
-		dl_s.set_corner_radius_all(5)
-		dl_s.set_border_width_all(1)
-		dl_s.border_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.6, 0.5)
-		dl_s.content_margin_left = 16; dl_s.content_margin_right = 16
-		dl_s.content_margin_top = 6; dl_s.content_margin_bottom = 6
-		dl_btn.add_theme_stylebox_override("normal", dl_s)
-		var dl_h = dl_s.duplicate()
-		dl_h.bg_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.45, 0.75)
-		dl_h.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.7)
-		dl_btn.add_theme_stylebox_override("hover", dl_h)
-		dl_btn.add_theme_stylebox_override("pressed", dl_h)
-		dl_btn.mouse_filter = Control.MOUSE_FILTER_PASS
+	# 按钮样式工厂
+	var _make_primary_btn = func(text: String) -> Button:
+		var btn = Button.new()
+		btn.text = text
+		btn.add_theme_font_size_override("font_size", 14)
+		btn.add_theme_color_override("font_color", Color.from_hsv(EventBus.ui_hue, 0.4, 0.95, 0.95))
+		btn.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0, 1.0))
+		var s = StyleBoxFlat.new()
+		s.bg_color = Color.from_hsv(EventBus.ui_hue, 0.35, 0.3, 0.6)
+		s.set_corner_radius_all(5)
+		s.set_border_width_all(1)
+		s.border_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.6, 0.5)
+		s.content_margin_left = 16; s.content_margin_right = 16
+		s.content_margin_top = 6; s.content_margin_bottom = 6
+		btn.add_theme_stylebox_override("normal", s)
+		var h = s.duplicate()
+		h.bg_color = Color.from_hsv(EventBus.ui_hue, 0.4, 0.45, 0.75)
+		h.border_color = Color.from_hsv(EventBus.ui_hue, 0.5, 0.8, 0.7)
+		btn.add_theme_stylebox_override("hover", h)
+		btn.add_theme_stylebox_override("pressed", h)
+		btn.mouse_filter = Control.MOUSE_FILTER_PASS
+		return btn
+
+	# 启动按钮 (已安装 Everything 时显示)
+	if _everything_installed and _engine_error != "downloading":
+		var launch_btn = _make_primary_btn.call("启动 Everything")
+		launch_btn.pressed.connect(func():
+			if _search_engine:
+				var ok: bool = _search_engine.call("TryLaunchEverything")
+				var pet = _get_pet()
+				if ok:
+					if pet:
+						pet.show_local_bubble("正在唤醒 Everything。稍候。")
+					# 2 秒后自动重新检测
+					await get_tree().create_timer(2.5).timeout
+					_check_engine_status()
+					if _engine_available:
+						_hide_guide_card()
+						if pet:
+							pet.show_local_bubble("检索引擎已接入。")
+				else:
+					if pet:
+						pet.show_local_bubble("唤醒失败。请手动启动 Everything。")
+		)
+		btn_row.add_child(launch_btn)
+	# 下载按钮 (未安装时显示)
+	elif _engine_error != "downloading":
+		var dl_btn = _make_primary_btn.call("前往下载 Everything")
 		dl_btn.pressed.connect(func():
 			OS.shell_open(EVERYTHING_URL)
 			var pet = _get_pet()
