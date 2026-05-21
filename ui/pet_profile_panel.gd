@@ -36,6 +36,10 @@ var _confine_walls: Array[StaticBody2D] = []
 # ── 分身数量监测 ──
 var _cached_pet_count: int = -1
 
+# ── Tab 懒加载 ──
+var _tab_built: Array[bool] = []   # Tab 是否已调用 build()
+var _tab_stale: Array[bool] = []   # Tab 是否需要下次切换时 refresh()
+
 func _ready() -> void:
 	_calc_panel_size()
 	_build_ui()
@@ -214,53 +218,26 @@ func _build_ui() -> void:
 	tab_content_area.add_child(tab_stack)
 
 	# ── 注册 Tab 模块 ──
-	var tab0 = preload("res://ui/profile/profile_tab_records.gd").new()
-	tab0.build()
-	tab0.set_anchors_preset(Control.PRESET_FULL_RECT)
-	tab_stack.add_child(tab0)
-	_tab_contents.append(tab0)
-
-	var tab1 = preload("res://ui/profile/profile_tab_ability.gd").new()
-	tab1.build()
-	tab1.set_anchors_preset(Control.PRESET_FULL_RECT)
-	tab_stack.add_child(tab1)
-	_tab_contents.append(tab1)
-
-	var tab2 = preload("res://ui/profile/profile_tab_reminder.gd").new()
-	tab2.build()
-	tab2.set_anchors_preset(Control.PRESET_FULL_RECT)
-	tab_stack.add_child(tab2)
-	_tab_contents.append(tab2)
-
-	var tab3 = preload("res://ui/profile/datalog/datalog_tab.gd").new()
-	tab3.build()
-	tab3.set_anchors_preset(Control.PRESET_FULL_RECT)
-	tab_stack.add_child(tab3)
-	_tab_contents.append(tab3)
-
-	var tab4 = preload("res://ui/profile/profile_tab_theme.gd").new()
-	tab4.build()
-	tab4.set_anchors_preset(Control.PRESET_FULL_RECT)
-	tab_stack.add_child(tab4)
-	_tab_contents.append(tab4)
-
-	var tab5 = preload("res://ui/profile/profile_tab_syscheck.gd").new()
-	tab5.build()
-	tab5.set_anchors_preset(Control.PRESET_FULL_RECT)
-	tab_stack.add_child(tab5)
-	_tab_contents.append(tab5)
-
-	var tab6 = preload("res://ui/profile/profile_tab_about.gd").new()
-	tab6.build()
-	tab6.set_anchors_preset(Control.PRESET_FULL_RECT)
-	tab_stack.add_child(tab6)
-	_tab_contents.append(tab6)
-
-	var tab7 = preload("res://ui/profile/profile_tab_config.gd").new()
-	tab7.build()
-	tab7.set_anchors_preset(Control.PRESET_FULL_RECT)
-	tab_stack.add_child(tab7)
-	_tab_contents.append(tab7)
+	# ── 注册 Tab 模块 (懒加载: 只创建空壳, 不调用 build()) ──
+	var tab_scripts := [
+		preload("res://ui/profile/profile_tab_records.gd"),
+		preload("res://ui/profile/profile_tab_ability.gd"),
+		preload("res://ui/profile/profile_tab_reminder.gd"),
+		preload("res://ui/profile/datalog/datalog_tab.gd"),
+		preload("res://ui/profile/profile_tab_theme.gd"),
+		preload("res://ui/profile/profile_tab_syscheck.gd"),
+		preload("res://ui/profile/profile_tab_about.gd"),
+		preload("res://ui/profile/profile_tab_config.gd"),
+	]
+	_tab_built.clear()
+	_tab_stale.clear()
+	for script in tab_scripts:
+		var tab = script.new()
+		tab.set_anchors_preset(Control.PRESET_FULL_RECT)
+		tab_stack.add_child(tab)
+		_tab_contents.append(tab)
+		_tab_built.append(false)
+		_tab_stale.append(false)
 
 	# ── 转场特效覆盖层 ──
 	_transition_rect = ColorRect.new()
@@ -413,6 +390,9 @@ func _build_tab_bar() -> HBoxContainer:
 func _switch_tab(idx: int, instant: bool = false) -> void:
 	if idx == _current_tab and _tab_contents.size() > 0 and _tab_contents[_current_tab].visible and not instant:
 		return
+	
+	# 懒加载: 首次切换到该 Tab 时才构建
+	_ensure_tab_built(idx)
 
 	if instant or not is_instance_valid(_transition_rect) or not _is_open:
 		_current_tab = idx
@@ -580,11 +560,38 @@ func _refresh_data() -> void:
 	# 刷新左栏
 	if _left_column and _left_column.has_method("refresh"):
 		_left_column.refresh()
-	# 刷新各 Tab
-	for tab in _tab_contents:
-		if is_instance_valid(tab) and tab.has_method("refresh"):
-			tab.refresh()
+	# 懒加载: 只刷新当前 Tab, 其余标记为 stale (下次切换时刷新)
+	for i in range(_tab_contents.size()):
+		if i == _current_tab:
+			_ensure_tab_built(i)
+			var tab = _tab_contents[i]
+			if is_instance_valid(tab) and tab.has_method("refresh"):
+				tab.refresh()
+		else:
+			if i < _tab_stale.size():
+				_tab_stale[i] = true
 	_switch_tab(_current_tab, true)
+
+## 懒加载: 确保 Tab 已构建, 如果标记为 stale 则刷新
+func _ensure_tab_built(idx: int) -> void:
+	if idx < 0 or idx >= _tab_contents.size():
+		return
+	var tab = _tab_contents[idx]
+	if not is_instance_valid(tab):
+		return
+	# 首次构建
+	if idx < _tab_built.size() and not _tab_built[idx]:
+		if tab.has_method("build"):
+			tab.build()
+		_tab_built[idx] = true
+		if idx < _tab_stale.size():
+			_tab_stale[idx] = false
+		return
+	# 已构建但标记为 stale → 刷新
+	if idx < _tab_stale.size() and _tab_stale[idx]:
+		if tab.has_method("refresh"):
+			tab.refresh()
+		_tab_stale[idx] = false
 
 # ═══════════════════════════════════════════════
 #  分身数量监测 (通知外观主题 Tab 动态刷新)
