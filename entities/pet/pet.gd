@@ -201,7 +201,7 @@ func _ready() -> void:
 	# 从持久化存储恢复设置 (不依赖信号时序)
 	eye_behavior.tracking_enabled = SettingsManager.get_bool("eye_track", true)
 	pet_effects.shockwave_enabled = SettingsManager.get_bool("shockwave", true)
-	pet_effects.trail_enabled = SettingsManager.get_bool("trail_fx", true)
+	pet_effects.trail_style = SettingsManager.get_int("trail_style", 1)
 	pet_effects.arc_enabled = SettingsManager.get_bool("arc_fx", true)
 	pet_effects.effect_color_mode = SettingsManager.get_int("effect_color_mode", 0)
 	move_style = SettingsManager.get_int("move_style", 0)
@@ -247,8 +247,8 @@ func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 		eye_behavior.tracking_enabled = is_on
 	elif setting_id == "shockwave":
 		pet_effects.shockwave_enabled = is_on
-	elif setting_id == "trail_fx":
-		pet_effects.trail_enabled = is_on
+	elif setting_id == "trail_style":
+		pet_effects.trail_style = SettingsManager.get_int("trail_style", 1)
 	elif setting_id == "arc_fx":
 		pet_effects.arc_enabled = is_on
 	elif setting_id == "effect_color_mode":

@@ -21,8 +21,10 @@ func _init(menu_ref) -> void:
 func build() -> void:
 	# ── 特效预览 (L3: "effects") ──
 	_register_toggle("shockwave", "effects", ShockwavePreview.new(), "高速撞击时爆发冲击波", Vector2(140, 100))
-	_register_toggle("trail_fx",  "effects", TrailPreview.new(),     "运动轨迹的发光尾迹", Vector2(160, 80))
 	_register_toggle("arc_fx",    "effects", ArcPreview.new(),       "宠物间的能量弧线",   Vector2(160, 80))
+	# ── 尾流预览 (L3: "trail_style") ──
+	_register_radio("trail_style", 0, "trail_0", TrailNonePreview.new(), "干脆利落，不显示任何拖影", Vector2(160, 80))
+	_register_radio("trail_style", 1, "trail_1", TrailPreview.new(), "平滑连贯的光晕粒子尾流", Vector2(160, 80))
 	# ── 窗口模式预览 (L3: "window_mode") ──
 	_register_radio("window_mode", 0, "wm_free",     WindowFreePreview.new(),     "在窗口间自由行走跳跃", Vector2(180, 100))
 	_register_radio("window_mode", 1, "wm_confined",  WindowConfinedPreview.new(), "被困在窗口内部无法离开", Vector2(180, 100))
@@ -278,6 +280,26 @@ class ShockwavePreview extends ViewBase:
 			draw_arc(center, w["radius"], 0, TAU, 32, c, w["thickness"], true)
 
 		_draw_holo_pet(center, hue, r)
+
+# ═══════════════════════════════════════════
+# 动画预览 Control: 粒子尾流 (关闭)
+# ═══════════════════════════════════════════
+class TrailNonePreview extends ViewBase:
+	var _time: float = 0.0
+
+	func _process(delta: float) -> void:
+		_time += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		var cx = size.x / 2.0
+		var cy = size.y / 2.0
+		var hue = EventBus.ui_hue
+		var r = 6.0
+		
+		# 柔和的无限大(Lissajous)轨迹
+		var pet_pos = Vector2(cx + sin(_time * 2.5) * 45.0, cy + sin(_time * 5.0) * 15.0)
+		_draw_holo_pet(pet_pos, hue, r)
 
 # ═══════════════════════════════════════════
 # 动画预览 Control: 粒子尾流

@@ -10,7 +10,7 @@ const _PetColorPalette = preload("res://entities/pet/pet_color_palette.gd")
 # ── 拖影系统 ──
 var trail_history: Array[Vector2] = []
 var max_trail_length: int = 15
-var trail_enabled: bool = true
+var trail_style: int = 1
 
 # ── 冲击波系统 ──
 var shockwaves: Array[Dictionary] = []
@@ -40,7 +40,7 @@ func update(delta: float) -> bool:
 	var has_visual_change := false
 	
 	# 收集或消散残影以形成拖尾特效
-	if trail_enabled and pet.linear_velocity.length() > 20.0:
+	if trail_style > 0 and pet.linear_velocity.length() > 20.0:
 		trail_history.push_front(pet.global_position)
 		if trail_history.size() > max_trail_length:
 			trail_history.pop_back()
@@ -128,6 +128,12 @@ func _render_shockwaves(canvas: CanvasItem) -> void:
 		canvas.draw_arc(shock["local_pos"], shock["radius"], 0, TAU, 32, effect_color, thickness, true)
 
 func _render_trail(canvas: CanvasItem) -> void:
+	if trail_style == 0:
+		return
+	match trail_style:
+		1: _render_default_trail(canvas)
+
+func _render_default_trail(canvas: CanvasItem) -> void:
 	var trail_size = trail_history.size()
 	if trail_size < 2:
 		return

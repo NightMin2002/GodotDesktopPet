@@ -9,6 +9,7 @@ var ctx  # ContextMenu 引用
 var _effects_btn: Button
 var _elastic_btn: Button
 var _hover_btn: Button
+var _trail_btn: Button
 var _effect_color_btns: Array[Button] = []
 
 func _init(context_menu) -> void:
@@ -28,6 +29,13 @@ func build() -> void:
 	vbox.add_child(_elastic_btn)
 	ctx._bind_l3_trigger(_elastic_btn, "elastic", "sec_visual")
 	
+	var trail_style = SettingsManager.get_int("trail_style", 1)
+	var trail_names = ["关闭", "默认"]
+	var t_name = trail_names[clampi(trail_style, 0, 1)]
+	_trail_btn = ctx._make_menu_btn("尾流 · " + t_name + " [+]", Color(1.0, 0.85, 0.3, 1))
+	vbox.add_child(_trail_btn)
+	ctx._bind_l3_trigger(_trail_btn, "trail_style", "sec_visual")
+	
 	var hover_style = SettingsManager.get_int("hover_style", 1)
 	var hover_name = HoverEffect.STYLE_NAMES[clampi(hover_style, 0, HoverEffect.STYLE_COUNT - 1)]
 	_hover_btn = ctx._make_menu_btn("悬停 · " + hover_name + " [+]", Color(1.0, 0.85, 0.3, 1))
@@ -42,9 +50,8 @@ func build() -> void:
 	# L3: 特效开关子菜单
 	ctx._submenu.create_toggle("effects", [
 		{"id": "shockwave", "on": "撞击冲击波 [●]", "off": "撞击冲击波 [○]", "key": "shockwave", "default": true},
-		{"id": "trail_fx", "on": "粒子尾流 [●]", "off": "粒子尾流 [○]", "key": "trail_fx", "default": true},
 		{"id": "arc_fx", "on": "静电弧 [●]", "off": "静电弧 [○]", "key": "arc_fx", "default": true},
-	], 3, "sec_visual")
+	], 2, "sec_visual")
 	_append_effect_color_radio()
 
 	# L3: 弹性形变单选
@@ -63,6 +70,12 @@ func build() -> void:
 		{"value": 3, "label": "锁定框", "desc": "科幻准星锁定标记"},
 		{"value": 4, "label": "遥测模式", "desc": "极简调试坐标系与高频数据流"},
 	], _on_radio_hover_fx, 3, "sec_visual")
+
+	# L3: 尾流特效单选
+	ctx._submenu.create_radio("trail_style", [
+		{"value": 0, "label": "关闭", "desc": "不显示拖影"},
+		{"value": 1, "label": "默认", "desc": "基础光晕粒子尾流"}
+	], _on_radio_trail_style, 3, "sec_visual")
 
 # ── 特效配色 ──
 
@@ -136,3 +149,9 @@ func _on_radio_hover_fx(value: int) -> void:
 	EventBus.setting_toggled.emit("hover_style", value > 0)
 	var name = HoverEffect.STYLE_NAMES[clampi(value, 0, HoverEffect.STYLE_COUNT - 1)]
 	_hover_btn.text = "悬停 · " + name + " [+]"
+
+func _on_radio_trail_style(value: int) -> void:
+	SettingsManager.set_int("trail_style", value)
+	EventBus.setting_toggled.emit("trail_style", value > 0)
+	var names = ["关闭", "默认"]
+	_trail_btn.text = "尾流 · " + names[clampi(value, 0, 1)] + " [+]"
