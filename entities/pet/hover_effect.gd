@@ -12,8 +12,8 @@ var _amount: float = 0.0     # 悬停动画进度 (0→1 平滑过渡)
 var _time: float = 0.0       # 动画计时器
 
 # ── 样式配置 ──
-const STYLE_NAMES := ["关闭", "柔光环", "边缘呼吸", "锁定框"]
-const STYLE_COUNT := 4
+const STYLE_NAMES := ["关闭", "柔光环", "边缘呼吸", "锁定框", "遥测模式"]
+const STYLE_COUNT := 5
 
 # ── 数据更新 (由 pet._process 调用) ──
 ## 返回是否有视觉变化 (用于按需 queue_redraw)
@@ -43,6 +43,7 @@ func render(canvas: Node2D) -> void:
 		1: _render_soft_glow(canvas)
 		2: _render_edge_breathe(canvas)
 		3: _render_lock_frame(canvas)
+		4: _render_telemetry(canvas)
 
 # ══════════════════════════════════════
 #  样式 1: 柔光环
@@ -109,34 +110,103 @@ func _render_lock_frame(canvas: Node2D) -> void:
 	var hue = EventBus.ui_hue
 	var r = pet.PET_RADIUS
 	
-	# 缺口间隙 (弧度)
-	var gap = 0.4
-	# 每段弧的角度范围
-	var arc_span = PI / 2.0 - gap * 2.0
+	# 锁定时的收缩动效：从外向内“砸”进去，营造硬核锁定感
+	# pow() 让动画有一个非线性的减速贴合效果
+	var expand = pow(1.0 - alpha, 3.0) * 20.0
+	var base_r = r + 6.0 + expand
 	
-	# ── 外层: 主题色大弧 (正向慢旋转) ──
-	var outer_r = r + 10.0
-	var spin1 = t * 0.5
-	var outer_color = Color.from_hsv(hue, 0.5, 1.0, alpha * 0.55)
+	var theme_color = Color.from_hsv(hue, 0.6, 1.0, alpha * 0.8)
+	var accent_color = Color(1.0, 0.25, 0.25, alpha * 0.7)
+	var dim_color = Color.from_hsv(hue, 0.4, 1.0, alpha * 0.3)
+	
+	# 1. 绘制四个机械边角 ┏ ┓ ┗ ┛
+	var corner_len = 8.0
+	var corner_thick = 2.0
+	var dirs = [
+		Vector2(-1, -1), # 左上
+		Vector2(1, -1),  # 右上
+		Vector2(1, 1),   # 右下
+		Vector2(-1, 1)   # 左下
+	]
+	
+	for d in dirs:
+		# 让对角线向量稍微向外延伸一点
+		var origin = d.normalized() * base_r
+		# h_dir 和 v_dir 决定画线的方向，全部朝向中心
+		var h_dir = Vector2(-sign(d.x), 0)
+		var v_dir = Vector2(0, -sign(d.y))
+		
+		# 画机械折角
+		canvas.draw_line(origin, origin + h_dir * corner_len, theme_color, corner_thick, true)
+		canvas.draw_line(origin, origin + v_dir * corner_len, theme_color, corner_thick, true)
+		
+		# 在拐角处点缀高光点
+		canvas.draw_circle(origin, 1.0, accent_color, true, -1.0, true)
+		
+	# 2. 四级雷达指示器 (缓慢旋转)
+	var inner_r = r + 2.0
+	var spin = t * 0.8
 	for i in range(4):
-		var start = spin1 + i * PI / 2.0 + gap
-		canvas.draw_arc(Vector2.ZERO, outer_r, start, start + arc_span, 24, outer_color, 2.0, true)
-		# 弧段端点高光
-		var p1 = Vector2(cos(start), sin(start)) * outer_r
-		var p2 = Vector2(cos(start + arc_span), sin(start + arc_span)) * outer_r
-		canvas.draw_circle(p1, 1.5, Color.from_hsv(hue, 0.3, 1.0, alpha * 0.7), true, -1.0, true)
-		canvas.draw_circle(p2, 1.5, Color.from_hsv(hue, 0.3, 1.0, alpha * 0.7), true, -1.0, true)
+		var angle = spin + i * (PI / 2.0)
+		var dir = Vector2(cos(angle), sin(angle))
+		# 画四个稍微向外延伸的精简刻度
+		canvas.draw_line(dir * (inner_r - 1.0), dir * (inner_r + 3.0), accent_color, 1.5, true)
+			
+	# 3. 极简硬核十字准星 (带呼吸闪烁)
+	var pulse = sin(t * 5.0) * 0.2 + 0.8
+	var cross_size = 3.0
+	var center_color = Color(1.0, 0.3, 0.2, alpha * pulse)
+	canvas.draw_line(Vector2(-cross_size, 0), Vector2(cross_size, 0), center_color, 1.0, true)
+	canvas.draw_line(Vector2(0, -cross_size), Vector2(0, cross_size), center_color, 1.0, true)
+
+# ══════════════════════════════════════
+#  样式 4: 遥测模式 (Telemetry UI)
+#  全息调试面板风格，带有滑入动效、十字基准线和高频刷新的模拟数据流
+# ══════════════════════════════════════
+func _render_telemetry(canvas: Node2D) -> void:
+	var alpha = _amount
+	var t = _time
+	var hue = EventBus.ui_hue
+	var r = pet.PET_RADIUS
 	
-	# ── 内层: 红色小弧 (反向旋转, 与外层交错) ──
-	var inner_r = r + 3.0
-	var spin2 = -t * 0.7  # 反向 + 不同速度
-	var red_color = Color(1.0, 0.3, 0.2, alpha * 0.4)
-	for i in range(4):
-		var start = spin2 + i * PI / 2.0 + gap
-		canvas.draw_arc(Vector2.ZERO, inner_r, start, start + arc_span, 20, red_color, 1.5, true)
+	var c_main = Color.from_hsv(hue, 0.6, 1.0, alpha * 0.8)
+	var c_dim = Color.from_hsv(hue, 0.4, 1.0, alpha * 0.25)
 	
-	# ── 中心十字准星 (呼吸, 红色) ──
-	var cross_size = 4.0 * (sin(t * 3.0) * 0.2 + 1.0)
-	var cross_color = Color(1.0, 0.35, 0.25, alpha * 0.35)
-	canvas.draw_line(Vector2(-cross_size, 0), Vector2(cross_size, 0), cross_color, 1.0, true)
-	canvas.draw_line(Vector2(0, -cross_size), Vector2(0, cross_size), cross_color, 1.0, true)
+	# 随 _amount 展开的滑入动画
+	var expand = ease(alpha, 0.4)
+	
+	# 1. 贯穿的十字基准线 (大幅收缩尺寸，显得更克制)
+	var ext = (r + 15.0) * expand
+	var gap = 12.0
+	if ext > gap:
+		canvas.draw_line(Vector2(-ext, 0), Vector2(-gap, 0), c_dim, 1.0, true)
+		canvas.draw_line(Vector2(gap, 0), Vector2(ext, 0), c_dim, 1.0, true)
+		canvas.draw_line(Vector2(0, -ext), Vector2(0, -gap), c_dim, 1.0, true)
+		canvas.draw_line(Vector2(0, gap), Vector2(0, ext), c_dim, 1.0, true)
+	
+	# 2. 中心精密准星 (微缩)
+	var center_pulse = sin(t * 8.0) * 0.3 + 0.7
+	var c_center = Color.from_hsv(hue, 0.2, 1.0, alpha * center_pulse)
+	canvas.draw_line(Vector2(-3, 0), Vector2(3, 0), c_center, 1.0, true)
+	canvas.draw_line(Vector2(0, -3), Vector2(0, 3), c_center, 1.0, true)
+	canvas.draw_rect(Rect2(-5, -5, 10, 10), c_dim, false, 1.0)
+	
+	# 3. 四角界限标识 (紧贴外壳边缘)
+	var corners = [
+		Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)
+	]
+	# 动画：从 r+15 滑入到 r+3
+	var corner_dist = r + 3.0 + (1.0 - expand) * 12.0
+	var len = 5.0
+	for d in corners:
+		var origin = d * corner_dist
+		var end_x = origin + Vector2(-d.x, 0) * len
+		var end_y = origin + Vector2(0, -d.y) * len
+		canvas.draw_line(origin, end_x, c_main, 1.5, true)
+		canvas.draw_line(origin, end_y, c_main, 1.5, true)
+		
+		# 4. 迷你高频数据流面板 (减弱存在感，更精致)
+		var data_origin = origin + Vector2(d.x * 2.0, d.y * 1.5)
+		for j in range(2): # 从 3 行减少到 2 行
+			var w = 2.0 + fmod(abs(sin(t * 15.0 + d.x * 11.0 + j * 7.0)), 1.0) * 6.0
+			canvas.draw_line(data_origin + Vector2(0, j * 3.0), data_origin + Vector2(w * d.x, j * 3.0), c_main, 1.0, true)

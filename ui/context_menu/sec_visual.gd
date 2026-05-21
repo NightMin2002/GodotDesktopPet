@@ -61,6 +61,7 @@ func build() -> void:
 		{"value": 1, "label": "柔光环", "desc": "柔和的呼吸光晕环绕外壳"},
 		{"value": 2, "label": "边缘呼吸", "desc": "外壳边缘节奏性脉冲"},
 		{"value": 3, "label": "锁定框", "desc": "科幻准星锁定标记"},
+		{"value": 4, "label": "遥测模式", "desc": "极简调试坐标系与高频数据流"},
 	], _on_radio_hover_fx, 3, "sec_visual")
 
 # ── 特效配色 ──
