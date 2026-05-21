@@ -211,11 +211,8 @@ func _end_roll() -> void:
 	_is_rolling = false
 	_nudged_pets.clear()
 	pet.is_strolling = false
-	# 刹车: 清除残余速度，防止进入 idle 后因残余角速度触发 fall
-	pet.linear_velocity = Vector2(0, pet.linear_velocity.y)  # 保留垂直速度(重力)
-	pet.angular_velocity *= 0.1  # 大幅衰减旋转
-	pet.linear_damp = 3.0
-	pet.angular_damp = 5.0
+	# 惯性滑行: 保留速度, 由 idle 状态的物理阻尼自然减速
+	pet.angular_velocity *= 0.7  # 轻微衰减旋转, 避免过度自旋
 	pet.transition_to("idle")
 
 func input(event: InputEvent) -> void:
