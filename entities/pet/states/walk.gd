@@ -54,15 +54,13 @@ func enter() -> void:
 			var roll_dist = randf_range(120.0, 300.0)
 			_roll_target_x = x + _roll_direction * roll_dist
 			_roll_target_x = clampf(_roll_target_x, 80.0, w - 80.0)
-		pet.linear_damp = 2.0 if not cruise else 1.5
-		pet.angular_damp = 0.8 if not cruise else 0.5
+		pet.physics.apply("walk_cruise" if cruise else "walk_roll")
 		# 先看滚动方向 (实际滚动等缓冲结束后由 physics_process 驱动)
 		pet.movement.start(Vector2(_roll_direction, 0))
 	else:
 		# 普通蹦跳: 确定方向 → 缓冲看向 → 施加冲量
 		pet.is_strolling = false
-		pet.linear_damp = 0.3
-		pet.angular_damp = 0.5
+		pet.physics.apply("walk_hop")
 		_prepare_hop()
 
 func exit() -> void:

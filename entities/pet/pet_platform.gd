@@ -21,7 +21,7 @@ var is_lifted: bool:
 func lock_pet(pet: RigidBody2D) -> void:
 	if pet.free_roam_sys.active:
 		pet.free_roam_sys.finish()
-	pet.linear_damp = 20.0
+	pet.physics.apply("platform_lock")
 	pet.linear_velocity = Vector2.ZERO
 	if pet.current_state_name != "idle":
 		pet.transition_to("idle")

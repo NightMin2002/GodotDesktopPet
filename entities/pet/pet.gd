@@ -97,6 +97,9 @@ var idle_behaviors: IdleBehaviors
 # ── 自主活动调度器 (委托给 IdleActivities) ──
 var idle_activities: IdleActivities
 
+# ── 物理参数管理器 (委托给 PetPhysics) ──
+var physics: PetPhysics
+
 # ── 弹性形变系统 (委托给 PetSquash) ──
 var squash: PetSquash
 
@@ -151,6 +154,10 @@ func _ready() -> void:
 	# 初始化移动方向控制器 (必须在状态机之前，enter() 会访问 movement)
 	movement = PetMovement.new()
 	movement.pet = self
+	
+	# 初始化物理参数管理器 (必须在状态机之前，enter() 会调用 physics.apply)
+	physics = PetPhysics.new()
+	physics.pet = self
 	
 	# 初始化状态机
 	_init_states()
@@ -293,6 +300,13 @@ func _on_behavior_mode_changed(mode: int) -> void:
 func _on_nighttime_mode_changed(active: bool) -> void:
 	nighttime_mode = active
 	_was_dragged_in_quiet = false
+	# 深夜模式关闭时: 分身也需要取消自己的休眠并恢复正常
+	# (原体由 idle_behaviors._exit_nighttime 直接处理，分身靠这里)
+	if not active and is_clone:
+		if idle_behaviors.active_behavior == "hibernate":
+			idle_behaviors.cancel()
+		if current_state_name != "idle":
+			transition_to("idle")
 
 func _on_trigger_idle_behavior(behavior: String) -> void:
 	if is_clone:
@@ -349,6 +363,8 @@ func transition_to(state_name: String) -> void:
 	var old_name = current_state_name
 	if current_state:
 		current_state.exit()
+	# 防御性重置: 状态切换时解锁旋转 (各状态 enter 需要锁定时自行设置)
+	lock_rotation = false
 	current_state = states.get(state_name)
 	current_state_name = state_name
 	if current_state:

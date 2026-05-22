@@ -265,6 +265,8 @@ func _build_debug_behavior_submenu() -> void:
 
 	var debug_items := [
 		{"label": "眼睑下垂", "behavior": "drowsy", "desc": "模拟困倦半闭眼效果"},
+		{"label": "待机休眠 · 挡板", "behavior": "hibernate:0", "desc": "手动触发待机休眠 (机械挡板半闭眼)"},
+		{"label": "待机休眠 · 旋转器", "behavior": "hibernate:1", "desc": "手动触发待机休眠 (加载旋转器风格)"},
 		{"label": "碎碎念", "behavior": "_chatter", "desc": "立即触发一次碎碎念气泡"},
 		{"label": "待办提醒", "behavior": "_todo_prompt", "desc": "强制触发一次待办主动提醒"},
 		{"label": "空间跳跃", "behavior": "_free_roam", "desc": "触发一次空间跳跃踏板序列"},
@@ -286,6 +288,46 @@ func _build_debug_behavior_submenu() -> void:
 			btn.mouse_entered.connect(func(): ctx._tooltip.show_for(b, desc_text, true))
 			btn.mouse_exited.connect(func(): ctx._tooltip.show_for(b, desc_text, false))
 		vbox.add_child(btn)
+
+	# ── 分隔线 ──
+	var sep = HSeparator.new()
+	sep.add_theme_constant_override("separation", 4)
+	var s = StyleBoxFlat.new()
+	s.bg_color = Color.from_hsv(EventBus.ui_hue, 0.8, 1.0, 0.15)
+	s.set_content_margin_all(0)
+	sep.add_theme_stylebox_override("separator", s)
+	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(sep)
+
+	# ── 深夜模式开关 ──
+	var night_btn = CyberMenuButton.new()
+	night_btn.flat = true
+	night_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	night_btn.add_theme_font_size_override("font_size", 19)
+	night_btn.add_theme_color_override("font_color", Color(0.7, 0.75, 1.0, 1))
+	night_btn.add_theme_color_override("font_hover_color", Color(0.5, 0.55, 1.0, 1))
+	var pet = _get_pet()
+	var is_night = pet and pet.nighttime_mode
+	night_btn.text = "深夜模式 [●]" if is_night else "深夜模式 [○]"
+	night_btn.pressed.connect(func(): _on_nighttime_toggle(night_btn))
+	var night_desc = "手动开关深夜模式 (归位+半闭眼休眠)"
+	night_btn.mouse_entered.connect(func(): ctx._tooltip.show_for(night_btn, night_desc, true))
+	night_btn.mouse_exited.connect(func(): ctx._tooltip.show_for(night_btn, night_desc, false))
+	vbox.add_child(night_btn)
+
+	# ── 解除当前行为 ──
+	var cancel_btn = CyberMenuButton.new()
+	cancel_btn.flat = true
+	cancel_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	cancel_btn.add_theme_font_size_override("font_size", 19)
+	cancel_btn.add_theme_color_override("font_color", Color(1.0, 0.6, 0.5, 0.8))
+	cancel_btn.add_theme_color_override("font_hover_color", Color(1.0, 0.4, 0.3, 1))
+	cancel_btn.text = "解除当前行为"
+	cancel_btn.pressed.connect(func(): _on_cancel_behavior())
+	var cancel_desc = "取消休眠/深夜模式等活跃行为，恢复正常"
+	cancel_btn.mouse_entered.connect(func(): ctx._tooltip.show_for(cancel_btn, cancel_desc, true))
+	cancel_btn.mouse_exited.connect(func(): ctx._tooltip.show_for(cancel_btn, cancel_desc, false))
+	vbox.add_child(cancel_btn)
 
 	ctx._submenu.register_l3_panel("debug_behavior", panel, "sec_pet")
 
@@ -312,3 +354,48 @@ func _on_debug_behavior_pressed(behavior: String) -> void:
 		EventBus.trigger_todo_prompt.emit()
 	else:
 		EventBus.trigger_idle_behavior.emit(behavior)
+
+# ── 深夜模式手动开关 ──
+
+func _on_nighttime_toggle(btn: Button) -> void:
+	ctx._tooltip.panel.hide()
+	ctx._submenu.hide_all_instant()
+	ctx.hud.hide()
+	ctx._sidebar.panel.hide()
+	ctx.target = null
+	EventBus.context_menu_toggled.emit(false)
+
+	var pet = _get_pet()
+	if not pet:
+		return
+	var new_state = not pet.nighttime_mode
+	# 通过 idle_behaviors 的标准路径触发/退出深夜模式
+	if new_state:
+		pet.idle_behaviors._enter_nighttime()
+	else:
+		pet.idle_behaviors._exit_nighttime()
+	btn.text = "深夜模式 [●]" if new_state else "深夜模式 [○]"
+
+# ── 解除当前行为 (一键恢复正常) ──
+
+func _on_cancel_behavior() -> void:
+	ctx._tooltip.panel.hide()
+	ctx._submenu.hide_all_instant()
+	ctx.hud.hide()
+	ctx._sidebar.panel.hide()
+	ctx.target = null
+	EventBus.context_menu_toggled.emit(false)
+
+	var pet = _get_pet()
+	if not pet:
+		return
+	# 1) 如果深夜模式是手动开的，先退出
+	if pet.nighttime_mode and pet.idle_behaviors._nighttime_active:
+		pet.idle_behaviors._exit_nighttime()
+	# 2) 取消活跃的微行为 (休眠/drowsy)
+	if pet.idle_behaviors.is_active():
+		pet.idle_behaviors.cancel()
+	# 3) 确保回到 idle
+	if pet.current_state_name != "idle":
+		pet.transition_to("idle")
+	pet.show_local_bubble("...系统重置。恢复常规运行。")

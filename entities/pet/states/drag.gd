@@ -17,7 +17,7 @@ func enter() -> void:
 	if pet:
 		original_gravity_scale = pet.gravity_scale
 		pet.gravity_scale = DRAG_GRAVITY_SCALE
-		pet.linear_damp = 0.5
+		pet.physics.apply("drag")
 		pet.movement.cancel()  # 被抓住时取消移动方向
 		_drag_time = 0.0
 		_init_mouse_pos = pet.get_global_mouse_position()

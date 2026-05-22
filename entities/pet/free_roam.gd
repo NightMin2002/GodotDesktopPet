@@ -110,8 +110,7 @@ func update(delta: float) -> void:
 			_walk_max_x = pet.global_position.x
 			_last_pet_x = pet.global_position.x
 			# 不人为制动，让宠物保持惯性自然落地
-			pet.linear_damp = 0.8
-			pet.angular_damp = 1.5
+			pet.physics.apply("roam_land")
 			# 临时降低摩擦力，让宠物在踏板上自然滑行
 			pet.physics_material_override.friction = 0.05
 			phase = 2
@@ -165,8 +164,7 @@ func update(delta: float) -> void:
 		var dist = absf(_elevator.position.y - ground_y)
 		# 贴近地面时消失 (随机 10~50px × 屏幕缩放)
 		if dist < _elevator_vanish_dist:
-			pet.linear_damp = 0.5
-			pet.angular_damp = 0.8
+			pet.physics.apply("roam_elevator_end")
 			phase = 0
 			var elevator = _elevator
 			_elevator = null
@@ -241,8 +239,7 @@ func do_jump() -> void:
 		# 跳跃力度 (650~800)
 		var vy = randf_range(650.0, 800.0) * ss * -pet.gravity_sign
 		var vx = hop_dir * randf_range(60.0, 150.0) * ss
-		pet.linear_damp = 0.2
-		pet.angular_damp = 0.6
+		pet.physics.apply("roam_jump")
 		pet.apply_central_impulse(Vector2(vx, vy))
 		pet.apply_torque_impulse(hop_dir * randf_range(2000.0, 5000.0) * ss)
 	)
@@ -408,8 +405,7 @@ func _walk_sideways() -> void:
 		phase = 4
 		_airtime = 0.0
 		_last_pet_x = pet.global_position.x
-		pet.linear_damp = 0.1
-		pet.angular_damp = 0.3
+		pet.physics.apply("roam_walk")
 		pet.linear_velocity = Vector2(hop_dir * randf_range(150.0, 300.0) * ss, pet.linear_velocity.y)
 		pet.apply_torque_impulse(hop_dir * randf_range(3000.0, 6000.0) * ss)
 	)
@@ -433,8 +429,7 @@ func _jump_down() -> void:
 		# 移除空气墙
 		_remove_side_walls()
 		# 起跳! (强力横向 + 微小上弹)
-		pet.linear_damp = 0.2
-		pet.angular_damp = 0.4
+		pet.physics.apply("roam_jump_down")
 		pet.apply_central_impulse(Vector2(hop_dir * randf_range(200.0, 350.0) * ss, randf_range(50.0, 120.0) * -pet.gravity_sign * ss))
 		pet.apply_torque_impulse(hop_dir * randf_range(3000.0, 7000.0) * ss)
 		# 踏板因起跳冲击力破碎
@@ -494,8 +489,7 @@ func _respawn_platform_at_pet() -> void:
 func _full_stop() -> void:
 	pet.linear_velocity.x = 0
 	pet.angular_velocity = 0
-	pet.linear_damp = 5.0
-	pet.angular_damp = 8.0
+	pet.physics.apply("roam_full_stop")
 
 # ── 空气墙管理 ──
 

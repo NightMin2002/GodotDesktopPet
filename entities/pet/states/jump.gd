@@ -5,8 +5,7 @@ extends PetState
 
 func enter() -> void:
 	if pet:
-		pet.linear_damp = 0.2   # 空中低阻尼，保持抛物线惯性
-		pet.angular_damp = 0.8  # 适度角阻尼，旋转自然衰减
+		pet.physics.apply("jump")
 		
 		# 大跳：确定方向
 		var hop_dir = [-1.0, 1.0].pick_random()

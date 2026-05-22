@@ -10,7 +10,7 @@ const SETTLE_TIME := 0.3         # 需持续稳定这么久才算真正落地
 func enter() -> void:
 	settle_timer = 0.0
 	if pet:
-		pet.linear_damp = 0.5
+		pet.physics.apply("fall")
 		pet.gravity_scale = pet.gravity_sign  # 尊重反重力模式
 
 func exit() -> void:

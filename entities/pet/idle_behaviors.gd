@@ -248,14 +248,11 @@ func _enter_hibernate() -> void:
 			pet.eye_behavior.start_drowsy(0.6)
 		1, 2:  # 加载指示 / 电池图标: 抑制眨眼即可
 			pet.eye_behavior._drowsy_target = 0.35
-	# 增大阻尼，让它"沉下去"
-	pet.linear_damp = 3.0
-	pet.angular_damp = 5.0
+	# 增大阻尼 + 锁定旋转，让它"沉下去"
+	pet.physics.apply("hibernate")
 	pet.angular_velocity = 0.0  # 立即停止旋转
-	# 锁定旋转 + 设置目标角度, 避免 _process 中赋值 rotation 与物理引擎打架
-	var rest_rot = PI if pet.anti_gravity else 0.0
-	pet.rotation = rest_rot
-	pet.lock_rotation = true
+	# 锁定后设置目标角度, 避免 _process 中赋值 rotation 与物理引擎打架
+	pet.rotation = PI if pet.anti_gravity else 0.0
 
 func _update_hibernate(_delta: float) -> void:
 	# ── 唤醒条件 ──
@@ -304,9 +301,7 @@ func _cancel_current() -> void:
 			pet.eye_behavior.stop_drowsy()
 			pet.eye_behavior.drowsy_amount = 0.0
 			pet.movement.cancel()  # 休眠取消: 清除方向锁定
-			pet.linear_damp = 0.8
-			pet.angular_damp = 1.0
-			pet.lock_rotation = false  # 解锁旋转
+			pet.physics.apply("hibernate_wake")
 		"drowsy":
 			pet.eye_behavior.stop_drowsy()
 			pet.eye_behavior.drowsy_amount = 0.0
@@ -322,9 +317,8 @@ func _finish(behavior: String) -> void:
 			"hibernate":
 				# 标记本轮离席已休眠，等用户回来(鼠标活动)后才重置
 				_hibernate_done = true
-		# 恢复 idle 阻尼
-		pet.linear_damp = 0.8
-		pet.angular_damp = 1.0
+		# 恢复 idle 物理配置 (阻尼 + 解锁旋转)
+		pet.physics.apply("hibernate_wake")
 
 func _pick(pool: Array) -> String:
 	return pool[randi() % pool.size()]

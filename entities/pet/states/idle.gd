@@ -1,28 +1,21 @@
 # idle.gd — 待机状态
 # 宠物立在原地，随机时间后转入 Walk 或 Jump
-# 如果附近有漫步中的同伴滚来，跳起让路 (跳绳效果)
 class_name StateIdle
 extends PetState
 
 var idle_timer: float = 0.0
 var idle_duration: float = 0.0
-var _dodge_cooldown: float = 0.0  # 让路跳跃冷却
 
 func enter() -> void:
 	idle_duration = randf_range(1.0, 4.0)
 	idle_timer = 0.0
-	_dodge_cooldown = 0.0
 	if pet:
-		pet.linear_damp = 0.8
-		pet.angular_damp = 1.0
+		pet.physics.apply("idle_quiet" if pet.is_quiet_behavior() else "idle")
 		# forced_look_dir 由 PetMovement HOLD 阶段管理，此处无需处理
-		if pet.is_quiet_behavior():
-			pet.linear_damp = 5.0
-			pet.angular_damp = 8.0
 
 func exit() -> void:
 	if pet:
-		pet.linear_damp = 0.5
+		pet.physics.apply("idle_exit")
 		# 离开 idle 时取消活跃微行为 (被拖拽/状态切换等打断)
 		# 但深夜休眠例外: 它是持续性的，只有退出深夜时段才中断
 		if not (pet.nighttime_mode and pet.idle_behaviors.active_behavior == "hibernate"):
@@ -95,38 +88,6 @@ func physics_process(delta: float) -> void:
 	if not pet.idle_behaviors.is_active() and absf(pet.linear_velocity.y) > 30.0:
 		pet.transition_to("fall")
 		return
-	
-	# ── 跳绳让路：近距离检测到滚动中的同伴 → 跳起让路 ──
-	# 纯滚动模式不跳跃 (对方的 _has_pet_ahead 会让它主动停下)
-	if not pet.is_quiet_behavior() and pet.move_style != 1:
-		_dodge_cooldown -= delta
-		if _dodge_cooldown <= 0.0:
-			var stroller = _find_approaching_stroller()
-			if stroller != null:
-				pet.apply_central_impulse(Vector2(0, -350.0 * pet.gravity_sign))
-				pet.apply_torque_impulse(randf_range(-800.0, 800.0))
-				_dodge_cooldown = 0.5
-
-## 检测是否有漫步中的宠物正在靠近 (120px 范围)
-func _find_approaching_stroller() -> RigidBody2D:
-	var parent = pet.get_parent()
-	if not parent: return null
-	
-	for child in parent.get_children():
-		if child == pet or not (child is RigidBody2D): continue
-		if not is_instance_valid(child): continue
-		if not ("is_strolling" in child): continue
-		if not child.is_strolling: continue
-		
-		var dist = absf(child.global_position.x - pet.global_position.x)
-		if dist > 140.0: continue
-		
-		# 确认对方正朝自己滚来
-		var vx = child.linear_velocity.x
-		var dx = pet.global_position.x - child.global_position.x
-		if (vx > 10.0 and dx > 0.0) or (vx < -10.0 and dx < 0.0):
-			return child
-	return null
 
 func input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
