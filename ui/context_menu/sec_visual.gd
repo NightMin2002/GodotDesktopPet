@@ -51,7 +51,8 @@ func build() -> void:
 	ctx._submenu.create_toggle("effects", [
 		{"id": "shockwave", "on": "撞击冲击波 [●]", "off": "撞击冲击波 [○]", "key": "shockwave", "default": true},
 		{"id": "arc_fx", "on": "静电弧 [●]", "off": "静电弧 [○]", "key": "arc_fx", "default": true},
-	], 2, "sec_visual")
+		{"id": "roam_spark", "on": "踏板收缩火花 [●]", "off": "踏板收缩火花 [○]", "key": "roam_spark", "default": true},
+	], 3, "sec_visual")
 	_append_effect_color_radio()
 
 	# L3: 弹性形变单选

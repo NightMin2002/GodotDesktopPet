@@ -106,8 +106,9 @@ func update(delta: float) -> void:
 		if _was_rising and vy > -20.0 and _airtime > 0.15:
 			var platform_y = pet.global_position.y + pet.PET_RADIUS * pet.gravity_sign
 			_current_plat = _spawn_platform(Vector2(pet.global_position.x, platform_y))
-			_walk_min_x = pet.global_position.x
-			_walk_max_x = pet.global_position.x
+			# 初始化物理边界对齐踏板的初始宽度，防止首帧边界突变
+			_walk_min_x = pet.global_position.x - PLATFORM_WIDTH / 2.0
+			_walk_max_x = pet.global_position.x + PLATFORM_WIDTH / 2.0
 			_last_pet_x = pet.global_position.x
 			# 不人为制动，让宠物保持惯性自然落地
 			pet.physics.apply("roam_land")
@@ -186,16 +187,22 @@ func update(delta: float) -> void:
 		_last_pet_x = pet.global_position.x
 		if is_instance_valid(_current_plat):
 			var pet_x = pet.global_position.x
-			var plat_x = _current_plat.position.x
-			# 动态更新边界 (只增不缩)
-			_walk_min_x = minf(_walk_min_x, pet_x)
-			_walk_max_x = maxf(_walk_max_x, pet_x)
-			# 两侧少量预留即可 (横移中宠物不会突然掉落)
 			var margin = PLATFORM_MARGIN
-			var left_edge = _walk_min_x - margin
-			var right_edge = _walk_max_x + margin
-			var new_width = right_edge - left_edge
-			var local_offset_x = (left_edge + right_edge) / 2.0 - plat_x
+			
+			var safe_min = pet_x - margin
+			var safe_max = pet_x + margin
+			
+			# 1. 瞬间延展确保物理安全（向哪走，哪边立刻变长接住）
+			_walk_min_x = minf(_walk_min_x, safe_min)
+			_walk_max_x = maxf(_walk_max_x, safe_max)
+			
+			# 2. 延缓平滑收缩（随着宠物滑行，后方踏板跟随着消融收紧并激发噼啪火花）
+			_walk_min_x = lerpf(_walk_min_x, safe_min, 1.25 * delta)
+			_walk_max_x = lerpf(_walk_max_x, safe_max, 1.25 * delta)
+			
+			var plat_x = _current_plat.position.x
+			var new_width = _walk_max_x - _walk_min_x
+			var local_offset_x = (_walk_min_x + _walk_max_x) / 2.0 - plat_x
 			for child in _current_plat.get_children():
 				if child is CollisionShape2D and not child.has_meta("_roam_wall"):
 					var shape = child.shape as RectangleShape2D
@@ -207,6 +214,7 @@ func update(delta: float) -> void:
 					child.position.x = local_offset_x
 		# 至少等 0.8 秒再检测落稳
 		if _airtime > 0.8 and pet.is_settled():
+			pet.physics_material_override.friction = 0.6  # 恢复正常物理摩擦力
 			_full_stop()
 			phase = 0
 			_decide_next()
@@ -343,11 +351,21 @@ func _update_settled(delta: float) -> void:
 			_shatter_settled()
 			return
 	
-	# ── 踏板横向跟随 (只增不缩，边界直接记录) ──
+	# ── 踏板横向跟随 (安全延展 + 软阻尼平滑收缩) ──
 	var pet_x = pet.global_position.x
 	var margin = PLATFORM_MARGIN
-	_walk_min_x = minf(_walk_min_x, pet_x - margin)
-	_walk_max_x = maxf(_walk_max_x, pet_x + margin)
+	
+	var safe_min = pet_x - margin
+	var safe_max = pet_x + margin
+	
+	# 1. 瞬间延展确保物理安全（向哪走，哪边立刻变长）
+	_walk_min_x = minf(_walk_min_x, safe_min)
+	_walk_max_x = maxf(_walk_max_x, safe_max)
+	
+	# 2. 延缓平滑收缩（离开的一侧，其尾部会以平缓的阻尼慢慢缩回至安全宽度）
+	_walk_min_x = lerpf(_walk_min_x, safe_min, 1.25 * delta)
+	_walk_max_x = lerpf(_walk_max_x, safe_max, 1.25 * delta)
+	
 	var plat_x = _settled_plat.position.x
 	var new_width = _walk_max_x - _walk_min_x
 	var local_offset_x = (_walk_min_x + _walk_max_x) / 2.0 - plat_x
@@ -393,10 +411,23 @@ func _walk_sideways() -> void:
 	if x < edge_pad: hop_dir = 1.0
 	elif x > pet.boundary_size.x - edge_pad: hop_dir = -1.0
 	
-	# 连续横移时不重置边界，踏板继续延伸
-	var pet_x = pet.global_position.x
-	_walk_min_x = minf(_walk_min_x, pet_x)
-	_walk_max_x = maxf(_walk_max_x, pet_x)
+	# 精确读取当前踏板在起跑瞬间的实际世界空间边界，实现无缝衔接，彻底消除宽幅突变与首帧火花闪烁
+	if is_instance_valid(_current_plat):
+		var plat_x = _current_plat.position.x
+		for child in _current_plat.get_children():
+			if child is CollisionShape2D and not child.has_meta("_roam_wall"):
+				var shape = child.shape as RectangleShape2D
+				if shape:
+					var half_w = shape.size.x / 2.0
+					var center = plat_x + child.position.x
+					_walk_min_x = center - half_w
+					_walk_max_x = center + half_w
+				break
+	else:
+		# 兜底：若踏板不存在，以宠物为中心建立匹配初始宽度的边界
+		var pet_x = pet.global_position.x
+		_walk_min_x = pet_x - PLATFORM_WIDTH / 2.0
+		_walk_max_x = pet_x + PLATFORM_WIDTH / 2.0
 	
 	# 先看方向，缓冲到期后再滚动
 	pet.movement.start(Vector2(hop_dir, 0), func():
@@ -406,8 +437,16 @@ func _walk_sideways() -> void:
 		_airtime = 0.0
 		_last_pet_x = pet.global_position.x
 		pet.physics.apply("roam_walk")
-		pet.linear_velocity = Vector2(hop_dir * randf_range(150.0, 300.0) * ss, pet.linear_velocity.y)
-		pet.apply_torque_impulse(hop_dir * randf_range(3000.0, 6000.0) * ss)
+		
+		# 采用自然贴地滚动的水平冲量（去除向上腾空，使其完全贴着踏板顺滑滚动）
+		var vx = hop_dir * randf_range(140.0, 200.0) * ss
+		pet.apply_central_impulse(Vector2(vx, 0.0))
+		
+		# 施加适度的前扑滚动旋转，防止转成虚影
+		pet.apply_torque_impulse(hop_dir * randf_range(800.0, 1500.0) * ss)
+		
+		# 临时降低摩擦力，使宠物能在踏板上顺滑地惯性滑行一段距离，而不是踩刹车般强阻尼
+		pet.physics_material_override.friction = 0.1
 	)
 
 # ── 跳下 (踏板破碎) ──
@@ -549,6 +588,7 @@ func _spawn_platform(pos: Vector2, is_elevator: bool = false) -> StaticBody2D:
 	body.add_child(col)
 	
 	var visual = PlatformVisual.new()
+	visual.pet = pet
 	visual.platform_width = PLATFORM_WIDTH
 	visual.platform_color = pet.palette.shift_color(Color(0.2, 0.6, 1.0, 0.6))
 	body.add_child(visual)
@@ -629,8 +669,13 @@ class PlatformVisual extends Node2D:
 	var platform_width: float = 120.0
 	var platform_color: Color = Color(0.2, 0.6, 1.0, 0.6)
 	var quiet: bool = false  # 静默模式: 强制极简 + 无粒子 (终端/游戏态用)
+	var pet: RigidBody2D = null
+	
 	var _time: float = 0.0
 	var _expand: float = 0.0
+	var _last_left: float = INF
+	var _last_right: float = INF
+	var _particles: Array = []
 	
 	# 风格: -1=随机, 0=能量束, 1=脉冲链, 2=极简
 	static var style: int = 0
@@ -641,7 +686,68 @@ class PlatformVisual extends Node2D:
 			_active_style = 2 if quiet else (randi_range(0, 2) if style < 0 else style)
 		_time += delta
 		_expand = minf(_expand + delta / 0.3, 1.0)
+		
+		# ── 边缘收缩粒子发射监控 ──
+		# 判定必须使用父空间坐标（即加上 position.x），只有这样才能在平移和对称展开中精确反映世界坐标系下的单侧缩小。
+		var curr_left = position.x - platform_width / 2.0
+		var curr_right = position.x + platform_width / 2.0
+		
+		# 宽度完全展开后，且不是第一帧才检测收缩，避免入场展开时误触发
+		if _expand >= 1.0 and _last_left != INF and _last_right != INF:
+			# 检测左边缘向右收缩（curr_left 在增大，即往右缩）
+			if curr_left > _last_left + 0.1:
+				var num_sparks = clampi(int((curr_left - _last_left) / 1.0), 1, 5)
+				for i in num_sparks:
+					# 粒子发射点必须置于自绘局部空间中的左边界：-platform_width / 2.0
+					_spawn_spark(Vector2(-platform_width / 2.0, randf_range(-2.0, 2.0)), -1.0)
+			
+			# 检测右边缘向左收缩（curr_right 在减小，即往左缩）
+			if curr_right < _last_right - 0.1:
+				var num_sparks = clampi(int((_last_right - curr_right) / 1.0), 1, 5)
+				for i in num_sparks:
+					# 粒子发射点必须置于自绘局部空间中的右边界：platform_width / 2.0
+					_spawn_spark(Vector2(platform_width / 2.0, randf_range(-2.0, 2.0)), 1.0)
+		
+		_last_left = curr_left
+		_last_right = curr_right
+		
+		# ── 更新收缩电火花粒子 ──
+		var active_particles = []
+		var g_sign = pet.gravity_sign if is_instance_valid(pet) else 1.0
+		for p in _particles:
+			p.life -= delta
+			if p.life > 0.0:
+				p.pos += p.vel * delta
+				p.vel.y += 350.0 * delta * g_sign # 模拟重力/反重力抛落
+				p.vel.x *= 0.92                   # 阻尼减速
+				active_particles.append(p)
+		_particles = active_particles
+		
 		queue_redraw()
+	
+	func _spawn_spark(spawn_pos: Vector2, side_dir: float) -> void:
+		if quiet: return
+		# 特效开关判断：若用户在设置中关闭了踏板收缩火花特效，直接返回
+		if not SettingsManager.get_bool("roam_spark", true):
+			return
+		var p = {}
+		p.pos = spawn_pos
+		var g_dir = pet.gravity_sign if is_instance_valid(pet) else 1.0
+		# 朝收缩相反的方向微弹（side_dir == -1 向左弹，1 向右弹）
+		p.vel = Vector2(
+			side_dir * randf_range(80.0, 180.0),
+			randf_range(-120.0, 10.0) * g_dir
+		)
+		p.color = platform_color
+		# 40% 概率产生高亮超频亮白色/浅蓝色，更有噼啪火光质感
+		if randf() > 0.6:
+			p.color = Color(1.5, 1.2, 2.0, 1.0)
+		else:
+			p.color = Color(platform_color.r * 1.5, platform_color.g * 1.5, platform_color.b * 1.5, 1.0)
+		p.max_life = randf_range(0.25, 0.45)
+		p.life = p.max_life
+		p.size = randf_range(1.5, 3.0)
+		_particles.append(p)
 	
 	func _draw() -> void:
 		var hw = platform_width / 2.0 * _ease_out(_expand)
@@ -661,6 +767,14 @@ class PlatformVisual extends Node2D:
 			1: _draw_pulse_chain(hw, c)
 			2: _draw_minimal(hw, c)
 			_: _draw_energy(hw, c)
+		
+		# ── 绘制边缘收缩的噼啪火光粒子 ──
+		for p in _particles:
+			var alpha = p.life / p.max_life
+			var p_color = Color(p.color.r, p.color.g, p.color.b, p.color.a * alpha)
+			# 沿粒子运动方向微微拉伸的火花线段，表现出喷射与拉断电火花感
+			var length_vec = p.vel * 0.04 * alpha
+			draw_line(p.pos, p.pos - length_vec, p_color, p.size, true)
 		
 	
 	# ── 风格 0: 能量束 ──
