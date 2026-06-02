@@ -498,5 +498,3 @@ func get_all_visible_panels() -> Array:
 		if panel.visible:
 			result.append(panel)
 	return result
-
-

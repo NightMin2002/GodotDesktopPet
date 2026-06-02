@@ -241,6 +241,12 @@ func _load_saved_settings() -> void:
 	_sec_pet.update_chatter_label(chatter_mode)
 	_submenu.refresh_radio("chatter", chatter_mode)
 
+	var app_style = SettingsManager.get_int("appearance_style", 1)
+	_sec_pet.update_appearance_label(app_style)
+	_submenu.refresh_radio("appearance", app_style)
+
+	_sec_pet.refresh_debug_submenu()
+
 
 func _refresh_submenu_states() -> void:
 	_submenu.refresh_toggle("shockwave", SettingsManager.get_bool("shockwave", true), "撞击冲击波 [●]", "撞击冲击波 [○]")
@@ -266,6 +272,7 @@ func _refresh_submenu_states() -> void:
 	_submenu.refresh_radio("elastic", elastic_mode)
 	_submenu.refresh_radio("hover_fx", SettingsManager.get_int("hover_style", 1))
 	_submenu.refresh_radio("auto_activity", SettingsManager.get_int("auto_activity", 1))
+	_submenu.refresh_radio("appearance", SettingsManager.get_int("appearance_style", 1))
 	# 宠物档案面板
 	_sec_pet.refresh_profile()
 

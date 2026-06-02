@@ -8,16 +8,21 @@ var ctx  # ContextMenu 引用
 # ── 按钮引用 ──
 var _chatter_btn: Button
 var _activity_btn: Button
+var _appearance_btn: Button
 var _clone_btn: Button
 var _deploy_clone_btn: Button
 var _dismiss_btn: Button
 var _debug_behavior_btn: Button
+var _nighttime_btn: Button
 
 # ── 碎碎念 ──
 const CHATTER_MODE_LABELS := ["碎碎念 · 已关闭 [+]", "碎碎念 · 每30分钟 [+]", "碎碎念 · 每60分钟 [+]"]
 
 # ── 运行功耗 ──
 const ACTIVITY_LABELS := ["运行功耗 · 待机 [+]", "运行功耗 · 节能 [+]", "运行功耗 · 性能 [+]"]
+
+# ── 机体外观 ──
+const APPEARANCE_LABELS := ["机体外观 · 经典 [+]", "机体外观 · 现代 [+]"]
 
 func _init(context_menu) -> void:
 	ctx = context_menu
@@ -39,6 +44,10 @@ func build() -> void:
 	_activity_btn = ctx._make_menu_btn("运行功耗 · 节能 [+]", Color(0.2, 0.85, 1.0, 1))
 	vbox.add_child(_activity_btn)
 	ctx._bind_l3_trigger(_activity_btn, "auto_activity", "sec_pet")
+
+	_appearance_btn = ctx._make_menu_btn("机体外观 · 现代 [+]", Color(0.2, 0.85, 1.0, 1))
+	vbox.add_child(_appearance_btn)
+	ctx._bind_l3_trigger(_appearance_btn, "appearance", "sec_pet")
 
 	var terminal_btn = ctx._make_menu_btn("个人终端 [+]", Color(0.2, 0.85, 1.0, 1))
 	vbox.add_child(terminal_btn)
@@ -71,6 +80,12 @@ func build() -> void:
 		{"value": 2, "label": "性能", "desc": "频繁自发活动，保持活跃"},
 	], _on_radio_auto_activity, 3, "sec_pet")
 
+	# L3: 机体外观单选
+	ctx._submenu.create_radio("appearance", [
+		{"value": 0, "label": "经典 (v1.0)", "desc": "初代紧凑设计，白色细环偏内，眼瞳小巧"},
+		{"value": 1, "label": "现代 (v2.0)", "desc": "新版饱满设计，白色亮环在最外圈，瞳孔整体等比例放大"},
+	], _on_radio_appearance_mode, 3, "sec_pet")
+
 	# L3: 分身操作面板
 	_build_clone_l3_panel()
 	# L3: 个人终端
@@ -99,6 +114,18 @@ func _on_radio_auto_activity(value: int) -> void:
 
 func update_activity_label(mode: int) -> void:
 	_activity_btn.text = ACTIVITY_LABELS[mode]
+
+# ── 机体外观 ──
+
+func _on_radio_appearance_mode(value: int) -> void:
+	update_appearance_label(value)
+	SettingsManager.set_int("appearance_style", value)
+	EventBus.appearance_changed.emit(value)
+	ctx._submenu.refresh_radio("appearance", value)
+
+func update_appearance_label(mode: int) -> void:
+	if _appearance_btn:
+		_appearance_btn.text = APPEARANCE_LABELS[mode]
 
 # ── 分身 ──
 
@@ -300,20 +327,20 @@ func _build_debug_behavior_submenu() -> void:
 	vbox.add_child(sep)
 
 	# ── 深夜模式开关 ──
-	var night_btn = CyberMenuButton.new()
-	night_btn.flat = true
-	night_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	night_btn.add_theme_font_size_override("font_size", 19)
-	night_btn.add_theme_color_override("font_color", Color(0.7, 0.75, 1.0, 1))
-	night_btn.add_theme_color_override("font_hover_color", Color(0.5, 0.55, 1.0, 1))
+	_nighttime_btn = CyberMenuButton.new()
+	_nighttime_btn.flat = true
+	_nighttime_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_nighttime_btn.add_theme_font_size_override("font_size", 19)
+	_nighttime_btn.add_theme_color_override("font_color", Color(0.7, 0.75, 1.0, 1))
+	_nighttime_btn.add_theme_color_override("font_hover_color", Color(0.5, 0.55, 1.0, 1))
 	var pet = _get_pet()
 	var is_night = pet and pet.nighttime_mode
-	night_btn.text = "深夜模式 [●]" if is_night else "深夜模式 [○]"
-	night_btn.pressed.connect(func(): _on_nighttime_toggle(night_btn))
+	_nighttime_btn.text = "深夜模式 [●]" if is_night else "深夜模式 [○]"
+	_nighttime_btn.pressed.connect(func(): _on_nighttime_toggle(_nighttime_btn))
 	var night_desc = "手动开关深夜模式 (归位+半闭眼休眠)"
-	night_btn.mouse_entered.connect(func(): ctx._tooltip.show_for(night_btn, night_desc, true))
-	night_btn.mouse_exited.connect(func(): ctx._tooltip.show_for(night_btn, night_desc, false))
-	vbox.add_child(night_btn)
+	_nighttime_btn.mouse_entered.connect(func(): ctx._tooltip.show_for(_nighttime_btn, night_desc, true))
+	_nighttime_btn.mouse_exited.connect(func(): ctx._tooltip.show_for(_nighttime_btn, night_desc, false))
+	vbox.add_child(_nighttime_btn)
 
 	# ── 解除当前行为 ──
 	var cancel_btn = CyberMenuButton.new()
@@ -392,6 +419,8 @@ func _on_cancel_behavior() -> void:
 	# 1) 如果深夜模式是手动开的，先退出
 	if pet.nighttime_mode and pet.idle_behaviors._nighttime_active:
 		pet.idle_behaviors._exit_nighttime()
+		if _nighttime_btn:
+			_nighttime_btn.text = "深夜模式 [○]"
 	# 2) 取消活跃的微行为 (休眠/drowsy)
 	if pet.idle_behaviors.is_active():
 		pet.idle_behaviors.cancel()
@@ -399,3 +428,9 @@ func _on_cancel_behavior() -> void:
 	if pet.current_state_name != "idle":
 		pet.transition_to("idle")
 	pet.show_local_bubble("...系统重置。恢复常规运行。")
+
+func refresh_debug_submenu() -> void:
+	if _nighttime_btn:
+		var pet = _get_pet()
+		var is_night = pet and pet.nighttime_mode
+		_nighttime_btn.text = "深夜模式 [●]" if is_night else "深夜模式 [○]"
