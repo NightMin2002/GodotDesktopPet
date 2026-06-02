@@ -20,14 +20,13 @@ func _draw() -> void:
 
 	# 1. 外壳 (双层描边)
 	draw_arc(center, R + 1.2, 0, TAU, 64, stroke_c, lw, true)
-	draw_arc(center, R, 0, TAU, 64, stroke_c, lw, true)
 
-	# 2. 内部细环
-	var border_r = R * 0.85
+	# 2. 本体边框 (原来的内部细环移到最外圈 R)
+	var border_r = R
 	draw_arc(center, border_r, 0, TAU, 64, Color(stroke_c, 0.5), 1.0, true)
 
 	# 3. 深色内圆
-	var base_r = R * 0.68
+	var base_r = R * 0.80
 	draw_arc(center, base_r, 0, TAU, 48, stroke_dim, lw, true)
 
 	# 4. 四个三角翼 (十字方向)
@@ -41,14 +40,14 @@ func _draw() -> void:
 		draw_polyline(PackedVector2Array([left_b, tip, right_b]), stroke_dim, lw, true)
 
 	# 5. 巩膜圆
-	var sclera_r = R * 0.54
+	var sclera_r = R * 0.635
 	draw_arc(center, sclera_r, 0, TAU, 48, stroke_c, lw, true)
 
 	# 6. 虹膜三层
-	draw_arc(center, R * 0.42, 0, TAU, 40, stroke_c, lw, true)
-	draw_arc(center, R * 0.28, 0, TAU, 32, stroke_c, lw, true)
-	draw_arc(center, R * 0.16, 0, TAU, 24, stroke_dim, lw, true)
+	draw_arc(center, R * 0.494, 0, TAU, 40, stroke_c, lw, true)
+	draw_arc(center, R * 0.33, 0, TAU, 32, stroke_c, lw, true)
+	draw_arc(center, R * 0.19, 0, TAU, 24, stroke_dim, lw, true)
 
 	# 7. 高光点
-	var hl_pos = center + Vector2(-R * 0.08, -R * 0.10)
-	draw_circle(hl_pos, R * 0.06, highlight_c)
+	var hl_pos = center + Vector2(-R * 0.09, -R * 0.11)
+	draw_circle(hl_pos, R * 0.07, highlight_c)

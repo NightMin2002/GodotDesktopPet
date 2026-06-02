@@ -625,10 +625,10 @@ func _draw_body(world_offset: Vector2) -> void:
 	var shell_main := palette.shift_color(Color(0.15, 0.30, 0.80, 1.0))
 	draw_circle(Vector2.ZERO, PET_RADIUS + 1.2, shell_outline, true, -1.0, true)
 	draw_circle(Vector2.ZERO, PET_RADIUS, shell_main, true, -1.0, true)
-	var border_radius = PET_RADIUS * 0.85
+	var border_radius = PET_RADIUS
 	draw_arc(Vector2.ZERO, border_radius, 0, TAU, 64, Color(1.0, 1.0, 1.0, 0.8), 1.2, true)
 	var dark_blue := palette.shift_color(Color(0.12, 0.18, 0.42, 1.0))
-	var base_r = PET_RADIUS * 0.68
+	var base_r = PET_RADIUS * 0.80
 	var tip_dist = border_radius - 1.0
 	draw_circle(Vector2.ZERO, base_r, dark_blue, true, -1.0, true)
 	for i in range(4):
@@ -647,14 +647,14 @@ func _draw_body(world_offset: Vector2) -> void:
 	var iris_scale = 1.0 - blink * 0.95
 	if iris_scale > 0.05:
 		var iris_offset = eye_behavior.get_pupil_offset() * iris_scale * ag_flip
-		draw_circle(Vector2.ZERO, PET_RADIUS * 0.54 * iris_scale, palette.shift_color(Color(0.85, 0.88, 0.92, 1.0)), true, -1.0, true)
-		draw_circle(iris_offset, PET_RADIUS * 0.42 * iris_scale, palette.shift_color(Color(0.55, 0.65, 0.80, 1.0)), true, -1.0, true)
-		draw_circle(iris_offset, PET_RADIUS * 0.28 * iris_scale, palette.shift_color(Color(0.15, 0.28, 0.68, 1.0)), true, -1.0, true)
-		draw_circle(iris_offset, PET_RADIUS * 0.16 * iris_scale, palette.shift_color(Color(0.05, 0.08, 0.20, 1.0)), true, -1.0, true)
-		var highlight_offset = iris_offset + Vector2(-PET_RADIUS * 0.08, -PET_RADIUS * 0.10) * iris_scale * ag_flip
+		draw_circle(Vector2.ZERO, PET_RADIUS * 0.635 * iris_scale, palette.shift_color(Color(0.85, 0.88, 0.92, 1.0)), true, -1.0, true)
+		draw_circle(iris_offset, PET_RADIUS * 0.494 * iris_scale, palette.shift_color(Color(0.55, 0.65, 0.80, 1.0)), true, -1.0, true)
+		draw_circle(iris_offset, PET_RADIUS * 0.28 * 1.18 * iris_scale, palette.shift_color(Color(0.15, 0.28, 0.68, 1.0)), true, -1.0, true)
+		draw_circle(iris_offset, PET_RADIUS * 0.16 * 1.18 * iris_scale, palette.shift_color(Color(0.05, 0.08, 0.20, 1.0)), true, -1.0, true)
+		var highlight_offset = iris_offset + Vector2(-PET_RADIUS * 0.09, -PET_RADIUS * 0.11) * iris_scale * ag_flip
 		var highlight_fade = 1.0 - eye_behavior.get_drowsy_amount()
-		draw_circle(highlight_offset, PET_RADIUS * 0.11 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale * 0.85 * highlight_fade), true, -1.0, true)
-		draw_circle(highlight_offset, PET_RADIUS * 0.06 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale * highlight_fade), true, -1.0, true)
+		draw_circle(highlight_offset, PET_RADIUS * 0.13 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale * 0.85 * highlight_fade), true, -1.0, true)
+		draw_circle(highlight_offset, PET_RADIUS * 0.07 * iris_scale, Color(1.0, 1.0, 1.0, iris_scale * highlight_fade), true, -1.0, true)
 	var h_blend = idle_behaviors.get_hibernate_visual_blend()
 	if h_blend > 0.01:
 		var screen_r = PET_RADIUS * 0.83
@@ -664,7 +664,7 @@ func _draw_body(world_offset: Vector2) -> void:
 	var drowsy = eye_behavior.get_drowsy_amount()
 	var is_shutter = idle_behaviors.active_behavior != "hibernate" or idle_behaviors.hibernate_style == 0
 	if drowsy > 0.01 and iris_scale > 0.05 and is_shutter:
-		var sclera_r = PET_RADIUS * 0.54 * iris_scale
+		var sclera_r = PET_RADIUS * 0.635 * iris_scale
 		var plate_color = palette.shift_color(Color(0.10, 0.15, 0.38, 1.0))
 		# 挡板从眼球顶部向下合拢 (反重力时整个眼球已翻转 180°，自动变为从底部向上)
 		_draw_eye_shutter(sclera_r, sclera_r * drowsy * 1.5, true, plate_color)
