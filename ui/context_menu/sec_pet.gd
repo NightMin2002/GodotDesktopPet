@@ -9,6 +9,7 @@ var ctx  # ContextMenu 引用
 var _chatter_btn: Button
 var _activity_btn: Button
 var _appearance_btn: Button
+var _size_btn: Button
 var _clone_btn: Button
 var _deploy_clone_btn: Button
 var _dismiss_btn: Button
@@ -23,6 +24,15 @@ const ACTIVITY_LABELS := ["运行功耗 · 待机 [+]", "运行功耗 · 节能 
 
 # ── 机体外观 ──
 const APPEARANCE_LABELS := ["机体外观 · 经典 [+]", "机体外观 · 现代 [+]"]
+
+# ── 机体大小 ──
+const SIZE_LABELS := {
+	30: "机体大小 · 30px [+]",
+	50: "机体大小 · 50px [+]",
+	60: "机体大小 · 60px [+]",
+	80: "机体大小 · 80px [+]",
+	100: "机体大小 · 100px [+]"
+}
 
 func _init(context_menu) -> void:
 	ctx = context_menu
@@ -48,6 +58,10 @@ func build() -> void:
 	_appearance_btn = ctx._make_menu_btn("机体外观 · 现代 [+]", Color(0.2, 0.85, 1.0, 1))
 	vbox.add_child(_appearance_btn)
 	ctx._bind_l3_trigger(_appearance_btn, "appearance", "sec_pet")
+
+	_size_btn = ctx._make_menu_btn("机体大小 · 50px [+]", Color(0.2, 0.85, 1.0, 1))
+	vbox.add_child(_size_btn)
+	ctx._bind_l3_trigger(_size_btn, "pet_size", "sec_pet")
 
 	var terminal_btn = ctx._make_menu_btn("个人终端 [+]", Color(0.2, 0.85, 1.0, 1))
 	vbox.add_child(terminal_btn)
@@ -85,6 +99,15 @@ func build() -> void:
 		{"value": 0, "label": "经典 (v1.0)", "desc": "初代紧凑设计，白色细环偏内，眼瞳小巧"},
 		{"value": 1, "label": "现代 (v2.0)", "desc": "新版饱满设计，白色亮环在最外圈，瞳孔整体等比例放大"},
 	], _on_radio_appearance_mode, 3, "sec_pet")
+
+	# L3: 机体大小单选
+	ctx._submenu.create_radio("pet_size", [
+		{"value": 30, "label": "微型 (30px)", "desc": "极限紧凑的观测模式"},
+		{"value": 50, "label": "常规 (50px)", "desc": "推荐默认尺寸"},
+		{"value": 60, "label": "舒适 (60px)", "desc": "2K 分辨率推荐尺寸"},
+		{"value": 80, "label": "中型 (80px)", "desc": "中型视觉尺寸"},
+		{"value": 100, "label": "大型 (100px)", "desc": "清晰的大型观测尺寸"},
+	], _on_radio_size_changed, 5, "sec_pet")
 
 	# L3: 分身操作面板
 	_build_clone_l3_panel()
@@ -126,6 +149,21 @@ func _on_radio_appearance_mode(value: int) -> void:
 func update_appearance_label(mode: int) -> void:
 	if _appearance_btn:
 		_appearance_btn.text = APPEARANCE_LABELS[mode]
+
+# ── 机体大小 ──
+
+func _on_radio_size_changed(value: int) -> void:
+	update_size_label(value)
+	SettingsManager.set_int("pet_size", value)
+	EventBus.pet_size_changed.emit(value)
+	ctx._submenu.refresh_radio("pet_size", value)
+
+func update_size_label(size: int) -> void:
+	if _size_btn:
+		if SIZE_LABELS.has(size):
+			_size_btn.text = SIZE_LABELS[size]
+		else:
+			_size_btn.text = "机体大小 · " + str(size) + "px [+]"
 
 # ── 分身 ──
 

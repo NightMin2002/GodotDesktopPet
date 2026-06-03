@@ -104,7 +104,7 @@ func update(delta: float) -> void:
 		if vy < -30.0:
 			_was_rising = true
 		if _was_rising and vy > -20.0 and _airtime > 0.15:
-			var platform_y = pet.global_position.y + pet.PET_RADIUS * pet.gravity_sign
+			var platform_y = pet.global_position.y + (pet.PET_RADIUS + 5.0) * pet.gravity_sign
 			_current_plat = _spawn_platform(Vector2(pet.global_position.x, platform_y))
 			# 初始化物理边界对齐踏板的初始宽度，防止首帧边界突变
 			_walk_min_x = pet.global_position.x - PLATFORM_WIDTH / 2.0
@@ -153,7 +153,7 @@ func update(delta: float) -> void:
 			return
 		var elevator_speed = 100.0 * screen_scale()
 		_elevator.position.y += elevator_speed * delta * pet.gravity_sign
-		var target_y = _elevator.position.y - pet.PET_RADIUS * pet.gravity_sign
+		var target_y = _elevator.position.y - (pet.PET_RADIUS + 5.0) * pet.gravity_sign
 		pet.global_position.y = target_y
 		pet.linear_velocity.y = 0
 		var drift = pet.global_position.x - _elevator.position.x
@@ -501,7 +501,7 @@ func _begin_descent() -> void:
 		if not active:
 			return
 		pet.gravity_scale = 0.0
-		var platform_y = pet.global_position.y + pet.PET_RADIUS * pet.gravity_sign
+		var platform_y = pet.global_position.y + (pet.PET_RADIUS + 5.0) * pet.gravity_sign
 		var elevator = _spawn_platform(Vector2(pet.global_position.x, platform_y), true)
 		_elevator = elevator
 		_elevator_vanish_dist = randf_range(10.0, 50.0) * screen_scale()
@@ -520,7 +520,7 @@ func _respawn_platform_at_pet() -> void:
 	if is_instance_valid(_current_plat):
 		platform_y = _current_plat.position.y
 	else:
-		platform_y = pet.global_position.y + pet.PET_RADIUS * pet.gravity_sign
+		platform_y = pet.global_position.y + (pet.PET_RADIUS + 5.0) * pet.gravity_sign
 	_current_plat = _spawn_platform(Vector2(pet.global_position.x, platform_y))
 	_walk_min_x = pet.global_position.x
 	_walk_max_x = pet.global_position.x

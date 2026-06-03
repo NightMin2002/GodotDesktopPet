@@ -83,12 +83,12 @@ func update(pet: RigidBody2D, delta: float) -> void:
 	if _lift_phase == 1 and is_instance_valid(_platform):
 		var lift_speed = 80.0
 		_platform.position.y -= lift_speed * delta * pet.gravity_sign
-		pet.global_position.y = _platform.position.y - pet.PET_RADIUS * pet.gravity_sign
+		pet.global_position.y = _platform.position.y - (pet.PET_RADIUS + 5.0) * pet.gravity_sign
 		var dist = (_platform.position.y - _lift_target_y) * pet.gravity_sign
 		if dist <= 0.0:
 			_platform.position.y = _lift_target_y
-			pet.global_position.y = _lift_target_y - pet.PET_RADIUS * pet.gravity_sign
+			pet.global_position.y = _lift_target_y - (pet.PET_RADIUS + 5.0) * pet.gravity_sign
 			_lift_phase = 2
 	elif _lift_phase == 2 and is_instance_valid(_platform):
 		pet.linear_velocity = Vector2.ZERO
-		pet.global_position.y = _platform.position.y - pet.PET_RADIUS * pet.gravity_sign
+		pet.global_position.y = _platform.position.y - (pet.PET_RADIUS + 5.0) * pet.gravity_sign

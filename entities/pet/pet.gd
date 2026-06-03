@@ -3,7 +3,7 @@
 extends RigidBody2D
 
 # ── 常量 ──
-const PET_RADIUS := 30.0
+var PET_RADIUS := 30.0
 
 # ── 状态机 ──
 var states: Dictionary = {}
@@ -117,6 +117,11 @@ var holo_screen: PetHoloScreen
 var file_drop  # RefCounted (file_drop.gd)
 
 func _ready() -> void:
+	# 碰撞体 Shape 独占化，防止多宠物分身修改尺寸时影响彼此
+	var col = $CollisionShape2D
+	if col and col.shape:
+		col.shape = col.shape.duplicate()
+
 	# 初始化调色板 (必须在所有子系统之前)
 	if palette == null:
 		palette = PetColorPalette.new()
@@ -251,6 +256,9 @@ func _ready() -> void:
 	EventBus.nighttime_mode_changed.connect(_on_nighttime_mode_changed)
 	EventBus.pet_gaming_changed.connect(_on_pet_gaming_changed)
 	EventBus.appearance_changed.connect(_on_appearance_changed)
+	EventBus.pet_size_changed.connect(_on_pet_size_changed)
+	var saved_size = SettingsManager.get_int("pet_size", 50)
+	_apply_size(saved_size)
 
 func _on_setting_toggled(setting_id: String, is_on: bool) -> void:
 	if setting_id == "eye_track":
@@ -626,8 +634,8 @@ func _draw_body(world_offset: Vector2) -> void:
 	# ── 科幻单眼结构 ──
 	var shell_outline := palette.shift_color(Color(0.08, 0.12, 0.32, 1.0))
 	var shell_main := palette.shift_color(Color(0.15, 0.30, 0.80, 1.0))
-	draw_circle(Vector2.ZERO, PET_RADIUS + 1.2, shell_outline, true, -1.0, true)
-	draw_circle(Vector2.ZERO, PET_RADIUS, shell_main, true, -1.0, true)
+	draw_circle(Vector2.ZERO, PET_RADIUS, shell_outline, true, -1.0, true)
+	draw_circle(Vector2.ZERO, PET_RADIUS - 1.2, shell_main, true, -1.0, true)
 	# 外观参数分流
 	var border_radius: float
 	var base_r: float
@@ -784,4 +792,15 @@ func _draw_loading_spinner(radius: float, alpha: float, time: float) -> void:
 
 func _on_appearance_changed(val: int) -> void:
 	appearance_style = val
+	queue_redraw()
+
+func _on_pet_size_changed(new_size: int) -> void:
+	_apply_size(new_size)
+
+func _apply_size(new_size: int) -> void:
+	PET_RADIUS = float(new_size) / 2.0
+	var col = $CollisionShape2D
+	if col and col.shape:
+		# 物理碰撞半径比渲染半径大 1.0px，留出物理隔离垫片，防止抗锯齿和物理微穿透导致的视觉重叠
+		col.shape.radius = PET_RADIUS + 1.0
 	queue_redraw()

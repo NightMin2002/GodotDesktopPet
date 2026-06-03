@@ -115,7 +115,7 @@ func _apply_free_mode(local_rects: Array[Rect2], count: int) -> void:
 		
 		var wall_cx = lr.position.x + lr.size.x / 2.0
 		var top_rel_y = -lr.size.y / 2.0 + floor_thickness / 2.0
-		var bot_rel_y = lr.size.y / 2.0 - floor_thickness / 2.0
+		var bot_rel_y = lr.size.y / 2.0 + floor_thickness / 2.0
 		# 反重力时翻转踏板方向 (旋转180°让宠物能从下方“贴住”)
 		var plat_rot = PI if _anti_gravity else 0.0
 		_apply_platform_segments(wall, 0, top_segs, wall_cx, top_rel_y, floor_thickness, true, plat_rot)

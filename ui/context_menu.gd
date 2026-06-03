@@ -245,6 +245,10 @@ func _load_saved_settings() -> void:
 	_sec_pet.update_appearance_label(app_style)
 	_submenu.refresh_radio("appearance", app_style)
 
+	var pet_size = SettingsManager.get_int("pet_size", 50)
+	_sec_pet.update_size_label(pet_size)
+	_submenu.refresh_radio("pet_size", pet_size)
+
 	_sec_pet.refresh_debug_submenu()
 
 
@@ -273,6 +277,7 @@ func _refresh_submenu_states() -> void:
 	_submenu.refresh_radio("hover_fx", SettingsManager.get_int("hover_style", 1))
 	_submenu.refresh_radio("auto_activity", SettingsManager.get_int("auto_activity", 1))
 	_submenu.refresh_radio("appearance", SettingsManager.get_int("appearance_style", 1))
+	_submenu.refresh_radio("pet_size", SettingsManager.get_int("pet_size", 50))
 	# 宠物档案面板
 	_sec_pet.refresh_profile()
 
