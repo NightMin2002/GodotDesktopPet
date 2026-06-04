@@ -9,7 +9,7 @@ func _init(context_menu) -> void:
 	ctx = context_menu
 
 func build() -> void:
-	var panel = ctx._submenu._make_panel()
+	var panel = ctx.make_submenu_panel()
 	var vbox = VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 6)
 	panel.add_child(vbox)
@@ -29,14 +29,12 @@ func build() -> void:
 	
 	vbox.add_child(margin)
 
-	panel.mouse_entered.connect(func(): ctx._submenu.on_panel_enter())
-	panel.mouse_exited.connect(func(): ctx._submenu.on_panel_exit())
-	ctx.add_child(panel)
-	ctx._submenu.panels["sec_system"] = panel
+	ctx.register_l2_panel("sec_system", panel)
 
 # ── 退出 ──
 
 func on_quit_pressed() -> void:
+	ctx.cleanup_toys()
 	ctx._tooltip.panel.hide()
 	if is_instance_valid(ctx.target):
 		ctx.hud.pivot_offset = ctx.target.get_global_transform_with_canvas().get_origin() - ctx.hud.position

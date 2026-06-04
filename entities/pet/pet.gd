@@ -319,6 +319,32 @@ func _on_nighttime_mode_changed(active: bool) -> void:
 		if current_state_name != "idle":
 			transition_to("idle")
 
+func set_manual_nighttime_mode(active: bool) -> void:
+	if not idle_behaviors:
+		return
+	if active:
+		idle_behaviors._enter_nighttime()
+	else:
+		idle_behaviors._exit_nighttime()
+
+func cancel_active_behavior() -> void:
+	if not idle_behaviors:
+		return
+	if nighttime_mode and idle_behaviors._nighttime_active:
+		idle_behaviors._exit_nighttime()
+	if idle_behaviors.is_active():
+		idle_behaviors.cancel()
+	if current_state_name != "idle":
+		transition_to("idle")
+
+func show_holo_action(method: String, side: float, duration: float, arg = null) -> void:
+	if not holo_screen or not holo_screen.has_method(method):
+		return
+	if arg == null:
+		holo_screen.call(method, side, duration)
+	else:
+		holo_screen.call(method, arg, side, duration)
+
 func _on_trigger_idle_behavior(behavior: String) -> void:
 	if is_clone:
 		return

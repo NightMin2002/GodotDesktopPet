@@ -26,6 +26,9 @@ func build_submenu(vbox: VBoxContainer) -> void:
 		var n = item.towers
 		vbox.add_child(make_btn(item.label, func(): _on_stack_mode(n), item.desc))
 
+func cleanup() -> void:
+	_unstack_all(get_all_pets(), true, false)
+
 # ── 话术 ──
 
 const _REJECT := [
@@ -151,7 +154,7 @@ func _attach_follow(pet, base) -> void:
 	base.get_tree().process_frame.connect(callable)
 
 ## 解散所有叠加
-func _unstack_all(all_pets: Array, silent: bool = false) -> void:
+func _unstack_all(all_pets: Array, silent: bool = false, apply_impulse: bool = true) -> void:
 	var tree = ctx.get_tree()
 	for pet in all_pets:
 		if not pet.has_meta("stack_origin"):
@@ -168,7 +171,8 @@ func _unstack_all(all_pets: Array, silent: bool = false) -> void:
 			pet.remove_meta("stack_callable")
 		pet.remove_meta("stack_offset_y")
 		pet.remove_meta("stack_origin")
-		pet.apply_central_impulse(Vector2(randf_range(-100, 100), -150))
+		if apply_impulse:
+			pet.apply_central_impulse(Vector2(randf_range(-100, 100), -150))
 
 	if _stacking:
 		_stacking = false

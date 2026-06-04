@@ -17,7 +17,7 @@ func _init(context_menu) -> void:
 	ctx = context_menu
 
 func build() -> void:
-	var panel = ctx._submenu._make_panel()
+	var panel = ctx.make_submenu_panel()
 	var vbox = VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 6)
 	panel.add_child(vbox)
@@ -28,10 +28,7 @@ func build() -> void:
 		_toys.append(toy)
 		_build_toy_entry(vbox, toy)
 
-	panel.mouse_entered.connect(func(): ctx._submenu.on_panel_enter())
-	panel.mouse_exited.connect(func(): ctx._submenu.on_panel_exit())
-	ctx.add_child(panel)
-	ctx._submenu.panels["sec_play"] = panel
+	ctx.register_l2_panel("sec_play", panel)
 
 ## 为单个玩具构建菜单入口 (自动判断有无子菜单)
 func _build_toy_entry(vbox: VBoxContainer, toy) -> void:
@@ -43,7 +40,7 @@ func _build_toy_entry(vbox: VBoxContainer, toy) -> void:
 		ctx._bind_l3_trigger(btn, toy_id, "sec_play")
 
 		# 构建 L3 面板
-		var l3_panel = ctx._submenu._make_panel()
+		var l3_panel = ctx.make_submenu_panel()
 		var l3_vbox = VBoxContainer.new()
 		l3_vbox.add_theme_constant_override("separation", 4)
 		l3_panel.add_child(l3_vbox)
@@ -59,3 +56,8 @@ func _build_toy_entry(vbox: VBoxContainer, toy) -> void:
 			var desc = toy.get_desc()
 			btn.mouse_entered.connect(func(): ctx._tooltip.show_for(b, desc, true))
 			btn.mouse_exited.connect(func(): ctx._tooltip.show_for(b, desc, false))
+
+func cleanup_toys() -> void:
+	for toy in _toys:
+		if toy and toy.has_method("cleanup"):
+			toy.cleanup()

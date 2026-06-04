@@ -38,7 +38,7 @@ func _init(context_menu) -> void:
 	ctx = context_menu
 
 func build() -> void:
-	var panel = ctx._submenu._make_panel()
+	var panel = ctx.make_submenu_panel()
 	var vbox = VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 6)
 	panel.add_child(vbox)
@@ -75,10 +75,7 @@ func build() -> void:
 	vbox.add_child(_debug_behavior_btn)
 	ctx._bind_l3_trigger(_debug_behavior_btn, "debug_behavior", "sec_pet")
 
-	panel.mouse_entered.connect(func(): ctx._submenu.on_panel_enter())
-	panel.mouse_exited.connect(func(): ctx._submenu.on_panel_exit())
-	ctx.add_child(panel)
-	ctx._submenu.panels["sec_pet"] = panel
+	ctx.register_l2_panel("sec_pet", panel)
 
 	# L3: 碎碎念单选
 	ctx._submenu.create_radio("chatter", [
@@ -168,7 +165,7 @@ func update_size_label(size: int) -> void:
 # ── 分身 ──
 
 func _build_clone_l3_panel() -> void:
-	var panel = ctx._submenu._make_panel()
+	var panel = ctx.make_submenu_panel()
 	var vbox = VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 6)
 	panel.add_child(vbox)
@@ -192,6 +189,7 @@ func _on_deploy_clone_pressed() -> void:
 	update_clone_label()
 
 func _on_dismiss_btn_pressed() -> void:
+	ctx.cleanup_toys()
 	EventBus.dismiss_clones.emit()
 	# 遣散是异步退场动画, 先刷新标签再关菜单
 	await ctx.get_tree().process_frame
@@ -215,11 +213,7 @@ func refresh_profile() -> void:
 # ── 文件检索 ──
 
 func _on_file_search_pressed() -> void:
-	ctx._submenu.hide_all_instant()
-	ctx.hud.hide()
-	ctx._sidebar.panel.hide()
-	ctx.target = null
-	EventBus.context_menu_toggled.emit(false)
+	ctx.close_menu_instant()
 	EventBus.show_file_search.emit()
 
 
@@ -229,7 +223,7 @@ func _get_pet() -> Node:
 # ── 个人终端 ──
 
 func _build_terminal_l3_panel() -> void:
-	var panel = ctx._submenu._make_panel()
+	var panel = ctx.make_submenu_panel()
 	var vbox = VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 4)
 	panel.add_child(vbox)
@@ -273,12 +267,7 @@ func _build_terminal_l3_panel() -> void:
 	ctx._submenu.register_l3_panel("holo_terminal", panel, "sec_pet")
 
 func _on_terminal_action(behavior: String) -> void:
-	ctx._tooltip.panel.hide()
-	ctx._submenu.hide_all_instant()
-	ctx.hud.hide()
-	ctx._sidebar.panel.hide()
-	ctx.target = null
-	EventBus.context_menu_toggled.emit(false)
+	ctx.close_menu_instant()
 
 	# 深夜模式拒绝执行
 	var pet = _get_pet()
@@ -315,15 +304,13 @@ func _dispatch_terminal(pet, behavior: String, s: float) -> void:
 	var cfg = _TERMINAL_ACTIONS[behavior]
 	var method: String = cfg["method"]
 	var dur: float = cfg.get("duration", 0.0)
-	if cfg.has("arg"):
-		pet.holo_screen.call(method, cfg["arg"], s, dur)
-	else:
-		pet.holo_screen.call(method, s, dur)
+	if pet.has_method("show_holo_action"):
+		pet.show_holo_action(method, s, dur, cfg.get("arg", null))
 
 # ── 指令序列 ──
 
 func _build_debug_behavior_submenu() -> void:
-	var panel = ctx._submenu._make_panel()
+	var panel = ctx.make_submenu_panel()
 	var vbox = VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 4)
 	panel.add_child(vbox)
@@ -397,12 +384,7 @@ func _build_debug_behavior_submenu() -> void:
 	ctx._submenu.register_l3_panel("debug_behavior", panel, "sec_pet")
 
 func _on_debug_behavior_pressed(behavior: String) -> void:
-	ctx._tooltip.panel.hide()
-	ctx._submenu.hide_all_instant()
-	ctx.hud.hide()
-	ctx._sidebar.panel.hide()
-	ctx.target = null
-	EventBus.context_menu_toggled.emit(false)
+	ctx.close_menu_instant()
 
 	var main_node = ctx.get_tree().root.get_node_or_null("Main")
 
@@ -423,48 +405,28 @@ func _on_debug_behavior_pressed(behavior: String) -> void:
 # ── 深夜模式手动开关 ──
 
 func _on_nighttime_toggle(btn: Button) -> void:
-	ctx._tooltip.panel.hide()
-	ctx._submenu.hide_all_instant()
-	ctx.hud.hide()
-	ctx._sidebar.panel.hide()
-	ctx.target = null
-	EventBus.context_menu_toggled.emit(false)
+	ctx.close_menu_instant()
 
 	var pet = _get_pet()
 	if not pet:
 		return
 	var new_state = not pet.nighttime_mode
-	# 通过 idle_behaviors 的标准路径触发/退出深夜模式
-	if new_state:
-		pet.idle_behaviors._enter_nighttime()
-	else:
-		pet.idle_behaviors._exit_nighttime()
+	if pet.has_method("set_manual_nighttime_mode"):
+		pet.set_manual_nighttime_mode(new_state)
 	btn.text = "深夜模式 [●]" if new_state else "深夜模式 [○]"
 
 # ── 解除当前行为 (一键恢复正常) ──
 
 func _on_cancel_behavior() -> void:
-	ctx._tooltip.panel.hide()
-	ctx._submenu.hide_all_instant()
-	ctx.hud.hide()
-	ctx._sidebar.panel.hide()
-	ctx.target = null
-	EventBus.context_menu_toggled.emit(false)
+	ctx.close_menu_instant()
 
 	var pet = _get_pet()
 	if not pet:
 		return
-	# 1) 如果深夜模式是手动开的，先退出
-	if pet.nighttime_mode and pet.idle_behaviors._nighttime_active:
-		pet.idle_behaviors._exit_nighttime()
-		if _nighttime_btn:
-			_nighttime_btn.text = "深夜模式 [○]"
-	# 2) 取消活跃的微行为 (休眠/drowsy)
-	if pet.idle_behaviors.is_active():
-		pet.idle_behaviors.cancel()
-	# 3) 确保回到 idle
-	if pet.current_state_name != "idle":
-		pet.transition_to("idle")
+	if pet.has_method("cancel_active_behavior"):
+		pet.cancel_active_behavior()
+	if _nighttime_btn:
+		_nighttime_btn.text = "深夜模式 [○]"
 	pet.show_local_bubble("...系统重置。恢复常规运行。")
 
 func refresh_debug_submenu() -> void:

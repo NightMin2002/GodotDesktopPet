@@ -204,14 +204,33 @@ func _make_menu_btn(text: String, hover_color: Color) -> Button:
 	btn.text = text
 	return btn
 
-## 关闭菜单并发射信号 (用于面板入口按钮)
-func _close_and_emit(sig: Signal) -> void:
+func make_submenu_panel() -> PanelContainer:
+	return _submenu._make_panel()
+
+func register_l2_panel(menu_id: String, panel: PanelContainer) -> void:
+	panel.mouse_entered.connect(func(): _submenu.on_panel_enter())
+	panel.mouse_exited.connect(func(): _submenu.on_panel_exit())
+	add_child(panel)
+	_submenu.panels[menu_id] = panel
+
+func show_menu_tooltip(btn: Button, text: String, show: bool) -> void:
+	_tooltip.show_for(btn, text, show)
+
+func close_menu_instant() -> void:
 	_tooltip.panel.hide()
 	_submenu.hide_all_instant()
 	hud.hide()
 	_sidebar.panel.hide()
 	target = null
 	EventBus.context_menu_toggled.emit(false)
+
+func cleanup_toys() -> void:
+	if _sec_play and _sec_play.has_method("cleanup_toys"):
+		_sec_play.cleanup_toys()
+
+## 关闭菜单并发射信号 (用于面板入口按钮)
+func _close_and_emit(sig: Signal) -> void:
+	close_menu_instant()
 	sig.emit()
 
 # ═══════════════════════════════════════════
@@ -254,7 +273,6 @@ func _load_saved_settings() -> void:
 
 func _refresh_submenu_states() -> void:
 	_submenu.refresh_toggle("shockwave", SettingsManager.get_bool("shockwave", true), "撞击冲击波 [●]", "撞击冲击波 [○]")
-	_submenu.refresh_toggle("trail_fx", SettingsManager.get_bool("trail_fx", true), "粒子尾流 [●]", "粒子尾流 [○]")
 	_submenu.refresh_toggle("arc_fx", SettingsManager.get_bool("arc_fx", true), "静电弧 [●]", "静电弧 [○]")
 	_submenu.refresh_toggle("roam_spark", SettingsManager.get_bool("roam_spark", true), "踏板收缩火花 [●]", "踏板收缩火花 [○]")
 	_submenu.refresh_toggle("eye_track", SettingsManager.get_bool("eye_track", true), "指针跟踪 [●]", "指针跟踪 [○]")
@@ -272,9 +290,10 @@ func _refresh_submenu_states() -> void:
 	_submenu.refresh_radio("window_mode", SettingsManager.get_int("window_mode", 0))
 	_submenu.refresh_radio("behavior_mode", SettingsManager.get_int("behavior_mode", 0))
 	_submenu.refresh_radio("gait", SettingsManager.get_int("move_style", 0))
-	_submenu.refresh_radio("chatter", SettingsManager.get_int("chatter_mode", 0))
+	_submenu.refresh_radio("chatter", SettingsManager.get_int("pet_chatter_mode", 1))
 	_submenu.refresh_radio("elastic", elastic_mode)
 	_submenu.refresh_radio("hover_fx", SettingsManager.get_int("hover_style", 1))
+	_submenu.refresh_radio("trail_style", SettingsManager.get_int("trail_style", 1))
 	_submenu.refresh_radio("auto_activity", SettingsManager.get_int("auto_activity", 1))
 	_submenu.refresh_radio("appearance", SettingsManager.get_int("appearance_style", 1))
 	_submenu.refresh_radio("pet_size", SettingsManager.get_int("pet_size", 50))

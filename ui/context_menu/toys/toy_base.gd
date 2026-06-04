@@ -33,16 +33,15 @@ func build_submenu(vbox: VBoxContainer) -> void:
 func on_activate() -> void:
 	pass
 
+## 外部生命周期清理 (例如回收分身、关闭程序前)
+func cleanup() -> void:
+	pass
+
 # ── 工具方法 (子类直接用) ──
 
 ## 关闭菜单
 func close_menu() -> void:
-	ctx._tooltip.panel.hide()
-	ctx._submenu.hide_all_instant()
-	ctx.hud.hide()
-	ctx._sidebar.panel.hide()
-	ctx.target = null
-	EventBus.context_menu_toggled.emit(false)
+	ctx.close_menu_instant()
 
 ## 获取所有宠物实例 (原体 + 克隆体)
 func get_all_pets() -> Array:

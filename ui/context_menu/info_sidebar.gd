@@ -10,6 +10,7 @@ var _time_label: Label
 var _rows: Dictionary = {}  # key -> Label (值标签)
 var _sysinfo_pending: Dictionary = {}
 var _sysinfo_has_pending: bool = false
+var _sysinfo_query_running: bool = false
 var _boot_timestamp: float = 0.0
 
 func _init(menu_ref) -> void:
@@ -148,14 +149,17 @@ func update_position(hud: PanelContainer) -> void:
 # ── 异步查询 ──
 
 func query() -> void:
+	if _sysinfo_query_running:
+		return
 	for key in ["wifi", "battery", "cpu", "ram"]:
 		if key in _rows: _rows[key].text = "..."
 	if _boot_timestamp <= 0.0 and "uptime" in _rows:
 		_rows["uptime"].text = "..."
+	_sysinfo_query_running = true
 	WorkerThreadPool.add_task(_sysinfo_task)
 
 # WiFi SSID 修正: .Name 返回配置文件名(可能带数字后缀), 需用 netsh wlan show profiles 反向匹配真实 SSID
-const _PS_SIDEBAR := "$w=(Get-NetConnectionProfile|?{$_.InterfaceAlias -match 'Wi-Fi|WLAN|Wireless'}|Select -First 1).Name;if($w){$ss=@();(netsh wlan show profiles 2>$null)|%{if($_ -match ' : (.+)$'){$ss+=$Matches[1].Trim()}};foreach($s in ($ss|Sort-Object Length -Desc)){if($w.StartsWith($s)){$w=$s;break}}}else{$w='N/A'};$b=Get-CimInstance Win32_Battery;if($b){$bp=$b.EstimatedChargeRemaining.ToString()+'%';if($b.BatteryStatus-eq 2){$bp+=' ⚡'}}else{$bp='无电池'};Write-Host wifi=$w;Write-Host battery=$bp;$cl=(Get-CimInstance Win32_Processor|Select-Object -First 1).LoadPercentage;Write-Host cpu=$cl%;$os=Get-CimInstance Win32_OperatingSystem;$ru=[math]::Round(($os.TotalVisibleMemorySize-$os.FreePhysicalMemory)*100/$os.TotalVisibleMemorySize);Write-Host ram=$ru%"
+const _PS_SIDEBAR := "$w=(Get-NetConnectionProfile|?{$_.InterfaceAlias -match 'Wi-Fi|WLAN|Wireless'}|Select -First 1).Name;if($w){$ss=@();(netsh wlan show profiles 2>$null)|%{if($_ -match ' : (.+)$'){$ss+=$Matches[1].Trim()}};foreach($s in ($ss|Sort-Object Length -Desc)){if($w.StartsWith($s)){$w=$s;break}}}else{$w='N/A'};$b=Get-CimInstance Win32_Battery;if($b){$bp=$b.EstimatedChargeRemaining.ToString()+'%';if($b.BatteryStatus-eq 2){$bp+=' 充电中'}}else{$bp='无电池'};Write-Host wifi=$w;Write-Host battery=$bp;$cl=(Get-CimInstance Win32_Processor|Select-Object -First 1).LoadPercentage;Write-Host cpu=$cl%;$os=Get-CimInstance Win32_OperatingSystem;$ru=[math]::Round(($os.TotalVisibleMemorySize-$os.FreePhysicalMemory)*100/$os.TotalVisibleMemorySize);Write-Host ram=$ru%"
 const _PS_BOOT_TIME := "[int](([DateTimeOffset](Get-CimInstance Win32_OperatingSystem).LastBootUpTime).ToUnixTimeSeconds())"
 
 func _sysinfo_task() -> void:
@@ -177,6 +181,7 @@ func _sysinfo_task() -> void:
 				result["_boot_ts"] = ts
 	_sysinfo_pending = result
 	_sysinfo_has_pending = true
+	_sysinfo_query_running = false
 
 ## 主线程调用: 消费异步结果
 func apply_pending() -> void:
