@@ -7,6 +7,7 @@ extends CanvasLayer
 const InfoSidebar = preload("res://ui/context_menu/info_sidebar.gd")
 const MenuTooltip = preload("res://ui/context_menu/menu_tooltip.gd")
 const SubmenuSystem = preload("res://ui/context_menu/submenu_system.gd")
+const MenuSettings = preload("res://ui/context_menu/menu_setting_registry.gd")
 
 const EffectPreview = preload("res://ui/context_menu/effect_preview.gd")
 const SecPet = preload("res://ui/context_menu/sec_pet.gd")
@@ -33,6 +34,7 @@ var _submenu: SubmenuSystem
 var _sidebar: InfoSidebar
 var _tooltip: MenuTooltip
 var _fx_preview: EffectPreview
+var _radio_title_buttons: Dictionary = {}
 
 # ── 分区 builder ──
 var _sec_pet: SecPet
@@ -129,12 +131,7 @@ func _make_hover_only(btn: Button) -> void:
 
 ## 构建显示分区 (太小不值得拆文件)
 func _build_sec_display() -> void:
-	_submenu.create_toggle("sec_display", [
-		{"id": "hud_pin", "on": "常驻显示 [●]", "off": "常驻显示 [○]", "key": "hud_pin", "default": false},
-		{"id": "hud_clock", "on": "系统时钟 [●]", "off": "系统时钟 [○]", "key": "hud_clock", "default": false},
-		{"id": "hud_wifi", "on": "WiFi 信息 [●]", "off": "WiFi 信息 [○]", "key": "hud_wifi", "default": false},
-		{"id": "hud_todo", "on": "待办计数 [●]", "off": "待办计数 [○]", "key": "hud_todo", "default": false},
-	])
+	create_toggle_group("sec_display")
 
 ## 统一入口
 func _build_all_sections() -> void:
@@ -216,6 +213,45 @@ func register_l2_panel(menu_id: String, panel: PanelContainer) -> void:
 func show_menu_tooltip(btn: Button, text: String, show: bool) -> void:
 	_tooltip.show_for(btn, text, show)
 
+func create_toggle_group(menu_id: String, group_id: String = "", level: int = 2, parent_l2_id: String = "") -> void:
+	var source_id = group_id if group_id != "" else menu_id
+	_submenu.create_toggle(menu_id, MenuSettings.get_toggle_group(source_id), level, parent_l2_id)
+
+func create_radio_group(menu_id: String, level: int = 2, parent_l2_id: String = "") -> void:
+	var mid := menu_id
+	_submenu.create_radio(menu_id, MenuSettings.get_radio_items(menu_id), func(value: int): _on_registered_radio_changed(mid, value), level, parent_l2_id)
+
+func register_radio_title(menu_id: String, btn: Button) -> void:
+	_radio_title_buttons[menu_id] = btn
+	refresh_registered_radio(menu_id)
+
+func get_radio_title(menu_id: String, value = null) -> String:
+	var resolved_value: int = MenuSettings.get_radio_value(menu_id) if value == null else int(value)
+	return MenuSettings.get_radio_title(menu_id, resolved_value)
+
+func get_radio_value(menu_id: String) -> int:
+	return MenuSettings.get_radio_value(menu_id)
+
+func get_radio_items(menu_id: String) -> Array:
+	return MenuSettings.get_radio_items(menu_id)
+
+func refresh_registered_radio(menu_id: String, value = null) -> void:
+	var resolved_value: int = MenuSettings.get_radio_value(menu_id) if value == null else int(value)
+	_submenu.refresh_radio(menu_id, resolved_value)
+	if _radio_title_buttons.has(menu_id):
+		var btn = _radio_title_buttons[menu_id] as Button
+		if is_instance_valid(btn):
+			btn.text = MenuSettings.get_radio_title(menu_id, resolved_value)
+
+func refresh_registered_settings() -> void:
+	for item_id in MenuSettings.get_toggle_ids():
+		var item := MenuSettings.get_toggle_def(item_id)
+		if item.is_empty():
+			continue
+		_submenu.refresh_toggle(item.id, SettingsManager.get_bool(item.key, item.default), item.on, item.off)
+	for menu_id in MenuSettings.get_radio_ids():
+		refresh_registered_radio(menu_id)
+
 func close_menu_instant() -> void:
 	_tooltip.panel.hide()
 	_submenu.hide_all_instant()
@@ -238,67 +274,34 @@ func _close_and_emit(sig: Signal) -> void:
 # ═══════════════════════════════════════════
 
 func _load_saved_settings() -> void:
-	_refresh_submenu_states()
-
-	var wm = SettingsManager.get_int("window_mode", 0)
-	_sec_behavior.update_window_mode_label(wm)
-	_submenu.refresh_radio("window_mode", wm)
-
-	var bm = SettingsManager.get_int("behavior_mode", 0)
-	_sec_behavior.update_behavior_mode_label(bm)
-	_submenu.refresh_radio("behavior_mode", bm)
-
-	var gm = SettingsManager.get_int("move_style", 0)
-	_sec_behavior.update_gait_label(gm)
-	_submenu.refresh_radio("gait", gm)
-
-	var am = SettingsManager.get_int("auto_activity", 1)
-	_sec_pet.update_activity_label(am)
-	_submenu.refresh_radio("auto_activity", am)
-
-	var chatter_mode = SettingsManager.get_int("pet_chatter_mode", 1)
-	_sec_pet.update_chatter_label(chatter_mode)
-	_submenu.refresh_radio("chatter", chatter_mode)
-
-	var app_style = SettingsManager.get_int("appearance_style", 1)
-	_sec_pet.update_appearance_label(app_style)
-	_submenu.refresh_radio("appearance", app_style)
-
-	var pet_size = SettingsManager.get_int("pet_size", 50)
-	_sec_pet.update_size_label(pet_size)
-	_submenu.refresh_radio("pet_size", pet_size)
-
+	refresh_registered_settings()
 	_sec_pet.refresh_debug_submenu()
 
+func apply_registered_radio(menu_id: String, value: int) -> void:
+	var group := MenuSettings.get_radio_group(menu_id)
+	if group.is_empty():
+		return
+	var setting_key: String = group.get("setting_key", "")
+	if setting_key != "":
+		SettingsManager.set_int(setting_key, value)
+	refresh_registered_radio(menu_id, value)
+	match group.get("event", ""):
+		"window_mode_changed":
+			EventBus.window_mode_changed.emit(value)
+		"behavior_mode_changed":
+			EventBus.behavior_mode_changed.emit(value)
+		"setting_toggled":
+			if setting_key != "":
+				EventBus.setting_toggled.emit(setting_key, value > 0)
+		"appearance_changed":
+			EventBus.appearance_changed.emit(value)
+		"pet_size_changed":
+			EventBus.pet_size_changed.emit(value)
+		"squash_test":
+			EventBus.trigger_squash_test.emit(-1 if value == 0 else value - 1)
 
-func _refresh_submenu_states() -> void:
-	_submenu.refresh_toggle("shockwave", SettingsManager.get_bool("shockwave", true), "撞击冲击波 [●]", "撞击冲击波 [○]")
-	_submenu.refresh_toggle("arc_fx", SettingsManager.get_bool("arc_fx", true), "静电弧 [●]", "静电弧 [○]")
-	_submenu.refresh_toggle("roam_spark", SettingsManager.get_bool("roam_spark", true), "踏板收缩火花 [●]", "踏板收缩火花 [○]")
-	_submenu.refresh_toggle("eye_track", SettingsManager.get_bool("eye_track", true), "指针跟踪 [●]", "指针跟踪 [○]")
-	_submenu.refresh_toggle("anti_gravity", SettingsManager.get_bool("anti_gravity", false), "反重力 [●]", "反重力 [○]")
-	_submenu.refresh_toggle("free_roam", SettingsManager.get_bool("free_roam", false), "空间跳跃 [●]", "空间跳跃 [○]")
-	_submenu.refresh_toggle("screen_wrap", SettingsManager.get_bool("screen_wrap", false), "屏幕穿越 [●]", "屏幕穿越 [○]")
-	_submenu.refresh_toggle("hud_pin", SettingsManager.get_bool("hud_pin", false), "常驻显示 [●]", "常驻显示 [○]")
-	_submenu.refresh_toggle("hud_clock", SettingsManager.get_bool("hud_clock", false), "系统时钟 [●]", "系统时钟 [○]")
-	_submenu.refresh_toggle("hud_wifi", SettingsManager.get_bool("hud_wifi", false), "WiFi 信息 [●]", "WiFi 信息 [○]")
-	_submenu.refresh_toggle("hud_todo", SettingsManager.get_bool("hud_todo", false), "待办计数 [●]", "待办计数 [○]")
-	# 弹性形变
-	var elastic_mode = SettingsManager.get_int("elastic_mode", 0)
-	_sec_visual.apply_elastic_mode(elastic_mode, false)
-	# 刷新所有单选菜单
-	_submenu.refresh_radio("window_mode", SettingsManager.get_int("window_mode", 0))
-	_submenu.refresh_radio("behavior_mode", SettingsManager.get_int("behavior_mode", 0))
-	_submenu.refresh_radio("gait", SettingsManager.get_int("move_style", 0))
-	_submenu.refresh_radio("chatter", SettingsManager.get_int("pet_chatter_mode", 1))
-	_submenu.refresh_radio("elastic", elastic_mode)
-	_submenu.refresh_radio("hover_fx", SettingsManager.get_int("hover_style", 1))
-	_submenu.refresh_radio("trail_style", SettingsManager.get_int("trail_style", 1))
-	_submenu.refresh_radio("auto_activity", SettingsManager.get_int("auto_activity", 1))
-	_submenu.refresh_radio("appearance", SettingsManager.get_int("appearance_style", 1))
-	_submenu.refresh_radio("pet_size", SettingsManager.get_int("pet_size", 50))
-	# 宠物档案面板
-	_sec_pet.refresh_profile()
+func _on_registered_radio_changed(menu_id: String, value: int) -> void:
+	apply_registered_radio(menu_id, value)
 
 # ═══════════════════════════════════════════
 # 弹性追踪 / _process

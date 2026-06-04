@@ -25,55 +25,35 @@ func build() -> void:
 	vbox.add_child(_effects_btn)
 	ctx._bind_l3_trigger(_effects_btn, "effects", "sec_visual")
 
-	_elastic_btn = ctx._make_menu_btn("弹性 · 关闭 [+]", Color(1.0, 0.85, 0.3, 1))
+	_elastic_btn = ctx._make_menu_btn(ctx.get_radio_title("elastic"), Color(1.0, 0.85, 0.3, 1))
 	vbox.add_child(_elastic_btn)
+	ctx.register_radio_title("elastic", _elastic_btn)
 	ctx._bind_l3_trigger(_elastic_btn, "elastic", "sec_visual")
 	
-	var trail_style = SettingsManager.get_int("trail_style", 1)
-	var trail_names = ["关闭", "默认"]
-	var t_name = trail_names[clampi(trail_style, 0, 1)]
-	_trail_btn = ctx._make_menu_btn("尾流 · " + t_name + " [+]", Color(1.0, 0.85, 0.3, 1))
+	_trail_btn = ctx._make_menu_btn(ctx.get_radio_title("trail_style"), Color(1.0, 0.85, 0.3, 1))
 	vbox.add_child(_trail_btn)
+	ctx.register_radio_title("trail_style", _trail_btn)
 	ctx._bind_l3_trigger(_trail_btn, "trail_style", "sec_visual")
 	
-	var hover_style = SettingsManager.get_int("hover_style", 1)
-	var hover_name = HoverEffect.STYLE_NAMES[clampi(hover_style, 0, HoverEffect.STYLE_COUNT - 1)]
-	_hover_btn = ctx._make_menu_btn("悬停 · " + hover_name + " [+]", Color(1.0, 0.85, 0.3, 1))
+	_hover_btn = ctx._make_menu_btn(ctx.get_radio_title("hover_fx"), Color(1.0, 0.85, 0.3, 1))
 	vbox.add_child(_hover_btn)
+	ctx.register_radio_title("hover_fx", _hover_btn)
 	ctx._bind_l3_trigger(_hover_btn, "hover_fx", "sec_visual")
 
 	ctx.register_l2_panel("sec_visual", panel)
 
 	# L3: 特效开关子菜单
-	ctx._submenu.create_toggle("effects", [
-		{"id": "shockwave", "on": "撞击冲击波 [●]", "off": "撞击冲击波 [○]", "key": "shockwave", "default": true},
-		{"id": "arc_fx", "on": "静电弧 [●]", "off": "静电弧 [○]", "key": "arc_fx", "default": true},
-		{"id": "roam_spark", "on": "踏板收缩火花 [●]", "off": "踏板收缩火花 [○]", "key": "roam_spark", "default": true},
-	], 3, "sec_visual")
+	ctx.create_toggle_group("effects", "effects", 3, "sec_visual")
 	_append_effect_color_radio()
 
 	# L3: 弹性形变单选
-	ctx._submenu.create_radio("elastic", [
-		{"value": 0, "label": "关闭", "desc": "标准球体，无弹性效果"},
-		{"value": 1, "label": "轻弹", "desc": "自然柔弹，快速恢复"},
-		{"value": 2, "label": "果冻", "desc": "QQ弹弹，慢速晃动恢复"},
-		{"value": 3, "label": "弹力球", "desc": "弹性十足，强力回弹"},
-	], _on_radio_elastic, 3, "sec_visual")
+	ctx.create_radio_group("elastic", 3, "sec_visual")
 	
 	# L3: 悬停特效单选
-	ctx._submenu.create_radio("hover_fx", [
-		{"value": 0, "label": "关闭", "desc": "鼠标靠近不显示视觉反馈"},
-		{"value": 1, "label": "柔光环", "desc": "柔和的呼吸光晕环绕外壳"},
-		{"value": 2, "label": "边缘呼吸", "desc": "外壳边缘节奏性脉冲"},
-		{"value": 3, "label": "锁定框", "desc": "科幻准星锁定标记"},
-		{"value": 4, "label": "遥测模式", "desc": "极简调试坐标系与高频数据流"},
-	], _on_radio_hover_fx, 3, "sec_visual")
+	ctx.create_radio_group("hover_fx", 3, "sec_visual")
 
 	# L3: 尾流特效单选
-	ctx._submenu.create_radio("trail_style", [
-		{"value": 0, "label": "关闭", "desc": "不显示拖影"},
-		{"value": 1, "label": "默认", "desc": "基础光晕粒子尾流"}
-	], _on_radio_trail_style, 3, "sec_visual")
+	ctx.create_radio_group("trail_style", 3, "sec_visual")
 
 # ── 特效配色 ──
 
@@ -98,10 +78,9 @@ func _append_effect_color_radio() -> void:
 	label.add_theme_color_override("font_color", Color(0.5, 0.6, 0.75, 0.5))
 	vbox.add_child(label)
 
-	var saved = SettingsManager.get_int("effect_color_mode", 0)
-	var labels = ["虹彩模式", "跟随体色"]
+	var saved = ctx.get_radio_value("effect_color_mode")
 	_effect_color_btns.clear()
-	for i in range(2):
+	for item in ctx.get_radio_items("effect_color_mode"):
 		var btn = CyberMenuButton.new()
 
 		btn.flat = true
@@ -109,47 +88,15 @@ func _append_effect_color_radio() -> void:
 		btn.add_theme_font_size_override("font_size", 19)
 		btn.add_theme_color_override("font_color", Color(0.8, 0.9, 1, 1))
 		btn.add_theme_color_override("font_hover_color", Color(0.1, 1, 0.9, 1))
-		btn.text = labels[i] + (" [●]" if i == saved else " [○]")
-		var val = i
+		btn.text = item.label + (" [●]" if item.value == saved else " [○]")
+		var val = item.value
 		btn.pressed.connect(func(): _on_radio_effect_color(val))
 		vbox.add_child(btn)
 		_effect_color_btns.append(btn)
 
 func _on_radio_effect_color(value: int) -> void:
-	SettingsManager.set_int("effect_color_mode", value)
-	EventBus.setting_toggled.emit("effect_color_mode", value > 0)
-	var labels = ["虹彩模式", "跟随体色"]
+	ctx.apply_registered_radio("effect_color_mode", value)
+	var items = ctx.get_radio_items("effect_color_mode")
 	for i in range(_effect_color_btns.size()):
-		_effect_color_btns[i].text = labels[i] + (" [●]" if i == value else " [○]")
-
-# ── 弹性形变 ──
-
-func _on_radio_elastic(value: int) -> void:
-	SettingsManager.set_int("elastic_mode", value)
-	apply_elastic_mode(value, true)
-
-func apply_elastic_mode(value: int, emit_signal: bool) -> void:
-	if value == 0:
-		_elastic_btn.text = "弹性 · 关闭 [+]"
-		if emit_signal:
-			EventBus.trigger_squash_test.emit(-1)
-	else:
-		var names := ["轻弹", "果冻", "弹力球"]
-		var idx = clampi(value - 1, 0, 2)
-		_elastic_btn.text = "弹性 · " + names[idx] + " [+]"
-		if emit_signal:
-			EventBus.trigger_squash_test.emit(idx)
-
-# ── 悬停特效 ──
-
-func _on_radio_hover_fx(value: int) -> void:
-	SettingsManager.set_int("hover_style", value)
-	EventBus.setting_toggled.emit("hover_style", value > 0)
-	var name = HoverEffect.STYLE_NAMES[clampi(value, 0, HoverEffect.STYLE_COUNT - 1)]
-	_hover_btn.text = "悬停 · " + name + " [+]"
-
-func _on_radio_trail_style(value: int) -> void:
-	SettingsManager.set_int("trail_style", value)
-	EventBus.setting_toggled.emit("trail_style", value > 0)
-	var names = ["关闭", "默认"]
-	_trail_btn.text = "尾流 · " + names[clampi(value, 0, 1)] + " [+]"
+		var item = items[i]
+		_effect_color_btns[i].text = item.label + (" [●]" if item.value == value else " [○]")

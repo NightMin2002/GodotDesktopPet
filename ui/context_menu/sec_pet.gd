@@ -16,24 +16,6 @@ var _dismiss_btn: Button
 var _debug_behavior_btn: Button
 var _nighttime_btn: Button
 
-# ── 碎碎念 ──
-const CHATTER_MODE_LABELS := ["碎碎念 · 已关闭 [+]", "碎碎念 · 每30分钟 [+]", "碎碎念 · 每60分钟 [+]"]
-
-# ── 运行功耗 ──
-const ACTIVITY_LABELS := ["运行功耗 · 待机 [+]", "运行功耗 · 节能 [+]", "运行功耗 · 性能 [+]"]
-
-# ── 机体外观 ──
-const APPEARANCE_LABELS := ["机体外观 · 经典 [+]", "机体外观 · 现代 [+]"]
-
-# ── 机体大小 ──
-const SIZE_LABELS := {
-	30: "机体大小 · 30px [+]",
-	50: "机体大小 · 50px [+]",
-	60: "机体大小 · 60px [+]",
-	80: "机体大小 · 80px [+]",
-	100: "机体大小 · 100px [+]"
-}
-
 func _init(context_menu) -> void:
 	ctx = context_menu
 
@@ -43,24 +25,28 @@ func build() -> void:
 	vbox.add_theme_constant_override("separation", 6)
 	panel.add_child(vbox)
 
-	_chatter_btn = ctx._make_menu_btn("碎碎念 · 每30分钟 [+]", Color(0.2, 0.85, 1.0, 1))
+	_chatter_btn = ctx._make_menu_btn(ctx.get_radio_title("chatter"), Color(0.2, 0.85, 1.0, 1))
 	vbox.add_child(_chatter_btn)
+	ctx.register_radio_title("chatter", _chatter_btn)
 	ctx._bind_l3_trigger(_chatter_btn, "chatter", "sec_pet")
 
 	_clone_btn = ctx._make_menu_btn("分身 (0/5) [+]", Color(0.2, 0.85, 1.0, 1))
 	vbox.add_child(_clone_btn)
 	ctx._bind_l3_trigger(_clone_btn, "clone", "sec_pet")
 
-	_activity_btn = ctx._make_menu_btn("运行功耗 · 节能 [+]", Color(0.2, 0.85, 1.0, 1))
+	_activity_btn = ctx._make_menu_btn(ctx.get_radio_title("auto_activity"), Color(0.2, 0.85, 1.0, 1))
 	vbox.add_child(_activity_btn)
+	ctx.register_radio_title("auto_activity", _activity_btn)
 	ctx._bind_l3_trigger(_activity_btn, "auto_activity", "sec_pet")
 
-	_appearance_btn = ctx._make_menu_btn("机体外观 · 现代 [+]", Color(0.2, 0.85, 1.0, 1))
+	_appearance_btn = ctx._make_menu_btn(ctx.get_radio_title("appearance"), Color(0.2, 0.85, 1.0, 1))
 	vbox.add_child(_appearance_btn)
+	ctx.register_radio_title("appearance", _appearance_btn)
 	ctx._bind_l3_trigger(_appearance_btn, "appearance", "sec_pet")
 
-	_size_btn = ctx._make_menu_btn("机体大小 · 50px [+]", Color(0.2, 0.85, 1.0, 1))
+	_size_btn = ctx._make_menu_btn(ctx.get_radio_title("pet_size"), Color(0.2, 0.85, 1.0, 1))
 	vbox.add_child(_size_btn)
+	ctx.register_radio_title("pet_size", _size_btn)
 	ctx._bind_l3_trigger(_size_btn, "pet_size", "sec_pet")
 
 	var terminal_btn = ctx._make_menu_btn("个人终端 [+]", Color(0.2, 0.85, 1.0, 1))
@@ -78,33 +64,16 @@ func build() -> void:
 	ctx.register_l2_panel("sec_pet", panel)
 
 	# L3: 碎碎念单选
-	ctx._submenu.create_radio("chatter", [
-		{"value": 0, "label": "关闭", "desc": "宠物不会主动说话"},
-		{"value": 1, "label": "每30分钟", "desc": "每到整点和半点，冒泡说点什么"},
-		{"value": 2, "label": "每60分钟", "desc": "每到整点，冒泡说点什么"},
-	], _on_radio_chatter_mode, 3, "sec_pet")
+	ctx.create_radio_group("chatter", 3, "sec_pet")
 
 	# L3: 运行功耗单选
-	ctx._submenu.create_radio("auto_activity", [
-		{"value": 0, "label": "待机", "desc": "不会自发执行任何活动"},
-		{"value": 1, "label": "节能", "desc": "偶尔自发活动，间隔较长"},
-		{"value": 2, "label": "性能", "desc": "频繁自发活动，保持活跃"},
-	], _on_radio_auto_activity, 3, "sec_pet")
+	ctx.create_radio_group("auto_activity", 3, "sec_pet")
 
 	# L3: 机体外观单选
-	ctx._submenu.create_radio("appearance", [
-		{"value": 0, "label": "经典 (v1.0)", "desc": "初代紧凑设计，白色细环偏内，眼瞳小巧"},
-		{"value": 1, "label": "现代 (v2.0)", "desc": "新版饱满设计，白色亮环在最外圈，瞳孔整体等比例放大"},
-	], _on_radio_appearance_mode, 3, "sec_pet")
+	ctx.create_radio_group("appearance", 3, "sec_pet")
 
 	# L3: 机体大小单选
-	ctx._submenu.create_radio("pet_size", [
-		{"value": 30, "label": "微型 (30px)", "desc": "极限紧凑的观测模式"},
-		{"value": 50, "label": "常规 (50px)", "desc": "推荐默认尺寸"},
-		{"value": 60, "label": "舒适 (60px)", "desc": "2K 分辨率推荐尺寸"},
-		{"value": 80, "label": "中型 (80px)", "desc": "中型视觉尺寸"},
-		{"value": 100, "label": "大型 (100px)", "desc": "清晰的大型观测尺寸"},
-	], _on_radio_size_changed, 5, "sec_pet")
+	ctx.create_radio_group("pet_size", 5, "sec_pet")
 
 	# L3: 分身操作面板
 	_build_clone_l3_panel()
@@ -112,55 +81,6 @@ func build() -> void:
 	_build_terminal_l3_panel()
 	# L3: 指令序列
 	_build_debug_behavior_submenu()
-
-# ── 碎碎念回调 ──
-
-func _on_radio_chatter_mode(value: int) -> void:
-	update_chatter_label(value)
-	SettingsManager.set_int("pet_chatter_mode", value)
-	EventBus.setting_toggled.emit("pet_chatter_mode", value > 0)
-	ctx._submenu.refresh_radio("chatter", value)
-
-func update_chatter_label(mode: int) -> void:
-	_chatter_btn.text = CHATTER_MODE_LABELS[mode]
-
-# ── 运行功耗 ──
-
-func _on_radio_auto_activity(value: int) -> void:
-	update_activity_label(value)
-	SettingsManager.set_int("auto_activity", value)
-	EventBus.setting_toggled.emit("auto_activity", value > 0)
-	ctx._submenu.refresh_radio("auto_activity", value)
-
-func update_activity_label(mode: int) -> void:
-	_activity_btn.text = ACTIVITY_LABELS[mode]
-
-# ── 机体外观 ──
-
-func _on_radio_appearance_mode(value: int) -> void:
-	update_appearance_label(value)
-	SettingsManager.set_int("appearance_style", value)
-	EventBus.appearance_changed.emit(value)
-	ctx._submenu.refresh_radio("appearance", value)
-
-func update_appearance_label(mode: int) -> void:
-	if _appearance_btn:
-		_appearance_btn.text = APPEARANCE_LABELS[mode]
-
-# ── 机体大小 ──
-
-func _on_radio_size_changed(value: int) -> void:
-	update_size_label(value)
-	SettingsManager.set_int("pet_size", value)
-	EventBus.pet_size_changed.emit(value)
-	ctx._submenu.refresh_radio("pet_size", value)
-
-func update_size_label(size: int) -> void:
-	if _size_btn:
-		if SIZE_LABELS.has(size):
-			_size_btn.text = SIZE_LABELS[size]
-		else:
-			_size_btn.text = "机体大小 · " + str(size) + "px [+]"
 
 # ── 分身 ──
 

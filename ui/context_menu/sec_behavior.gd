@@ -11,11 +11,6 @@ var _behavior_mode_btn: Button
 var _gait_btn: Button
 var _mode_btn: Button
 
-# ── 常量 ──
-const WINDOW_MODE_LABELS := ["窗口 · 自由漫游 [+]", "窗口 · 窗口封闭 [+]", "窗口 · 窗口排斥 [+]"]
-const BEHAVIOR_MODE_LABELS := ["指令 · 自由行动 [+]", "指令 · 安静待命 [+]"]
-const GAIT_LABELS := ["步态 · 蹦跳为主 [+]", "步态 · 滚动为主 [+]", "步态 · 混合平衡 [+]"]
-
 func _init(context_menu) -> void:
 	ctx = context_menu
 
@@ -25,16 +20,19 @@ func build() -> void:
 	vbox.add_theme_constant_override("separation", 6)
 	panel.add_child(vbox)
 
-	_window_mode_btn = ctx._make_menu_btn("窗口 · 自由漫游 [+]", Color(0.4, 0.7, 1.0, 1))
+	_window_mode_btn = ctx._make_menu_btn(ctx.get_radio_title("window_mode"), Color(0.4, 0.7, 1.0, 1))
 	vbox.add_child(_window_mode_btn)
+	ctx.register_radio_title("window_mode", _window_mode_btn)
 	ctx._bind_l3_trigger(_window_mode_btn, "window_mode", "sec_behavior")
 
-	_behavior_mode_btn = ctx._make_menu_btn("指令 · 自由行动 [+]", Color(0.4, 0.7, 1.0, 1))
+	_behavior_mode_btn = ctx._make_menu_btn(ctx.get_radio_title("behavior_mode"), Color(0.4, 0.7, 1.0, 1))
 	vbox.add_child(_behavior_mode_btn)
+	ctx.register_radio_title("behavior_mode", _behavior_mode_btn)
 	ctx._bind_l3_trigger(_behavior_mode_btn, "behavior_mode", "sec_behavior")
 
-	_gait_btn = ctx._make_menu_btn("步态 · 蹦跳为主 [+]", Color(0.4, 0.7, 1.0, 1))
+	_gait_btn = ctx._make_menu_btn(ctx.get_radio_title("gait"), Color(0.4, 0.7, 1.0, 1))
 	vbox.add_child(_gait_btn)
+	ctx.register_radio_title("gait", _gait_btn)
 	ctx._bind_l3_trigger(_gait_btn, "gait", "sec_behavior")
 
 	_mode_btn = ctx._make_menu_btn("模式 [+]", Color(0.4, 0.7, 1.0, 1))
@@ -44,66 +42,15 @@ func build() -> void:
 	ctx.register_l2_panel("sec_behavior", panel)
 
 	# L3 子菜单
-	ctx._submenu.create_radio("window_mode", [
-		{"value": 0, "label": "自由漫游"},
-		{"value": 1, "label": "窗口封闭"},
-		{"value": 2, "label": "窗口排斥"},
-	], _on_radio_window_mode, 3, "sec_behavior")
-
-	ctx._submenu.create_radio("behavior_mode", [
-		{"value": 0, "label": "自由行动"},
-		{"value": 1, "label": "安静待命"},
-	], _on_radio_behavior_mode, 3, "sec_behavior")
-
-	ctx._submenu.create_radio("gait", [
-		{"value": 0, "label": "蹦跳为主"},
-		{"value": 1, "label": "滚动为主"},
-		{"value": 2, "label": "混合平衡"},
-	], _on_radio_gait, 3, "sec_behavior")
-
-	ctx._submenu.create_toggle("mode", [
-		{"id": "eye_track", "on": "指针跟踪 [●]", "off": "指针跟踪 [○]", "key": "eye_track", "default": true},
-		{"id": "anti_gravity", "on": "反重力 [●]", "off": "反重力 [○]", "key": "anti_gravity", "default": false},
-		{"id": "free_roam", "on": "空间跳跃 [●]", "off": "空间跳跃 [○]", "key": "free_roam", "default": false},
-		{"id": "screen_wrap", "on": "屏幕穿越 [●]", "off": "屏幕穿越 [○]", "key": "screen_wrap", "default": false},
-	], 3, "sec_behavior")
+	ctx.create_radio_group("window_mode", 3, "sec_behavior")
+	ctx.create_radio_group("behavior_mode", 3, "sec_behavior")
+	ctx.create_radio_group("gait", 3, "sec_behavior")
+	ctx.create_toggle_group("mode", "mode", 3, "sec_behavior")
 	# 模式子菜单追加踏板外观胶囊
 	_append_platform_style_capsule()
 
-# ── 窗口模式 ──
-
-func _on_radio_window_mode(value: int) -> void:
-	update_window_mode_label(value)
-	EventBus.window_mode_changed.emit(value)
-	ctx._submenu.refresh_radio("window_mode", value)
-
-func update_window_mode_label(mode: int) -> void:
-	_window_mode_btn.text = WINDOW_MODE_LABELS[mode]
-
-# ── 行为指令 ──
-
-func _on_radio_behavior_mode(value: int) -> void:
-	update_behavior_mode_label(value)
-	EventBus.behavior_mode_changed.emit(value)
-	ctx._submenu.refresh_radio("behavior_mode", value)
-
-func update_behavior_mode_label(mode: int) -> void:
-	_behavior_mode_btn.text = BEHAVIOR_MODE_LABELS[mode]
-
 func on_behavior_mode_synced(mode: int) -> void:
-	update_behavior_mode_label(mode)
-	ctx._submenu.refresh_radio("behavior_mode", mode)
-
-# ── 步态 ──
-
-func _on_radio_gait(value: int) -> void:
-	update_gait_label(value)
-	SettingsManager.set_int("move_style", value)
-	EventBus.setting_toggled.emit("move_style", value > 0)
-	ctx._submenu.refresh_radio("gait", value)
-
-func update_gait_label(mode: int) -> void:
-	_gait_btn.text = GAIT_LABELS[mode]
+	ctx.refresh_registered_radio("behavior_mode", mode)
 
 # ── 踏板外观胶囊 ──
 
