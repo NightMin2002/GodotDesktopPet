@@ -14,6 +14,7 @@ var is_dragging := false
 var is_menu_open := false
 var _menu_open_count: int = 0   # 面板打开引用计数 (解决多面板时序竞争)
 var _is_click_through := false  # 当前 WS_EX_TRANSPARENT 状态 (初始为 false，与窗口实际一致)
+var _click_exit_timer: float = 0.0  # 鼠标短暂离开命中区时延迟恢复穿透，避免边界抖动
 
 # ── 命中区域数据 ──
 var _hit_circles := PackedFloat32Array()  # [cx, cy, r, ...]
@@ -26,6 +27,9 @@ var _last_rects := PackedFloat32Array()
 # ── 限流 ──
 var _collect_timer: float = 0.0
 const COLLECT_INTERVAL := 0.008  # ~120fps
+const PET_HIT_PADDING := 15.0
+const HIT_EXIT_HYSTERESIS := 10.0
+const CLICK_EXIT_DELAY := 0.045
 
 ## 栅格量化 (回退模式用)
 func _q(v: float) -> float:
@@ -52,6 +56,7 @@ func setup(main: Node2D) -> void:
 func _process(delta: float) -> void:
 	# 拖拽/菜单期间：强制保持可点击 (每帧自动修正，防止时序问题)
 	if is_dragging or is_menu_open:
+		_click_exit_timer = 0.0
 		if _transparent_mode and _is_click_through:
 			_set_click_through(false)
 		return
@@ -61,7 +66,7 @@ func _process(delta: float) -> void:
 		_collect_timer = 0.0
 		_collect_hit_regions()
 		if _transparent_mode:
-			_update_click_through()
+			_update_click_through(delta)
 		else:
 			_update_hit_regions_fallback()
 
@@ -76,7 +81,7 @@ func _collect_hit_regions() -> void:
 		
 		# 宠物本体: 精确圆形命中
 		var pet_pos = p.global_position
-		var pet_r = p.PET_RADIUS + 15.0
+		var pet_r = p.PET_RADIUS + PET_HIT_PADDING
 		circles.append(pet_pos.x)
 		circles.append(pet_pos.y)
 		circles.append(pet_r)
@@ -130,26 +135,33 @@ func _collect_hit_regions() -> void:
 # ══════════════════════════════════════════
 
 ## 根据鼠标位置切换穿透状态 (仅在进出宠物区域时调用一次 SetWindowLong)
-func _update_click_through() -> void:
+func _update_click_through(delta: float = 0.0) -> void:
 	var screen_pos = DisplayServer.mouse_get_position()
 	var win_pos = get_window().position
 	var mx = float(screen_pos.x - win_pos.x)
 	var my = float(screen_pos.y - win_pos.y)
+
+	var hit = _point_in_any_region(mx, my, not _is_click_through)
+
+	if hit:
+		_click_exit_timer = 0.0
+		if _is_click_through:
+			_set_click_through(false)  # 鼠标在宠物/UI 上 → 可点击
+		return
 	
-	var hit = _point_in_any_region(mx, my)
-	
-	if hit and _is_click_through:
-		_set_click_through(false)  # 鼠标在宠物/UI 上 → 可点击
-	elif not hit and not _is_click_through:
-		_set_click_through(true)   # 鼠标不在宠物/UI 上 → 穿透
+	if not _is_click_through:
+		_click_exit_timer += delta
+		if _click_exit_timer >= CLICK_EXIT_DELAY:
+			_set_click_through(true)   # 鼠标稳定离开宠物/UI → 穿透
 
 ## 精确命中检测: 圆形 (dx²+dy²≤r²) + 矩形 (AABB)
-func _point_in_any_region(mx: float, my: float) -> bool:
+func _point_in_any_region(mx: float, my: float, use_exit_hysteresis: bool = false) -> bool:
+	var margin = HIT_EXIT_HYSTERESIS if use_exit_hysteresis else 0.0
 	var i = 0
 	while i + 2 < _hit_circles.size():
 		var cx = _hit_circles[i]
 		var cy = _hit_circles[i + 1]
-		var r = _hit_circles[i + 2]
+		var r = _hit_circles[i + 2] + margin
 		if (mx - cx) * (mx - cx) + (my - cy) * (my - cy) <= r * r:
 			return true
 		i += 3
@@ -160,7 +172,7 @@ func _point_in_any_region(mx: float, my: float) -> bool:
 		var y = _hit_rects[i + 1]
 		var w = _hit_rects[i + 2]
 		var h = _hit_rects[i + 3]
-		if mx >= x and mx <= x + w and my >= y and my <= y + h:
+		if mx >= x - margin and mx <= x + w + margin and my >= y - margin and my <= y + h + margin:
 			return true
 		i += 4
 	
@@ -170,6 +182,7 @@ func _point_in_any_region(mx: float, my: float) -> bool:
 func _set_click_through(transparent: bool) -> void:
 	if transparent == _is_click_through:
 		return
+	_click_exit_timer = 0.0
 	_is_click_through = transparent
 	if _main.win_manager and _main.win_manager.has_method("SetClickThrough"):
 		_main.win_manager.call("SetClickThrough", transparent)
@@ -187,7 +200,7 @@ func _update_hit_regions_fallback() -> void:
 			continue
 		
 		var pet_pos = p.global_position
-		var pet_r = p.PET_RADIUS + 15.0
+		var pet_r = p.PET_RADIUS + PET_HIT_PADDING
 		circles.append(_q(pet_pos.x))
 		circles.append(_q(pet_pos.y))
 		circles.append(_q(pet_r))

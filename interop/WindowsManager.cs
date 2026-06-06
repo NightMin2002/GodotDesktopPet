@@ -557,12 +557,16 @@ public partial class WindowsManager : Node
             return;
 
         int style = GetWindowLong(hwnd, GWL_EXSTYLE);
+        int newStyle = style;
         if (transparent)
-            style |= WS_EX_TRANSPARENT;
+            newStyle |= WS_EX_TRANSPARENT;
         else
-            style &= ~WS_EX_TRANSPARENT;
-        SetWindowLong(hwnd, GWL_EXSTYLE, style);
-        ApplyFrameChanged(hwnd);
+            newStyle &= ~WS_EX_TRANSPARENT;
+
+        if (newStyle == style)
+            return;
+
+        SetWindowLong(hwnd, GWL_EXSTYLE, newStyle);
     }
 
     private static void ApplyFrameChanged(IntPtr hwnd)

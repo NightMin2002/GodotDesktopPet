@@ -4,6 +4,8 @@ extends RigidBody2D
 
 # ── 常量 ──
 var PET_RADIUS := 30.0
+const MOUSE_HIT_PADDING := 15.0
+const MOUSE_HOVER_EXIT_PADDING := 25.0
 
 # ── 状态机 ──
 var states: Dictionary = {}
@@ -132,6 +134,7 @@ var squash: PetSquash
 
 # ── 悬停特效系统 (委托给 HoverEffect) ──
 var hover_effect: HoverEffect
+var _mouse_hover_stable := false
 
 # ── 游戏态管理器 (委托给 PetGaming) ──
 var gaming: PetGaming
@@ -480,8 +483,16 @@ func get_ui_anchor() -> Dictionary:
 # ── 辅助方法 ──
 
 func is_mouse_on_pet() -> bool:
+	return _is_mouse_within_pet_padding(MOUSE_HIT_PADDING)
+
+func is_mouse_hovering_pet() -> bool:
+	var padding = MOUSE_HOVER_EXIT_PADDING if _mouse_hover_stable else MOUSE_HIT_PADDING
+	_mouse_hover_stable = _is_mouse_within_pet_padding(padding)
+	return _mouse_hover_stable
+
+func _is_mouse_within_pet_padding(padding: float) -> bool:
 	var mouse_pos = get_global_mouse_position()
-	return global_position.distance_to(mouse_pos) <= PET_RADIUS + 15.0
+	return global_position.distance_to(mouse_pos) <= PET_RADIUS + padding
 
 func is_settled() -> bool:
 	return linear_velocity.length() < 20.0 and abs(linear_velocity.y) < 10.0
@@ -554,9 +565,14 @@ func _process(delta: float) -> void:
 	
 	# 更新子系统
 	pet_hud.update(delta)
+	var mouse_hover := false
+	if gaming.active:
+		_mouse_hover_stable = false
+	else:
+		mouse_hover = is_mouse_hovering_pet()
 	# HUD 面板: 悬浮模式下转发鼠标状态 (游戏态不响应 hover)
 	if not is_clone:
-		hud_panel.set_hover(false if gaming.active else is_mouse_on_pet())
+		hud_panel.set_hover(mouse_hover)
 	hud_panel.update(delta)
 	eye_behavior.update(delta)
 
@@ -587,8 +603,7 @@ func _process(delta: float) -> void:
 	_roam_update(delta)
 	var squash_changed = squash.update(delta)
 	# 悬停特效: 传入当前鼠标状态 (游戏态不响应)
-	var _mouse_hover = is_mouse_on_pet() and not gaming.active
-	var hover_changed = hover_effect.update(delta, _mouse_hover)
+	var hover_changed = hover_effect.update(delta, mouse_hover)
 	
 	# 文件投喂菜单 + 悬停检测: 跟随宠物位置
 	if file_drop:
