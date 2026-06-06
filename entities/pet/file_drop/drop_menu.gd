@@ -210,15 +210,7 @@ func _update_hit_rects() -> void:
 	if _submenu_bg and is_instance_valid(_submenu_bg) and _submenu_bg.visible:
 		rects.append(Rect2(_submenu_bg.position, _submenu_bg.size))
 	
-	if rects.size() > 0:
-		var min_pos = rects[0].position
-		var max_end = rects[0].end
-		for r in rects:
-			min_pos.x = minf(min_pos.x, r.position.x)
-			min_pos.y = minf(min_pos.y, r.position.y)
-			max_end.x = maxf(max_end.x, r.end.x)
-			max_end.y = maxf(max_end.y, r.end.y)
-		file_drop.pet.set_overlay_rect("file_drop_menu", Rect2(min_pos, max_end - min_pos))
+	OverlayRegionHelper.update_rects(file_drop.pet, "file_drop_menu", rects, "FileDropMenu")
 
 # ══════════════════════════════════════
 #  关闭
@@ -228,7 +220,7 @@ func dismiss() -> void:
 	_submenu_open = false
 	_showing = false
 	if file_drop and file_drop.pet and is_instance_valid(file_drop.pet):
-		file_drop.pet.remove_overlay_rect("file_drop_menu")
+		OverlayRegionHelper.clear(file_drop.pet, "file_drop_menu", "FileDropMenu")
 	
 	if _canvas and is_instance_valid(_canvas):
 		# 淡出然后销毁

@@ -167,22 +167,14 @@ func _update_confirm_hit_rects() -> void:
 	for btn in [_confirm_btn_cancel, _confirm_btn_recycle, _confirm_btn_shred]:
 		if btn and is_instance_valid(btn):
 			rects.append(Rect2(btn.position, btn.size))
-	if rects.size() > 0:
-		var min_pos = rects[0].position
-		var max_end = rects[0].end
-		for r in rects:
-			min_pos.x = minf(min_pos.x, r.position.x)
-			min_pos.y = minf(min_pos.y, r.position.y)
-			max_end.x = maxf(max_end.x, r.end.x)
-			max_end.y = maxf(max_end.y, r.end.y)
-		_confirm_pet.set_overlay_rect("file_drop_confirm", Rect2(min_pos, max_end - min_pos))
+	OverlayRegionHelper.update_rects(_confirm_pet, "file_drop_confirm", rects, "FileDropConfirm")
 
 func _dismiss_confirm() -> void:
 	# 断开帧信号
 	if _confirm_pet and is_instance_valid(_confirm_pet):
 		if _confirm_pet.get_tree() and _confirm_pet.get_tree().process_frame.is_connected(_update_confirm_positions):
 			_confirm_pet.get_tree().process_frame.disconnect(_update_confirm_positions)
-		_confirm_pet.remove_overlay_rect("file_drop_confirm")
+		OverlayRegionHelper.clear(_confirm_pet, "file_drop_confirm", "FileDropConfirm")
 	
 	if _confirm_canvas and is_instance_valid(_confirm_canvas):
 		_confirm_canvas.queue_free()

@@ -335,16 +335,7 @@ func _update_hit_rects() -> void:
 		rects.append(Rect2(_btn_dismiss.position, _btn_dismiss.size))
 	if is_instance_valid(_btn_accept):
 		rects.append(Rect2(_btn_accept.position, _btn_accept.size))
-	# 合并为一个大矩形存入 meta
-	if rects.size() > 0:
-		var min_pos = rects[0].position
-		var max_end = rects[0].end
-		for r in rects:
-			min_pos.x = minf(min_pos.x, r.position.x)
-			min_pos.y = minf(min_pos.y, r.position.y)
-			max_end.x = maxf(max_end.x, r.end.x)
-			max_end.y = maxf(max_end.y, r.end.y)
-		_pet.set_meta("prompt_btn_rect", Rect2(min_pos, max_end - min_pos))
+	OverlayRegionHelper.update_rects(_pet, "todo_prompt", rects, "TodoPrompt")
 
 # ═══════════════════════════════════════════════
 #  交互回调
@@ -360,7 +351,7 @@ func _on_dismiss() -> void:
 func _dismiss_all() -> void:
 	_showing = false
 	if is_instance_valid(_pet):
-		_pet.remove_meta("prompt_btn_rect")
+		OverlayRegionHelper.clear(_pet, "todo_prompt", "TodoPrompt")
 	
 	var nodes: Array[Control] = []
 	if is_instance_valid(_bubble):

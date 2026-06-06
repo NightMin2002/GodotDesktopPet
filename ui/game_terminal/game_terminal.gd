@@ -66,6 +66,9 @@ func _ready() -> void:
 	EventBus.panel_focus_requested.connect(_on_panel_focus)
 	_apply_current_frame()
 
+func _exit_tree() -> void:
+	OverlayRegionHelper.clear(_get_pet(), _PANEL_ID, "GameTerminal")
+
 func _apply_current_frame() -> void:
 	if _frame_drawer and is_instance_valid(_frame_drawer):
 		_frame_drawer.queue_free()
@@ -98,7 +101,7 @@ func _process(_delta: float) -> void:
 			_sync_confine_walls()
 		var pet = _get_pet()
 		if pet:
-			pet.set_overlay_rect("game_terminal", Rect2(panel.position, Vector2(_panel_w, _panel_h)))
+			OverlayRegionHelper.update_rect(pet, _PANEL_ID, Rect2(panel.position, Vector2(_panel_w, _panel_h)), "GameTerminal")
 
 		# 注册面板矩形 (供层级管理用)
 		EventBus._active_panel_rects[_PANEL_ID] = { "rect": Rect2(panel.position, Vector2(_panel_w, _panel_h)), "layer": layer }
@@ -1256,7 +1259,7 @@ func _force_full_cleanup() -> void:
 	# DWM 穿透矩形
 	var pet = _get_pet()
 	if pet:
-		pet.remove_overlay_rect("game_terminal")
+		OverlayRegionHelper.clear(pet, _PANEL_ID, "GameTerminal")
 	# 拖拽
 	_dragging = false
 
@@ -1280,6 +1283,6 @@ func _sanity_check() -> void:
 		_auto_play = false
 		_auto_visible = false
 		issues.append("auto_play_flag")
-	# 注意: overlay_rects 由各面板独立管理 (key 注册/注销), 无需在此清理
+	# overlay_rects 由 _force_full_cleanup() / _exit_tree() 统一清理。
 	if not issues.is_empty():
 		print("[GameTerminal] 兜底自检修复: ", ", ".join(issues))

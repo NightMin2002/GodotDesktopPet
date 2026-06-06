@@ -88,6 +88,7 @@ public partial class WindowsManager : Node
     private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
     private const uint SWP_NOMOVE = 0x0002;
     private const uint SWP_NOSIZE = 0x0001;
+    private const uint SWP_NOZORDER = 0x0004;
     private const uint SWP_NOACTIVATE = 0x0010;
     private const uint SWP_FRAMECHANGED = 0x0020;
 
@@ -468,14 +469,19 @@ public partial class WindowsManager : Node
     public bool InjectLayeredStyle()
     {
         IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
+        if (hwnd == IntPtr.Zero)
+            return false;
+
         int style = GetWindowLong(hwnd, GWL_EXSTYLE);
 
         if ((style & WS_EX_LAYERED) == 0)
         {
             style |= WS_EX_LAYERED;
             SetWindowLong(hwnd, GWL_EXSTYLE, style);
-            SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
         }
+
+        SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
+        ApplyFrameChanged(hwnd);
 
         // 同时清除残留的 SetWindowRgn 裁剪
         SetWindowRgn(hwnd, IntPtr.Zero, true);
@@ -496,12 +502,22 @@ public partial class WindowsManager : Node
     public void SetClickThrough(bool transparent)
     {
         IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
+        if (hwnd == IntPtr.Zero)
+            return;
+
         int style = GetWindowLong(hwnd, GWL_EXSTYLE);
         if (transparent)
             style |= WS_EX_TRANSPARENT;
         else
             style &= ~WS_EX_TRANSPARENT;
         SetWindowLong(hwnd, GWL_EXSTYLE, style);
+        ApplyFrameChanged(hwnd);
+    }
+
+    private static void ApplyFrameChanged(IntPtr hwnd)
+    {
+        SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     }
 
     // ══════════════════════════════════════════════════════════════

@@ -24,6 +24,7 @@ var _fade_btm: Control
 
 var _selected_idx: int = -1
 var _guard_frames := 0
+var _is_closing := false
 var _save_timer: Timer
 var _save_fade_tween: Tween
 
@@ -53,6 +54,7 @@ var _title_bar: Control
 # ── 面板尺寸 ──
 var _panel_w: float = 900
 var _panel_h: float = 600
+const _PANEL_ID := "todo_panel"
 
 func _ready() -> void:
 	_current_theme_idx = SettingsManager.get_int("todo_theme", 0)
@@ -68,6 +70,9 @@ func _ready() -> void:
 	_save_timer.wait_time = 0.6
 	_save_timer.timeout.connect(_do_save_note)
 	add_child(_save_timer)
+
+func _exit_tree() -> void:
+	_unregister_overlay_rect()
 
 func _create_theme(idx: int) -> TodoThemeBase:
 	match idx:
@@ -729,12 +734,12 @@ func _toggle_panel() -> void:
 		_open_panel()
 
 func _open_panel() -> void:
+	_is_closing = false
 	_calc_panel_size()
 	panel.custom_minimum_size = Vector2(_panel_w, _panel_h)
 	_selected_idx = -1
 	_refresh_list()
 	_refresh_right_panel()
-	EventBus.context_menu_toggled.emit(true)
 	get_window().grab_focus()
 
 	var vp = get_viewport().get_visible_rect().size
@@ -742,9 +747,11 @@ func _open_panel() -> void:
 	panel.modulate.a = 0.0
 	panel.scale = Vector2(0.8, 0.8)
 	panel.show()
+	_register_overlay_rect()
 	await get_tree().process_frame
 	panel.pivot_offset = panel.size / 2.0
 	_guard_frames = 5
+	_register_overlay_rect()
 
 	var tween = create_tween().set_parallel(true)
 	tween.tween_property(panel, "modulate:a", 1.0, 0.15)
@@ -754,14 +761,18 @@ func _open_panel() -> void:
 	(func(): _refresh_list(); _update_fades()).call_deferred()
 
 func _close_panel() -> void:
+	if _is_closing:
+		return
+	_is_closing = true
 	_dragging = false
+	_unregister_overlay_rect()
 	panel.pivot_offset = panel.size / 2.0
 	var tween = create_tween().set_parallel(true)
 	tween.tween_property(panel, "modulate:a", 0.0, 0.1)
 	tween.tween_property(panel, "scale", Vector2(0.7, 0.7), 0.1)
 	tween.finished.connect(func():
 		panel.hide()
-		EventBus.context_menu_toggled.emit(false)
+		_is_closing = false
 	)
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -778,6 +789,8 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(_delta: float) -> void:
 	if _guard_frames > 0:
 		_guard_frames -= 1
+	if panel.visible and not _is_closing:
+		_register_overlay_rect()
 
 func _on_title_bar_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
@@ -789,6 +802,21 @@ func _on_title_bar_input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion and _dragging:
 		panel.position = get_viewport().get_mouse_position() - _drag_offset
 		panel.position = _clamp_pos(panel.position)
+		_register_overlay_rect()
+
+func _register_overlay_rect() -> void:
+	var pet = _get_pet()
+	if pet and panel.visible and not _is_closing:
+		OverlayRegionHelper.update_rect(pet, _PANEL_ID, Rect2(panel.position, panel.size), "TodoPanel")
+
+func _unregister_overlay_rect() -> void:
+	OverlayRegionHelper.clear(_get_pet(), _PANEL_ID, "TodoPanel")
+
+func _get_pet() -> Node:
+	var main_node = get_tree().root.get_node_or_null("Main")
+	if main_node and "pet_instance" in main_node and is_instance_valid(main_node.pet_instance):
+		return main_node.pet_instance
+	return null
 
 # ═══════════════════════════════════════════════
 #  主题色

@@ -48,6 +48,9 @@ func _ready() -> void:
 	EventBus.ui_theme_changed.connect(_on_ui_theme_changed)
 	EventBus.panel_focus_requested.connect(_on_panel_focus)
 
+func _exit_tree() -> void:
+	OverlayRegionHelper.clear(_get_pet(), _PANEL_ID, "PetProfilePanel")
+
 func _calc_panel_size() -> void:
 	var vp = get_viewport().get_visible_rect().size
 	_panel_w = clampf(vp.x * 0.80, 850, 1600)
@@ -72,7 +75,7 @@ func _process(delta: float) -> void:
 			_sync_confine_walls()
 		var pet = _get_pet()
 		if pet:
-			pet.set_overlay_rect("profile", Rect2(panel.position, Vector2(_panel_w, _panel_h)))
+			OverlayRegionHelper.update_rect(pet, _PANEL_ID, Rect2(panel.position, Vector2(_panel_w, _panel_h)), "PetProfilePanel")
 		# 监测分身数量变化, 通知外观主题 Tab 刷新
 		_check_pet_count_change()
 		# 注册面板矩形 (供层级管理用)
@@ -542,7 +545,7 @@ func _close_panel() -> void:
 	EventBus._active_panel_rects.erase(_PANEL_ID)
 	var pet = _get_pet()
 	if pet:
-		pet.remove_overlay_rect("profile")
+		OverlayRegionHelper.clear(pet, _PANEL_ID, "PetProfilePanel")
 	# 通知终端配置 Tab 收起全息屏预览
 	if _tab_contents.size() > 7 and is_instance_valid(_tab_contents[7]):
 		var config_tab = _tab_contents[7]

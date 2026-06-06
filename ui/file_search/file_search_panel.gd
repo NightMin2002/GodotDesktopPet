@@ -70,6 +70,9 @@ func _ready() -> void:
 	EventBus.show_file_search.connect(_on_toggle)
 	EventBus.panel_focus_requested.connect(_on_panel_focus)
 
+func _exit_tree() -> void:
+	OverlayRegionHelper.clear(_get_pet(), _PANEL_ID, "FileSearchPanel")
+
 func _calc_panel_size() -> void:
 	var vp = get_viewport().get_visible_rect().size
 	_panel_w = vp.x * 0.70
@@ -94,7 +97,7 @@ func _process(delta: float) -> void:
 	# DWM 穿透: 精确区域
 	var pet = _get_pet()
 	if pet:
-		pet.set_overlay_rect("file_search", Rect2(panel.position, Vector2(_panel_w, _panel_h)))
+		OverlayRegionHelper.update_rect(pet, _PANEL_ID, Rect2(panel.position, Vector2(_panel_w, _panel_h)), "FileSearchPanel")
 	EventBus._active_panel_rects[_PANEL_ID] = { "rect": Rect2(panel.position, Vector2(_panel_w, _panel_h)), "layer": layer }
 	# 搜索防抖
 	if _debounce_timer > 0.0:
@@ -453,7 +456,7 @@ func _close_panel() -> void:
 	EventBus._active_panel_rects.erase(_PANEL_ID)
 	var pet = _get_pet()
 	if pet:
-		pet.remove_overlay_rect("file_search")
+		OverlayRegionHelper.clear(pet, _PANEL_ID, "FileSearchPanel")
 	panel.pivot_offset = panel.size / 2.0
 	var tween = create_tween().set_parallel(true)
 	tween.tween_property(panel, "modulate:a", 0.0, 0.1)

@@ -53,6 +53,9 @@ func _ready() -> void:
 	_build_ui()
 	_build_layout()
 
+func _exit_tree() -> void:
+	OverlayRegionHelper.clear(_get_pet(), "heatmap", "InputHeatmapWindow")
+
 func _calc_sizes() -> void:
 	var vp := get_viewport().get_visible_rect().size
 	_panel_w = clampf(vp.x * 0.88, 1100, 1800)
@@ -72,7 +75,7 @@ func _process(delta: float) -> void:
 		# 精确区域穿透 (不阻塞面板外的桌面交互)
 		var pet = _get_pet()
 		if pet and is_instance_valid(_panel):
-			pet.set_overlay_rect("heatmap", Rect2(_panel.position, Vector2(_panel_w, _panel_h)))
+			OverlayRegionHelper.update_rect(pet, "heatmap", Rect2(_panel.position, Vector2(_panel_w, _panel_h)), "InputHeatmapWindow")
 
 func _build_ui() -> void:
 	_panel = PanelContainer.new()
@@ -265,7 +268,7 @@ func close_panel() -> void:
 	_is_open = false
 	var pet = _get_pet()
 	if pet:
-		pet.remove_overlay_rect("heatmap")
+		OverlayRegionHelper.clear(pet, "heatmap", "InputHeatmapWindow")
 	_panel.pivot_offset = _panel.size / 2.0
 	var tween := create_tween().set_parallel(true)
 	tween.tween_property(_panel, "modulate:a", 0.0, 0.1)
