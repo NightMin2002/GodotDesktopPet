@@ -6,14 +6,15 @@ class_name PetPlatform extends RefCounted
 var _platform: StaticBody2D = null
 var _lift_phase: int = 0      # 0=空闲, 1=上升中, 2=已到位
 var _lift_target_y: float = 0.0
+var _using_existing_support: bool = false
 
 ## 踏板是否活跃 (已创建且在升降或已到位)
 var is_active: bool:
-	get: return _lift_phase > 0
+	get: return _lift_phase > 0 or _using_existing_support
 
 ## 是否已升到位
 var is_lifted: bool:
-	get: return _lift_phase == 2
+	get: return _lift_phase == 2 or _using_existing_support
 
 # ── 公开接口 ──
 
@@ -21,10 +22,18 @@ var is_lifted: bool:
 func lock_pet(pet: RigidBody2D) -> void:
 	if pet.free_roam_sys.active:
 		pet.free_roam_sys.finish()
+	var use_existing_support = pet.free_roam_sys.settled and is_instance_valid(pet.free_roam_sys._settled_plat)
 	pet.physics.apply("platform_lock")
 	pet.linear_velocity = Vector2.ZERO
+	pet.angular_velocity = 0.0
 	if pet.current_state_name != "idle":
 		pet.transition_to("idle")
+	if use_existing_support:
+		_using_existing_support = true
+		_platform = null
+		_lift_phase = 0
+		pet.gravity_scale = 0.0
+		return
 	spawn(pet)
 
 ## 解锁宠物: 移除踏板 + 恢复重力 (不含状态切换, 调用方自行处理)
@@ -36,6 +45,7 @@ func spawn(pet: RigidBody2D) -> void:
 	var parent = pet.get_parent()
 	if not parent:
 		return
+	_using_existing_support = false
 	var plat_y = pet.global_position.y + pet.PET_RADIUS * pet.gravity_sign
 	var body = StaticBody2D.new()
 	body.position = Vector2(pet.global_position.x, plat_y)
@@ -64,6 +74,7 @@ func spawn(pet: RigidBody2D) -> void:
 ## 移除踏板 (禁用碰撞 + 淡出 + 恢复重力)
 func remove(pet: RigidBody2D) -> void:
 	_lift_phase = 0
+	_using_existing_support = false
 	pet.gravity_scale = pet.gravity_sign
 	if is_instance_valid(_platform):
 		for child in _platform.get_children():
@@ -80,6 +91,10 @@ func remove(pet: RigidBody2D) -> void:
 
 ## 每帧更新: 驱动升降 + 位置锁定
 func update(pet: RigidBody2D, delta: float) -> void:
+	if _using_existing_support:
+		pet.linear_velocity = Vector2.ZERO
+		pet.angular_velocity = 0.0
+		return
 	if _lift_phase == 1 and is_instance_valid(_platform):
 		var lift_speed = 80.0
 		_platform.position.y -= lift_speed * delta * pet.gravity_sign

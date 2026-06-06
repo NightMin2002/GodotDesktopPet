@@ -34,6 +34,12 @@ const PLATFORM_MARGIN := 20.0            # 踏板边缘余量 (宠物位置外�
 func screen_scale() -> float:
 	return pet.boundary_size.y / 1080.0
 
+func platform_width() -> float:
+	return maxf(PLATFORM_WIDTH, pet.PET_RADIUS * 1.6)
+
+func platform_margin() -> float:
+	return maxf(PLATFORM_MARGIN, pet.PET_RADIUS * 0.8)
+
 ## 启动自由漫游
 func start(p_no_descend: bool = false) -> void:
 	no_descend = p_no_descend
@@ -54,6 +60,9 @@ func start(p_no_descend: bool = false) -> void:
 			for child in _current_plat.get_children():
 				if child is CollisionShape2D and not child.has_meta("_roam_wall"):
 					child.disabled = false
+		if pet.current_state != pet.states.get("idle"):
+			pet.transition_to("idle")
+		_full_stop()
 		_decide_next()
 		return
 	
@@ -107,8 +116,9 @@ func update(delta: float) -> void:
 			var platform_y = pet.global_position.y + (pet.PET_RADIUS + 5.0) * pet.gravity_sign
 			_current_plat = _spawn_platform(Vector2(pet.global_position.x, platform_y))
 			# 初始化物理边界对齐踏板的初始宽度，防止首帧边界突变
-			_walk_min_x = pet.global_position.x - PLATFORM_WIDTH / 2.0
-			_walk_max_x = pet.global_position.x + PLATFORM_WIDTH / 2.0
+			var base_width = platform_width()
+			_walk_min_x = pet.global_position.x - base_width / 2.0
+			_walk_max_x = pet.global_position.x + base_width / 2.0
 			_last_pet_x = pet.global_position.x
 			# 不人为制动，让宠物保持惯性自然落地
 			pet.physics.apply("roam_land")
@@ -126,7 +136,7 @@ func update(delta: float) -> void:
 			# 踏板单向追踪: 只覆盖原点到宠物位置 + 两端小余量
 			var plat_x = _current_plat.position.x
 			var pet_x = pet.global_position.x
-			var margin = PLATFORM_MARGIN
+			var margin = platform_margin()
 			var left_edge = minf(plat_x, pet_x) - margin
 			var right_edge = maxf(plat_x, pet_x) + margin
 			var new_width = right_edge - left_edge
@@ -187,7 +197,7 @@ func update(delta: float) -> void:
 		_last_pet_x = pet.global_position.x
 		if is_instance_valid(_current_plat):
 			var pet_x = pet.global_position.x
-			var margin = PLATFORM_MARGIN
+			var margin = platform_margin()
 			
 			var safe_min = pet_x - margin
 			var safe_max = pet_x + margin
@@ -225,6 +235,7 @@ func do_jump() -> void:
 	_remove_side_walls()
 	_was_rising = false
 	_airtime = 0.0
+	_full_stop()
 	
 	var ss = screen_scale()
 	var hop_dir: float
@@ -257,6 +268,7 @@ func do_jump() -> void:
 ## 落稳后的决策: 继续跳 / 横移 / 驻留 / 跳下 / 电梯
 func _decide_next() -> void:
 	pet.movement.finish()  # 落稳后进入 HOLD → 自然过渡
+	_full_stop()
 	var pause = randf_range(0.6, 1.5)
 	await pet.get_tree().create_timer(pause).timeout
 	if not active:
@@ -353,7 +365,7 @@ func _update_settled(delta: float) -> void:
 	
 	# ── 踏板横向跟随 (安全延展 + 软阻尼平滑收缩) ──
 	var pet_x = pet.global_position.x
-	var margin = PLATFORM_MARGIN
+	var margin = platform_margin()
 	
 	var safe_min = pet_x - margin
 	var safe_max = pet_x + margin
@@ -426,10 +438,12 @@ func _walk_sideways() -> void:
 	else:
 		# 兜底：若踏板不存在，以宠物为中心建立匹配初始宽度的边界
 		var pet_x = pet.global_position.x
-		_walk_min_x = pet_x - PLATFORM_WIDTH / 2.0
-		_walk_max_x = pet_x + PLATFORM_WIDTH / 2.0
+		var base_width = platform_width()
+		_walk_min_x = pet_x - base_width / 2.0
+		_walk_max_x = pet_x + base_width / 2.0
 	
 	# 先看方向，缓冲到期后再滚动
+	_full_stop()
 	pet.movement.start(Vector2(hop_dir, 0), func():
 		if not active:
 			return
@@ -540,7 +554,7 @@ func _add_side_walls() -> void:
 		var shape = RectangleShape2D.new()
 		shape.size = Vector2(4.0, pet.PET_RADIUS * 4.0)
 		col.shape = shape
-		col.position = Vector2(side * PLATFORM_WIDTH / 2.0, -pet.PET_RADIUS * 2.0 * pet.gravity_sign)
+		col.position = Vector2(side * platform_width() / 2.0, -pet.PET_RADIUS * 2.0 * pet.gravity_sign)
 		col.one_way_collision = false
 		col.set_meta("_roam_wall", true)
 		_current_plat.add_child(col)
@@ -577,10 +591,11 @@ func _spawn_platform(pos: Vector2, is_elevator: bool = false) -> StaticBody2D:
 	
 	var body = StaticBody2D.new()
 	body.position = pos
+	var base_width = platform_width()
 	
 	var col = CollisionShape2D.new()
 	var shape = RectangleShape2D.new()
-	shape.size = Vector2(PLATFORM_WIDTH, platform_thickness)
+	shape.size = Vector2(base_width, platform_thickness)
 	col.shape = shape
 	col.one_way_collision = true
 	if pet.anti_gravity:
@@ -589,7 +604,7 @@ func _spawn_platform(pos: Vector2, is_elevator: bool = false) -> StaticBody2D:
 	
 	var visual = PlatformVisual.new()
 	visual.pet = pet
-	visual.platform_width = PLATFORM_WIDTH
+	visual.platform_width = base_width
 	visual.platform_color = pet.palette.shift_color(Color(0.2, 0.6, 1.0, 0.6))
 	body.add_child(visual)
 	

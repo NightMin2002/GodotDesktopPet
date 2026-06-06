@@ -51,7 +51,7 @@ const NORMAL_POKE_LINES := [
 	"我的像素边界不是交互热区...算了，是的。",
 	"触控信号已接收。但我选择不回应。...好吧。",
 	"扫描完成：你的手指还在鼠标上。",
-	"你看到的我只有 60 像素高。请尊重小型机械体。",
+	"当前机体高度：{size}px。请尊重精密机械体。",
 	"我能感知到你的鼠标移动轨迹。每一帧都能。",
 	"又检查我在不在？我能去哪？这是你的屏幕。",
 	"...嗯。",
@@ -162,7 +162,7 @@ func _respond_normal() -> void:
 		pet.show_local_bubble("记录中：被戳 x%d。" % _poke_total)
 		return
 	# 普通话术池 (防重复)
-	pet.show_local_bubble(_pick_unique(NORMAL_POKE_LINES))
+	pet.show_local_bubble(_format_dynamic_line(_pick_unique(NORMAL_POKE_LINES)))
 
 # ── 工具函数 ──
 
@@ -186,6 +186,12 @@ func _pick_unique(pool: Array) -> String:
 	var picked = candidates[randi() % candidates.size()]
 	_recent_poke_lines.append(picked)
 	return picked
+
+func _format_dynamic_line(line: String) -> String:
+	if "{size}" in line:
+		var size_px = int(round(pet.PET_RADIUS * 2.0))
+		line = line.replace("{size}", str(size_px))
+	return line
 
 func _format_duration(seconds: float) -> String:
 	var total_sec = int(seconds)

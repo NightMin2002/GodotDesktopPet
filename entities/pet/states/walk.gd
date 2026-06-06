@@ -13,6 +13,11 @@ var _roll_last_x: float = 0.0      # 卡死检测：上次位置
 var _roll_stuck_timer: float = 0.0  # 卡死计时
 var _roll_target_x: float = 0.0    # 短距滚动目标 X
 
+const ROLL_DIRECTION_EDGE_PADDING := 120.0
+const ROLL_TARGET_EDGE_PADDING := 80.0
+const ROLL_PET_SCAN_CLEARANCE := 30.0
+const CRUISE_PET_SCAN_CLEARANCE := 90.0
+
 func enter() -> void:
 	if not pet: return
 	_has_landed = false
@@ -47,13 +52,15 @@ func enter() -> void:
 		# 边缘检测: 靠边时强制反向
 		var x = pet.global_position.x
 		var w = pet.boundary_size.x
-		if x < 120.0: _roll_direction = 1.0
-		elif x > w - 120.0: _roll_direction = -1.0
+		var edge_pad = _edge_padding(ROLL_DIRECTION_EDGE_PADDING, 70.0)
+		if x < edge_pad: _roll_direction = 1.0
+		elif x > w - edge_pad: _roll_direction = -1.0
 		# 短距滚动: 设定随机目标距离
 		if not cruise:
-			var roll_dist = randf_range(120.0, 300.0)
+			var roll_dist = randf_range(maxf(120.0, pet.PET_RADIUS * 2.4), maxf(300.0, pet.PET_RADIUS * 4.0))
 			_roll_target_x = x + _roll_direction * roll_dist
-			_roll_target_x = clampf(_roll_target_x, 80.0, w - 80.0)
+			var target_edge_pad = _edge_padding(ROLL_TARGET_EDGE_PADDING, 30.0)
+			_roll_target_x = clampf(_roll_target_x, target_edge_pad, w - target_edge_pad)
 		pet.physics.apply("walk_cruise" if cruise else "walk_roll")
 		# 先看滚动方向 (实际滚动等缓冲结束后由 physics_process 驱动)
 		pet.movement.start(Vector2(_roll_direction, 0))
@@ -116,7 +123,7 @@ func physics_process(delta: float) -> void:
 			_roll_last_x = pet.global_position.x
 		
 		# 前方同伴处理
-		var pets_ahead := _find_pets_ahead(140.0 if _is_cruise else 80.0)
+		var pets_ahead := _find_pets_ahead(CRUISE_PET_SCAN_CLEARANCE if _is_cruise else ROLL_PET_SCAN_CLEARANCE)
 		if _is_cruise:
 			# 自主巡航: 推开前方同伴让路
 			_nudge_pets(pets_ahead)
@@ -148,7 +155,8 @@ func physics_process(delta: float) -> void:
 		if _is_cruise:
 			# 自主巡航: 到达对面边缘
 			var w = pet.boundary_size.x
-			if (_roll_direction > 0.0 and x > w - 80.0) or (_roll_direction < 0.0 and x < 80.0):
+			var edge_pad = _edge_padding(ROLL_TARGET_EDGE_PADDING, 30.0)
+			if (_roll_direction > 0.0 and x > w - edge_pad) or (_roll_direction < 0.0 and x < edge_pad):
 				_end_roll()
 		else:
 			# 短距滚动: 到达目标 X (20px 容差)
@@ -160,8 +168,14 @@ func physics_process(delta: float) -> void:
 
 # ── 前方同伴检测 (巡航推人和短距避让共用) ──
 
-## 查找前方指定距离内的所有同伴 (同一高度层)
-func _find_pets_ahead(dist: float) -> Array[RigidBody2D]:
+func _edge_padding(base: float, extra: float) -> float:
+	return maxf(base, pet.PET_RADIUS + extra)
+
+func _pet_radius_of(node: Node) -> float:
+	return node.PET_RADIUS if "PET_RADIUS" in node else pet.PET_RADIUS
+
+## 查找前方指定安全余量内的所有同伴 (同一高度层)
+func _find_pets_ahead(clearance: float) -> Array[RigidBody2D]:
 	var result: Array[RigidBody2D] = []
 	var parent = pet.get_parent()
 	if not parent: return result
@@ -170,13 +184,14 @@ func _find_pets_ahead(dist: float) -> Array[RigidBody2D]:
 		if not is_instance_valid(child): continue
 		if not child.has_method("is_mouse_on_pet"): continue
 		if child.freeze: continue  # 跳过冻结的宠物 (叠高高等)
-		# Y 轴过滤: 垂直高度差超过 80px 不算同层 (踏板上 vs 地面)
+		var combined_radius = pet.PET_RADIUS + _pet_radius_of(child)
+		# Y 轴过滤: 按双方半径判断同层 (踏板上 vs 地面)
 		var dy = absf(child.global_position.y - pet.global_position.y)
-		if dy > 80.0: continue
+		if dy > combined_radius + ROLL_PET_SCAN_CLEARANCE: continue
 		var dx = child.global_position.x - pet.global_position.x
 		if _roll_direction > 0 and dx < 0: continue
 		if _roll_direction < 0 and dx > 0: continue
-		if absf(dx) < dist:
+		if absf(dx) < combined_radius + clearance:
 			result.append(child)
 	return result
 
