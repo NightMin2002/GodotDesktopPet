@@ -41,23 +41,23 @@ var _mini_vp: SubViewport = null
 var _mini_rect: TextureRect = null
 
 # ── 模块化渲染器 (字典注册 + 懒加载) ──
-# 新增模式只需: 1) enum 加值  2) 注册表加一行  3) 写渲染器文件
+# 新增模式只需: 1) enum 加值  2) 写渲染器文件  3) 注册表加脚本引用
 const _MODE_REGISTRY := {
-	Mode.IDLE:    {"class": "HoloModeIdle",    "label": "待机屏保"},
-	Mode.LOADING: {"class": "HoloModeLoading", "label": "终端引导"},
-	Mode.BATTERY: {"class": "HoloModeBattery", "label": "电源监测"},
-	Mode.DONE:    {"class": "HoloModeDone",    "label": "完成"},
-	Mode.MAIL:    {"class": "HoloModeMail",    "label": "新消息"},
-	Mode.ERROR:   {"class": "HoloModeError",   "label": "警告确认"},
-	Mode.WARNING: {"class": "HoloModeWarning", "label": "系统警告"},
-	Mode.QUERY:   {"class": "HoloModeQuery",   "label": "未知检索"},
-	Mode.ALARM:   {"class": "HoloModeAlarm",   "label": "日程触发"},
-	Mode.CLEANUP: {"class": "HoloModeCleanup", "label": "垃圾清理"},
-	Mode.GLOBE:   {"class": "HoloModeGlobe",   "label": "网络监控"},
-	Mode.SYNC:    {"class": "HoloModeSync",    "label": "网络通信"},
-	Mode.LOCK:    {"class": "HoloModeLock",    "label": "终端锁定"},
-	Mode.DESKTOP: {"class": "HoloModeDesktop", "label": "桌面监控"},
-	Mode.RECYCLE: {"class": "HoloModeRecycle", "label": "回收归档"},
+	Mode.IDLE:    {"script": preload("res://entities/pet/holo_modes/holo_mode_idle.gd"),    "label": "待机屏保"},
+	Mode.LOADING: {"script": preload("res://entities/pet/holo_modes/holo_mode_loading.gd"), "label": "终端引导"},
+	Mode.BATTERY: {"script": preload("res://entities/pet/holo_modes/holo_mode_battery.gd"), "label": "电源监测"},
+	Mode.DONE:    {"script": preload("res://entities/pet/holo_modes/holo_mode_done.gd"),    "label": "完成"},
+	Mode.MAIL:    {"script": preload("res://entities/pet/holo_modes/holo_mode_mail.gd"),    "label": "新消息"},
+	Mode.ERROR:   {"script": preload("res://entities/pet/holo_modes/holo_mode_error.gd"),   "label": "警告确认"},
+	Mode.WARNING: {"script": preload("res://entities/pet/holo_modes/holo_mode_warning.gd"), "label": "系统警告"},
+	Mode.QUERY:   {"script": preload("res://entities/pet/holo_modes/holo_mode_query.gd"),   "label": "未知检索"},
+	Mode.ALARM:   {"script": preload("res://entities/pet/holo_modes/holo_mode_alarm.gd"),   "label": "日程触发"},
+	Mode.CLEANUP: {"script": preload("res://entities/pet/holo_modes/holo_mode_cleanup.gd"), "label": "垃圾清理"},
+	Mode.GLOBE:   {"script": preload("res://entities/pet/holo_modes/holo_mode_globe.gd"),   "label": "网络监控"},
+	Mode.SYNC:    {"script": preload("res://entities/pet/holo_modes/holo_mode_sync.gd"),    "label": "网络通信"},
+	Mode.LOCK:    {"script": preload("res://entities/pet/holo_modes/holo_mode_lock.gd"),    "label": "终端锁定"},
+	Mode.DESKTOP: {"script": preload("res://entities/pet/holo_modes/holo_mode_desktop.gd"), "label": "桌面监控"},
+	Mode.RECYCLE: {"script": preload("res://entities/pet/holo_modes/holo_mode_recycle.gd"), "label": "回收归档"},
 }
 var _renderers: Dictionary = {}  # Mode -> RefCounted 实例缓存
 
@@ -602,9 +602,7 @@ func _get_renderer(m: Mode) -> RefCounted:
 		return _renderers[m]
 	if m not in _MODE_REGISTRY:
 		return null
-	var class_name_str: String = _MODE_REGISTRY[m]["class"]
-	# 通过 class_name 全局注册表实例化
-	var script = _resolve_mode_class(class_name_str)
+	var script: GDScript = _MODE_REGISTRY[m]["script"]
 	if not script:
 		return null
 	var instance = script.new()
@@ -612,28 +610,6 @@ func _get_renderer(m: Mode) -> RefCounted:
 	_renderers[m] = instance
 	return instance
 
-## 查找全局 class_name 对应的 GDScript
-func _resolve_mode_class(cls: String) -> GDScript:
-	# Godot 4 的全局类名可以直接从 ClassDB 或 ProjectSettings 查找
-	# 但 RefCounted 子类最可靠的方式是通过硬编码映射
-	var map := {
-		"HoloModeIdle": HoloModeIdle,
-		"HoloModeLoading": HoloModeLoading,
-		"HoloModeBattery": HoloModeBattery,
-		"HoloModeDone": HoloModeDone,
-		"HoloModeMail": HoloModeMail,
-		"HoloModeError": HoloModeError,
-		"HoloModeWarning": HoloModeWarning,
-		"HoloModeQuery": HoloModeQuery,
-		"HoloModeAlarm": HoloModeAlarm,
-		"HoloModeCleanup": HoloModeCleanup,
-		"HoloModeGlobe": HoloModeGlobe,
-		"HoloModeSync": HoloModeSync,
-		"HoloModeLock": HoloModeLock,
-		"HoloModeDesktop": HoloModeDesktop,
-		"HoloModeRecycle": HoloModeRecycle,
-	}
-	return map.get(cls, null)
 # ══════════════════════════════════════
 
 ## 将 UV 坐标 (0~1, 0~1) 映射到梯形 pts 的屏幕坐标
