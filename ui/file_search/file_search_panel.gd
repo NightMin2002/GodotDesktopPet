@@ -12,6 +12,7 @@ var panel: PanelContainer
 var _is_open: bool = false
 var _dragging: bool = false
 var _drag_offset: Vector2 = Vector2.ZERO
+var _floating_panel: FloatingPanelHelper
 
 # ── C# 桥接 ──
 var _search_engine: Node = null
@@ -67,11 +68,20 @@ func _ready() -> void:
 	_calc_panel_size()
 	_find_search_engine()
 	_build_ui()
+	_floating_panel = FloatingPanelHelper.new().setup(
+		self,
+		_PANEL_ID,
+		"FileSearchPanel",
+		Callable(self, "_get_panel_node"),
+		Callable(self, "_is_panel_open"),
+		Callable(self, "_get_panel_rect")
+	)
 	EventBus.show_file_search.connect(_on_toggle)
 	EventBus.panel_focus_requested.connect(_on_panel_focus)
 
 func _exit_tree() -> void:
-	OverlayRegionHelper.clear(_get_pet(), _PANEL_ID, "FileSearchPanel")
+	if _floating_panel:
+		_floating_panel.cleanup()
 
 func _calc_panel_size() -> void:
 	var vp = get_viewport().get_visible_rect().size
@@ -94,11 +104,7 @@ func _process(delta: float) -> void:
 	_time_passed += delta
 	if is_instance_valid(_frame_drawer):
 		_frame_drawer.queue_redraw()
-	# DWM 穿透: 精确区域
-	var pet = _get_pet()
-	if pet:
-		OverlayRegionHelper.update_rect(pet, _PANEL_ID, Rect2(panel.position, Vector2(_panel_w, _panel_h)), "FileSearchPanel")
-	EventBus._active_panel_rects[_PANEL_ID] = { "rect": Rect2(panel.position, Vector2(_panel_w, _panel_h)), "layer": layer }
+	_floating_panel.sync()
 	# 搜索防抖
 	if _debounce_timer > 0.0:
 		_debounce_timer -= delta
@@ -111,26 +117,8 @@ func _process(delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if not _is_open:
 		return
-	# 宠物优先输入拦截
-	if event is InputEventMouseButton or event is InputEventMouseMotion:
-		var mouse_pos: Vector2 = event.position
-		if Rect2(panel.position, Vector2(_panel_w, _panel_h)).has_point(mouse_pos):
-			var pet_hit = _find_pet_at_mouse()
-			if pet_hit:
-				pet_hit._unhandled_input(event)
-				get_viewport().set_input_as_handled()
-				return
-	# 点击置顶
-	if event is InputEventMouseButton and event.pressed:
-		var pos: Vector2 = event.position
-		if Rect2(panel.position, Vector2(_panel_w, _panel_h)).has_point(pos):
-			if layer < -1:
-				for pid in EventBus._active_panel_rects:
-					if pid != _PANEL_ID:
-						var info = EventBus._active_panel_rects[pid]
-						if info.layer > layer and info.rect.has_point(pos):
-							return
-			_bring_to_front()
+	if _floating_panel.handle_input(event):
+		return
 	# ESC 关闭
 	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		if _is_open:
@@ -408,7 +396,7 @@ func _open_panel() -> void:
 	_is_open = true
 	_find_search_engine()
 	_check_engine_status()
-	EventBus.panel_focus_requested.emit(_PANEL_ID)
+	_floating_panel.request_focus()
 	var vp = get_viewport().get_visible_rect().size
 	panel.position = _clamp_pos(Vector2(
 		(vp.x - _panel_w) * 0.5,
@@ -453,10 +441,7 @@ func _close_panel() -> void:
 	if _is_searching and _search_engine != null:
 		_search_engine.call("CancelSearch")
 		_is_searching = false
-	EventBus._active_panel_rects.erase(_PANEL_ID)
-	var pet = _get_pet()
-	if pet:
-		OverlayRegionHelper.clear(pet, _PANEL_ID, "FileSearchPanel")
+	_floating_panel.cleanup()
 	panel.pivot_offset = panel.size / 2.0
 	var tween = create_tween().set_parallel(true)
 	tween.tween_property(panel, "modulate:a", 0.0, 0.1)
@@ -470,16 +455,10 @@ func _close_panel() -> void:
 # ═══════════════════════════════════════════════
 
 func _bring_to_front() -> void:
-	if layer != -1:
-		EventBus.panel_focus_requested.emit(_PANEL_ID)
+	_floating_panel.request_focus_if_needed()
 
 func _on_panel_focus(panel_id: String) -> void:
-	if not _is_open:
-		return
-	if panel_id == _PANEL_ID:
-		layer = -1
-	else:
-		layer = -2
+	_floating_panel.apply_focus(panel_id)
 
 # ═══════════════════════════════════════════════
 #  C# 桥接
@@ -1239,6 +1218,17 @@ func _on_frame_draw() -> void:
 #  工具方法
 # ═══════════════════════════════════════════════
 
+func _get_panel_node() -> Control:
+	return panel
+
+func _is_panel_open() -> bool:
+	return _is_open
+
+func _get_panel_rect() -> Rect2:
+	if not panel:
+		return Rect2()
+	return Rect2(panel.position, Vector2(_panel_w, _panel_h))
+
 func _get_pet() -> Node:
 	var tree = get_tree()
 	if tree == null:
@@ -1246,15 +1236,6 @@ func _get_pet() -> Node:
 	var main_node = tree.root.get_node_or_null("Main")
 	if main_node and "pet_instance" in main_node:
 		return main_node.pet_instance
-	return null
-
-func _find_pet_at_mouse() -> Node:
-	var main_node = get_tree().root.get_node_or_null("Main")
-	if not main_node or not "pet_instances" in main_node:
-		return null
-	for p in main_node.pet_instances:
-		if is_instance_valid(p) and p.is_mouse_on_pet():
-			return p
 	return null
 
 func _find_csharp_node(method_name: String) -> Node:

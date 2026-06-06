@@ -17,6 +17,7 @@ var _tab_contents: Array[Control] = []
 var _current_tab: int = 0
 var _left_column  # ProfileLeftColumn
 var _is_open: bool = false
+var _floating_panel: FloatingPanelHelper
 
 var _fx_mode: int = 0
 var _fx_btn: Button
@@ -43,13 +44,23 @@ var _tab_stale: Array[bool] = []   # Tab 是否需要下次切换时 refresh()
 func _ready() -> void:
 	_calc_panel_size()
 	_build_ui()
+	_floating_panel = FloatingPanelHelper.new().setup(
+		self,
+		_PANEL_ID,
+		"PetProfilePanel",
+		Callable(self, "_get_panel_node"),
+		Callable(self, "_is_panel_open"),
+		Callable(self, "_get_panel_rect"),
+		Callable(self, "_get_main_node")
+	)
 	EventBus.show_pet_profile.connect(_on_toggle)
 	EventBus.show_pet_profile_reminder.connect(_on_show_reminder_tab)
 	EventBus.ui_theme_changed.connect(_on_ui_theme_changed)
 	EventBus.panel_focus_requested.connect(_on_panel_focus)
 
 func _exit_tree() -> void:
-	OverlayRegionHelper.clear(_get_pet(), _PANEL_ID, "PetProfilePanel")
+	if _floating_panel:
+		_floating_panel.cleanup()
 
 func _calc_panel_size() -> void:
 	var vp = get_viewport().get_visible_rect().size
@@ -73,48 +84,15 @@ func _process(delta: float) -> void:
 			_frame_drawer.queue_redraw()
 		if _confine_walls.size() > 0:
 			_sync_confine_walls()
-		var pet = _get_pet()
-		if pet:
-			OverlayRegionHelper.update_rect(pet, _PANEL_ID, Rect2(panel.position, Vector2(_panel_w, _panel_h)), "PetProfilePanel")
+		_floating_panel.sync()
 		# 监测分身数量变化, 通知外观主题 Tab 刷新
 		_check_pet_count_change()
-		# 注册面板矩形 (供层级管理用)
-		EventBus._active_panel_rects[_PANEL_ID] = { "rect": Rect2(panel.position, Vector2(_panel_w, _panel_h)), "layer": layer }
 
 func _input(event: InputEvent) -> void:
 	if not _is_open:
 		return
-	# ── 宠物优先: 面板 GUI 会吞掉鼠标事件, 导致宠物的 _unhandled_input 收不到 ──
-	# 仅在面板区域内拦截 (面板外的正常 _unhandled_input 流程不受影响)
-	if event is InputEventMouseButton or event is InputEventMouseMotion:
-		var mouse_pos: Vector2 = event.position
-		if Rect2(panel.position, Vector2(_panel_w, _panel_h)).has_point(mouse_pos):
-			var pet_hit = _find_pet_at_mouse()
-			if pet_hit:
-				pet_hit._unhandled_input(event)
-				get_viewport().set_input_as_handled()
-				return
-	if event is InputEventMouseButton and event.pressed:
-		var pos: Vector2 = event.position
-		if Rect2(panel.position, Vector2(_panel_w, _panel_h)).has_point(pos):
-			# 如果我在底层, 检查点击位置是否被更高层面板覆盖
-			if layer < -1:
-				for pid in EventBus._active_panel_rects:
-					if pid != _PANEL_ID:
-						var info = EventBus._active_panel_rects[pid]
-						if info.layer > layer and info.rect.has_point(pos):
-							return  # 被更高层面板覆盖, 跳过
-			_bring_to_front()
-
-## 检测鼠标下是否有宠物 (遍历所有宠物实例)
-func _find_pet_at_mouse() -> Node:
-	var main_node = _get_main_node()
-	if not main_node or not "pet_instances" in main_node:
-		return null
-	for p in main_node.pet_instances:
-		if is_instance_valid(p) and p.is_mouse_on_pet():
-			return p
-	return null
+	if _floating_panel.handle_input(event):
+		return
 
 # ═══════════════════════════════════════════════
 #  UI 构建
@@ -497,16 +475,10 @@ func _animate_tab_btn(idx: int, is_hovered: bool) -> void:
 const _PANEL_ID := "profile"
 
 func _bring_to_front() -> void:
-	if layer != -1:
-		EventBus.panel_focus_requested.emit(_PANEL_ID)
+	_floating_panel.request_focus_if_needed()
 
 func _on_panel_focus(panel_id: String) -> void:
-	if not _is_open:
-		return
-	if panel_id == _PANEL_ID:
-		layer = -1   # 置顶
-	else:
-		layer = -2   # 降到后面
+	_floating_panel.apply_focus(panel_id)
 
 # ═══════════════════════════════════════════════
 #  面板开关
@@ -520,7 +492,7 @@ func _on_toggle() -> void:
 
 func _open_panel() -> void:
 	_is_open = true
-	EventBus.panel_focus_requested.emit(_PANEL_ID)
+	_floating_panel.request_focus()
 	_refresh_data()
 	_update_pet_count_cache()
 	var vp = get_viewport().get_visible_rect().size
@@ -542,10 +514,7 @@ func _close_panel() -> void:
 	_is_open = false
 	_dragging = false
 	_destroy_confine_walls()
-	EventBus._active_panel_rects.erase(_PANEL_ID)
-	var pet = _get_pet()
-	if pet:
-		OverlayRegionHelper.clear(pet, _PANEL_ID, "PetProfilePanel")
+	_floating_panel.cleanup()
 	# 通知终端配置 Tab 收起全息屏预览
 	if _tab_contents.size() > 7 and is_instance_valid(_tab_contents[7]):
 		var config_tab = _tab_contents[7]
@@ -623,6 +592,17 @@ func _check_pet_count_change() -> void:
 # ═══════════════════════════════════════════════
 #  档案围栏 (单向碰撞墙)
 # ═══════════════════════════════════════════════
+
+func _get_panel_node() -> Control:
+	return panel
+
+func _is_panel_open() -> bool:
+	return _is_open
+
+func _get_panel_rect() -> Rect2:
+	if not panel:
+		return Rect2()
+	return Rect2(panel.position, Vector2(_panel_w, _panel_h))
 
 func _get_pet() -> Node:
 	return ProfileStyles.get_pet(get_tree())

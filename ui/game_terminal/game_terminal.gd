@@ -31,6 +31,7 @@ var _dragging: bool = false
 var _drag_offset: Vector2 = Vector2.ZERO
 var _is_open: bool = false
 var _state: int = TerminalState.CLOSED
+var _floating_panel: FloatingPanelHelper
 
 var _frame_drawer: Control  # GameTerminalFrame 实例
 
@@ -61,13 +62,23 @@ func _ready() -> void:
 	_calc_panel_size()
 	_scan_games()
 	_build_ui()
+	_floating_panel = FloatingPanelHelper.new().setup(
+		self,
+		_PANEL_ID,
+		"GameTerminal",
+		Callable(self, "_get_panel_node"),
+		Callable(self, "_is_panel_open"),
+		Callable(self, "_get_panel_rect"),
+		Callable(self, "_get_main_node")
+	)
 	EventBus.show_game_terminal.connect(_on_toggle)
 	EventBus.ui_theme_changed.connect(_on_ui_theme_changed)
 	EventBus.panel_focus_requested.connect(_on_panel_focus)
 	_apply_current_frame()
 
 func _exit_tree() -> void:
-	OverlayRegionHelper.clear(_get_pet(), _PANEL_ID, "GameTerminal")
+	if _floating_panel:
+		_floating_panel.cleanup()
 
 func _apply_current_frame() -> void:
 	if _frame_drawer and is_instance_valid(_frame_drawer):
@@ -99,12 +110,7 @@ func _process(_delta: float) -> void:
 	if _is_open:
 		if _confine_walls.size() > 0:
 			_sync_confine_walls()
-		var pet = _get_pet()
-		if pet:
-			OverlayRegionHelper.update_rect(pet, _PANEL_ID, Rect2(panel.position, Vector2(_panel_w, _panel_h)), "GameTerminal")
-
-		# 注册面板矩形 (供层级管理用)
-		EventBus._active_panel_rects[_PANEL_ID] = { "rect": Rect2(panel.position, Vector2(_panel_w, _panel_h)), "layer": layer }
+		_floating_panel.sync()
 	else:
 		# ── 兜底自检: 面板已关闭但残留未清理 ──
 		_sanity_check()
@@ -112,36 +118,8 @@ func _process(_delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if not _is_open:
 		return
-	# ── 宠物优先: 面板 GUI 会吞掉鼠标事件, 导致宠物的 _unhandled_input 收不到 ──
-	if event is InputEventMouseButton or event is InputEventMouseMotion:
-		var mouse_pos: Vector2 = event.position
-		if Rect2(panel.position, Vector2(_panel_w, _panel_h)).has_point(mouse_pos):
-			var pet_hit = _find_pet_at_mouse()
-			if pet_hit:
-				pet_hit._unhandled_input(event)
-				get_viewport().set_input_as_handled()
-				return
-	if event is InputEventMouseButton and event.pressed:
-		var pos: Vector2 = event.position
-		if Rect2(panel.position, Vector2(_panel_w, _panel_h)).has_point(pos):
-			# 如果我在底层, 检查点击位置是否被更高层面板覆盖
-			if layer < -1:
-				for pid in EventBus._active_panel_rects:
-					if pid != _PANEL_ID:
-						var info = EventBus._active_panel_rects[pid]
-						if info.layer > layer and info.rect.has_point(pos):
-							return  # 被更高层面板覆盖, 跳过
-			_bring_to_front()
-
-## 检测鼠标下是否有宠物 (遍历所有宠物实例)
-func _find_pet_at_mouse() -> Node:
-	var main_node = _get_main_node()
-	if not main_node or not "pet_instances" in main_node:
-		return null
-	for p in main_node.pet_instances:
-		if is_instance_valid(p) and p.is_mouse_on_pet():
-			return p
-	return null
+	if _floating_panel.handle_input(event):
+		return
 
 # ═══════════════════════════════════════════════
 #  UI 构建
@@ -761,16 +739,10 @@ func _build_footer_bar() -> PanelContainer:
 const _PANEL_ID := "game_terminal"
 
 func _bring_to_front() -> void:
-	if layer != -1:
-		EventBus.panel_focus_requested.emit(_PANEL_ID)
+	_floating_panel.request_focus_if_needed()
 
 func _on_panel_focus(panel_id: String) -> void:
-	if not _is_open:
-		return
-	if panel_id == _PANEL_ID:
-		layer = -1   # 置顶
-	else:
-		layer = -2   # 降到后面
+	_floating_panel.apply_focus(panel_id)
 
 # ═══════════════════════════════════════════════
 #  面板开关
@@ -784,7 +756,7 @@ func _on_toggle() -> void:
 
 func _open_panel() -> void:
 	_is_open = true
-	EventBus.panel_focus_requested.emit(_PANEL_ID)
+	_floating_panel.request_focus()
 	_state = TerminalState.LOBBY
 	_update_status_display()
 	# 保底恢复大厅 (上次直接断开可能残留隐藏状态)
@@ -811,7 +783,6 @@ func _close_panel() -> void:
 	_is_open = false
 	_state = TerminalState.CLOSED
 	_dragging = false
-	EventBus._active_panel_rects.erase(_PANEL_ID)
 	_force_full_cleanup()
 	panel.pivot_offset = panel.size / 2.0
 	var tween = create_tween().set_parallel(true)
@@ -842,6 +813,17 @@ func _update_status_display() -> void:
 # ═══════════════════════════════════════════════
 #  围栏 (单向碰撞墙)
 # ═══════════════════════════════════════════════
+
+func _get_panel_node() -> Control:
+	return panel
+
+func _is_panel_open() -> bool:
+	return _is_open
+
+func _get_panel_rect() -> Rect2:
+	if not panel:
+		return Rect2()
+	return Rect2(panel.position, Vector2(_panel_w, _panel_h))
 
 func _get_pet() -> Node:
 	return ProfileStyles.get_pet(get_tree())
@@ -1257,9 +1239,8 @@ func _force_full_cleanup() -> void:
 	# 围栏墙
 	_destroy_confine_walls()
 	# DWM 穿透矩形
-	var pet = _get_pet()
-	if pet:
-		OverlayRegionHelper.clear(pet, _PANEL_ID, "GameTerminal")
+	if _floating_panel:
+		_floating_panel.cleanup()
 	# 拖拽
 	_dragging = false
 
