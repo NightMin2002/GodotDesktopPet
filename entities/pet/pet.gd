@@ -48,9 +48,20 @@ var pet_effects: PetEffects
 # ── 屏幕信息 (由 main.gd 设置) ──
 var screen_rect: Rect2i
 var boundary_size: Vector2  # 视口坐标系的实际边界
+var stand_ceiling_y: float = 0.0
+var stand_floor_y: float = 0.0
 var last_frame_speed: float = 0.0 # 用于捕获撞击前瞬时速度
 var last_frame_velocity: Vector2 = Vector2.ZERO # 用于捕获撞击前速度方向
 var overlay_rects: Dictionary = {} # 外部覆盖层的屏幕区域 (多面板独立注册, key→Rect2/Array[Rect2])
+
+func get_stand_ceiling_y() -> float:
+	return stand_ceiling_y
+
+func get_stand_floor_y() -> float:
+	return stand_floor_y if stand_floor_y > 0.0 else boundary_size.y
+
+func get_stand_surface_y() -> float:
+	return get_stand_ceiling_y() if anti_gravity else get_stand_floor_y()
 
 ## 注册/更新一个覆盖层命中区域 (面板 _process 中每帧调用)
 func set_overlay_rect(key: String, rect: Rect2) -> void:

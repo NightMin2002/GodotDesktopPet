@@ -75,10 +75,11 @@ func _sync_ghost_walls() -> void:
 	
 	# rect 转本地坐标缓存
 	var local_rects: Array[Rect2] = []
+	var window_pos := _main.get_window().position
 	for i in range(count):
 		var desk_rect = rects[i] as Rect2i
-		var lx = float(desk_rect.position.x - _main.screen_rect.position.x)
-		var ly = float(desk_rect.position.y - _main.screen_rect.position.y)
+		var lx = float(desk_rect.position.x - window_pos.x)
+		var ly = float(desk_rect.position.y - window_pos.y)
 		local_rects.append(Rect2(lx, ly, float(desk_rect.size.x), float(desk_rect.size.y)))
 	
 	# 缓存供外部查询 (如空间跳跃窗口感知)
@@ -114,10 +115,11 @@ func _apply_free_mode(local_rects: Array[Rect2], count: int) -> void:
 		var bottom_segs = _compute_exposed_segments(win_left, win_right, bottom_y, local_rects, i)
 		
 		var wall_cx = lr.position.x + lr.size.x / 2.0
-		var top_rel_y = -lr.size.y / 2.0 + floor_thickness / 2.0
-		var bot_rel_y = lr.size.y / 2.0 + floor_thickness / 2.0
 		# 反重力时翻转踏板方向 (旋转180°让宠物能从下方“贴住”)
 		var plat_rot = PI if _anti_gravity else 0.0
+		var surface_offset = -floor_thickness / 2.0 if _anti_gravity else floor_thickness / 2.0
+		var top_rel_y = -lr.size.y / 2.0 + surface_offset
+		var bot_rel_y = lr.size.y / 2.0 + surface_offset
 		_apply_platform_segments(wall, 0, top_segs, wall_cx, top_rel_y, floor_thickness, true, plat_rot)
 		_apply_platform_segments(wall, MAX_PLATFORM_SEGMENTS, bottom_segs, wall_cx, bot_rel_y, floor_thickness, true, plat_rot)
 		

@@ -6,10 +6,15 @@ extends Node2D
 var pet_scene := preload("res://entities/pet/pet.tscn")
 var clone_scene := preload("res://entities/pet/clone_pet.tscn")
 const _PetColorPalette = preload("res://entities/pet/pet_color_palette.gd")
+const WINDOW_DWM_MARGIN := 1
+const WORK_AREA_VISUAL_CLEARANCE := 2.0
 var pet_instance: RigidBody2D  # 原体引用
 var pet_instances: Array[RigidBody2D] = []  # 所有宠物 (原体 + 克隆体)
 var screen_rect: Rect2i
 var boundary_size: Vector2  # 实际使用的边界尺寸 (视口坐标系)
+var desktop_work_area_rect: Rect2i  # Windows 工作区映射到视口后的矩形
+var stand_ceiling_y: float = 0.0
+var stand_floor_y: float = 0.0
 
 # -- 双端架构 C# 桥接 --
 var win_manager: Node
@@ -203,8 +208,8 @@ func _setup_window() -> void:
 	# 窗口位置/大小比屏幕各多 1px (四边各扩 1px)
 	# 修复: 窗口与屏幕完全等大时, 某些 Windows+GPU 组合会触发全屏独占检测,
 	# 跳过 DWM 桌面合成, 导致透明背景变黑屏 (Godot 已知问题 #109693/#107582)
-	window.position = Vector2i(screen_rect.position.x - 1, screen_rect.position.y - 1)
-	window.size = Vector2i(screen_rect.size.x + 2, screen_rect.size.y + 2)
+	window.position = Vector2i(screen_rect.position.x - WINDOW_DWM_MARGIN, screen_rect.position.y - WINDOW_DWM_MARGIN)
+	window.size = Vector2i(screen_rect.size.x + WINDOW_DWM_MARGIN * 2, screen_rect.size.y + WINDOW_DWM_MARGIN * 2)
 	window.transparent = true
 	window.borderless = true
 	window.always_on_top = true
@@ -215,6 +220,18 @@ func _setup_window() -> void:
 	print("[DesktopPet] 屏幕可用区域: ", screen_rect)
 	print("[DesktopPet] 窗口大小: ", window.size, " (±1px 防全屏独占黑屏)")
 
+func _get_work_area_rect_in_viewport(vp_size: Vector2) -> Rect2i:
+	if win_manager and win_manager.has_method("GetCurrentMonitorWorkAreaInWindow"):
+		var rect: Rect2i = win_manager.call("GetCurrentMonitorWorkAreaInWindow")
+		if rect.size.x > 0 and rect.size.y > 0:
+			return rect
+
+	var fallback_size := Vector2i(
+		maxi(1, int(vp_size.x) - WINDOW_DWM_MARGIN * 2),
+		maxi(1, int(vp_size.y) - WINDOW_DWM_MARGIN * 2)
+	)
+	return Rect2i(Vector2i(WINDOW_DWM_MARGIN, WINDOW_DWM_MARGIN), fallback_size)
+
 # ── 屏幕边界 ──
 var _wall_left: StaticBody2D
 var _wall_right: StaticBody2D
@@ -222,15 +239,22 @@ var _wall_right: StaticBody2D
 func _create_boundaries() -> void:
 	var vp_size := get_viewport_rect().size
 	boundary_size = vp_size
+	desktop_work_area_rect = _get_work_area_rect_in_viewport(vp_size)
 	
 	var w := vp_size.x
 	var h := vp_size.y
 	var thickness := 400.0
+	stand_ceiling_y = clampf(float(desktop_work_area_rect.position.y) + WORK_AREA_VISUAL_CLEARANCE, 0.0, h)
+	stand_floor_y = clampf(float(desktop_work_area_rect.position.y + desktop_work_area_rect.size.y) - WORK_AREA_VISUAL_CLEARANCE, 0.0, h)
+	if stand_floor_y <= stand_ceiling_y:
+		stand_ceiling_y = 0.0
+		stand_floor_y = h
 	
 	print("[DesktopPet] 视口尺寸: ", vp_size, " (以此创建边界)")
+	print("[DesktopPet] 工作区(视口坐标): ", desktop_work_area_rect, " 站立区 y=", stand_ceiling_y, "..", stand_floor_y)
 	
-	_add_wall(Vector2(w / 2.0, h + thickness / 2.0), Vector2(w * 2, thickness))
-	_add_wall(Vector2(w / 2.0, -thickness / 2.0), Vector2(w * 2, thickness))
+	_add_wall(Vector2(w / 2.0, stand_floor_y + thickness / 2.0), Vector2(w * 2, thickness))
+	_add_wall(Vector2(w / 2.0, stand_ceiling_y - thickness / 2.0), Vector2(w * 2, thickness))
 	_wall_left = _add_wall(Vector2(-thickness / 2.0, h / 2.0), Vector2(thickness, h * 2))
 	_wall_right = _add_wall(Vector2(w + thickness / 2.0, h / 2.0), Vector2(thickness, h * 2))
 	
@@ -238,7 +262,16 @@ func _create_boundaries() -> void:
 	if SettingsManager.get_bool("screen_wrap", false):
 		_set_side_walls_enabled(false)
 	
-	print("[DesktopPet] 边界墙已创建 — 地面y=", h, " 右墙x=", w)
+	print("[DesktopPet] 边界墙已创建: 地面y=", stand_floor_y, " 天花板y=", stand_ceiling_y, " 右墙x=", w)
+
+func get_stand_ceiling_y() -> float:
+	return stand_ceiling_y
+
+func get_stand_floor_y() -> float:
+	return stand_floor_y
+
+func get_stand_surface_y(anti_gravity_enabled: bool) -> float:
+	return stand_ceiling_y if anti_gravity_enabled else stand_floor_y
 
 func _add_wall(pos: Vector2, size: Vector2) -> StaticBody2D:
 	var wall := StaticBody2D.new()
@@ -270,6 +303,8 @@ func _spawn_pet() -> void:
 	pet_instance = pet_scene.instantiate()
 	pet_instance.screen_rect = screen_rect
 	pet_instance.boundary_size = boundary_size
+	pet_instance.stand_ceiling_y = stand_ceiling_y
+	pet_instance.stand_floor_y = stand_floor_y
 	pet_instance.window_mode = window_mode
 	pet_instance.set_meta("pet_index", 0)
 	# 从持久化恢复原体颜色

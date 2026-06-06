@@ -43,6 +43,15 @@ public partial class WindowsManager : Node
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
+
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
     private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
 
@@ -56,6 +65,15 @@ public partial class WindowsManager : Node
         public int Top;
         public int Right;
         public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
     }
     
     private const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
@@ -86,6 +104,7 @@ public partial class WindowsManager : Node
     private const int SW_SHOW = 5;
 
     private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+    private const uint MONITOR_DEFAULTTONEAREST = 0x00000002;
     private const uint SWP_NOMOVE = 0x0002;
     private const uint SWP_NOSIZE = 0x0001;
     private const uint SWP_NOZORDER = 0x0004;
@@ -267,6 +286,38 @@ public partial class WindowsManager : Node
         bool needsFix = (style & WS_EX_TOOLWINDOW) == 0 || (style & WS_EX_APPWINDOW) != 0;
         if (needsFix) HideFromTaskbar();
         return needsFix;
+    }
+
+    /// <summary>
+    /// 获取当前显示器工作区在 Godot 窗口客户区内的坐标。
+    /// rcWork 由 Windows 计算，会排除任务栏和停靠式 AppBar。
+    /// </summary>
+    public Rect2I GetCurrentMonitorWorkAreaInWindow()
+    {
+        IntPtr hwnd = (IntPtr)DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
+        if (hwnd == IntPtr.Zero)
+            return new Rect2I();
+
+        IntPtr monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        if (monitor == IntPtr.Zero)
+            return new Rect2I();
+
+        var info = new MONITORINFO();
+        info.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+        if (!GetMonitorInfo(monitor, ref info))
+            return new Rect2I();
+
+        var topLeft = new POINT { X = info.rcWork.Left, Y = info.rcWork.Top };
+        var bottomRight = new POINT { X = info.rcWork.Right, Y = info.rcWork.Bottom };
+        if (!ScreenToClient(hwnd, ref topLeft) || !ScreenToClient(hwnd, ref bottomRight))
+            return new Rect2I();
+
+        return new Rect2I(
+            topLeft.X,
+            topLeft.Y,
+            bottomRight.X - topLeft.X,
+            bottomRight.Y - topLeft.Y
+        );
     }
 
     /// <summary>

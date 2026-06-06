@@ -161,7 +161,7 @@ func update(delta: float) -> void:
 			pet.global_position.x = lerpf(pet.global_position.x, _elevator.position.x, 6.0 * delta)
 		pet.linear_velocity.x *= 0.8
 		pet.angular_velocity *= 0.85
-		var ground_y = pet.boundary_size.y if not pet.anti_gravity else 0.0
+		var ground_y = pet.get_stand_surface_y()
 		var dist = absf(_elevator.position.y - ground_y)
 		# 贴近地面时消失 (随机 10~50px × 屏幕缩放)
 		if dist < _elevator_vanish_dist:
@@ -486,7 +486,7 @@ func _begin_descent() -> void:
 	_remove_side_walls()
 	_clear_platforms()
 	
-	var ground_y = pet.boundary_size.y if not pet.anti_gravity else 0.0
+	var ground_y = pet.get_stand_surface_y()
 	var dist_to_ground = absf(pet.global_position.y - ground_y)
 	
 	if dist_to_ground < pet.boundary_size.y * 0.08:

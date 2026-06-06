@@ -41,6 +41,8 @@ func _clone_pet(source: Node2D, with_bubble: bool) -> void:
 	var clone = _main.clone_scene.instantiate()
 	clone.screen_rect = _main.screen_rect
 	clone.boundary_size = _main.boundary_size
+	clone.stand_ceiling_y = _main.stand_ceiling_y
+	clone.stand_floor_y = _main.stand_floor_y
 	clone.window_mode = _main.window_mode
 	
 	var pet_index = clone_count + 1
@@ -152,7 +154,7 @@ func reorganize_quiet_queue() -> void:
 	
 	# 反重力: 目标 Y 在天花板附近；正常: 目标 Y 在地面附近
 	var ag = SettingsManager.get_bool("anti_gravity", false)
-	var target_y: float = 35.0 if ag else _main.boundary_size.y - 35.0
+	var target_y: float = _main.get_stand_ceiling_y() + 35.0 if ag else _main.get_stand_floor_y() - 35.0
 	
 	var left_q: Array[RigidBody2D] = []
 	var right_q: Array[RigidBody2D] = []
